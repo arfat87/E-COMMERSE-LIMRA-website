@@ -1,0 +1,144 @@
+{
+  "exported_at": "2026-08-22T20:21:51.419Z",
+  "source_database": "limra_restaurant",
+  "collections_summary": [
+    {
+      "collection": "orders",
+      "count": 11,
+      "jsonFile": "orders.json",
+      "csvFile": "orders.csv"
+    },
+    {
+      "collection": "order_items",
+      "count": 14,
+      "jsonFile": "order_items.json",
+      "csvFile": "order_items.csv"
+    },
+    {
+      "collection": "stock_items",
+      "count": 138,
+      "jsonFile": "stock_items.json",
+      "csvFile": "stock_items.csv"
+    },
+    {
+      "collection": "stock_in",
+      "count": 226,
+      "jsonFile": "stock_in.json",
+      "csvFile": "stock_in.csv"
+    },
+    {
+      "collection": "stock_out",
+      "count": 544,
+      "jsonFile": "stock_out.json",
+      "csvFile": "stock_out.csv"
+    },
+    {
+      "collection": "stock_logs",
+      "count": 883,
+      "jsonFile": "stock_logs.json",
+      "csvFile": "stock_logs.csv"
+    },
+    {
+      "collection": "stock_in_entries",
+      "count": 175,
+      "jsonFile": "stock_in_entries.json",
+      "csvFile": "stock_in_entries.csv"
+    },
+    {
+      "collection": "stock_out_entries",
+      "count": 366,
+      "jsonFile": "stock_out_entries.json",
+      "csvFile": "stock_out_entries.csv"
+    },
+    {
+      "collection": "notifications",
+      "count": 149,
+      "jsonFile": "notifications.json",
+      "csvFile": "notifications.csv"
+    },
+    {
+      "collection": "bookings",
+      "count": 1,
+      "jsonFile": "bookings.json",
+      "csvFile": "bookings.csv"
+    },
+    {
+      "collection": "menu_overrides",
+      "count": 83,
+      "jsonFile": "menu_overrides.json",
+      "csvFile": "menu_overrides.csv"
+    },
+    {
+      "collection": "delivery_areas",
+      "count": 21,
+      "jsonFile": "delivery_areas.json",
+      "csvFile": "delivery_areas.csv"
+    },
+    {
+      "collection": "coupons",
+      "count": 3,
+      "jsonFile": "coupons.json",
+      "csvFile": "coupons.csv"
+    },
+    {
+      "collection": "coupon_usage",
+      "count": 0,
+      "jsonFile": "coupon_usage.json",
+      "csvFile": "coupon_usage.csv"
+    },
+    {
+      "collection": "combos",
+      "count": 1,
+      "jsonFile": "combos.json",
+      "csvFile": "combos.csv"
+    },
+    {
+      "collection": "printer_settings",
+      "count": 1,
+      "jsonFile": "printer_settings.json",
+      "csvFile": "printer_settings.csv"
+    },
+    {
+      "collection": "reviews",
+      "count": 1,
+      "jsonFile": "reviews.json",
+      "csvFile": "reviews.csv"
+    },
+    {
+      "collection": "customer_profiles",
+      "count": 5,
+      "jsonFile": "customer_profiles.json",
+      "csvFile": "customer_profiles.csv"
+    },
+    {
+      "collection": "phone_verifications",
+      "count": 2,
+      "jsonFile": "phone_verifications.json",
+      "csvFile": "phone_verifications.csv"
+    },
+    {
+      "collection": "verified_payments",
+      "count": 0,
+      "jsonFile": "verified_payments.json",
+      "csvFile": "verified_payments.csv"
+    },
+    {
+      "collection": "payment_history",
+      "count": 0,
+      "jsonFile": "payment_history.json",
+      "csvFile": "payment_history.csv"
+    },
+    {
+      "collection": "security_audit_logs",
+      "count": 217,
+      "jsonFile": "security_audit_logs.json",
+      "csvFile": "security_audit_logs.csv"
+    },
+    {
+      "collection": "admin_users",
+      "count": 7,
+      "jsonFile": "admin_users.json",
+      "csvFile": "admin_users.csv"
+    }
+  ]
+}

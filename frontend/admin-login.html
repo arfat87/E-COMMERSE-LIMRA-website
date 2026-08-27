@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — LIMRA Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/admin.css" />
+  <link rel="icon" href="/images/logo.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/images/logo.png" />
+</head>
+<body class="admin-app">
+
+<div class="adm-login-wrap">
+  <div class="adm-login-card">
+    <div class="text-center mb-6">
+      <img src="/images/logo.png" alt="LIMRA Logo" class="w-16 h-16 mx-auto mb-3 rounded-full object-cover shadow-md border-2" style="border-color:var(--adm-green);" />
+      <p class="adm-brand">LIMRA<span>.</span></p>
+      <p class="text-sm mt-1" style="color:var(--adm-muted)">Restaurant Admin — Sign In</p>
+    </div>
+
+    <div id="auth-tabs" class="adm-auth-tabs">
+      <button data-auth-tab="login" class="adm-auth-tab active">Login</button>
+      <button data-auth-tab="signup" class="adm-auth-tab">Sign Up</button>
+    </div>
+
+    <div id="verify-email-panel" class="space-y-4 hidden">
+      <div class="text-center p-4 rounded-2xl" style="background:var(--adm-green-light)">
+        <div class="text-3xl mb-2">✉️</div>
+        <p class="font-semibold">Verify your email</p>
+        <p class="text-sm mt-2" style="color:var(--adm-muted)">
+          Enter the 6-digit code sent to<br />
+          <strong id="verify-email-display"></strong>
+        </p>
+      </div>
+      <div>
+        <label for="verify-otp" class="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style="color:var(--adm-muted)">Verification Code</label>
+        <input type="text" id="verify-otp" inputmode="numeric" maxlength="6" class="adm-input text-center text-2xl tracking-[0.4em] font-mono w-full" placeholder="000000" autocomplete="one-time-code" />
+      </div>
+      <p id="verify-error" class="text-sm hidden" style="color:#ff5b5b"></p>
+      <p id="verify-success" class="text-sm hidden" style="color:var(--adm-green)"></p>
+      <button type="button" id="verify-submit-btn" class="adm-btn adm-btn-primary w-full">Verify & Continue</button>
+      <button type="button" id="verify-resend-btn" class="adm-btn adm-btn-outline w-full">Resend code</button>
+      <button type="button" id="verify-back-btn" class="w-full text-sm py-2" style="color:var(--adm-muted)">← Back to login</button>
+    </div>
+
+    <form id="login-form" class="space-y-4">
+      <div>
+        <label class="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style="color:var(--adm-muted)">Email</label>
+        <input type="email" name="email" required class="adm-input w-full" placeholder="admin@example.com" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style="color:var(--adm-muted)">Password</label>
+        <input type="password" name="password" required minlength="6" class="adm-input w-full" placeholder="••••••••" />
+      </div>
+      <p id="login-error" class="text-sm hidden" style="color:#ff5b5b"></p>
+      <button type="submit" class="adm-btn adm-btn-primary w-full">Sign In</button>
+      <button type="button" id="login-verify-link" class="w-full text-sm py-1" style="color:var(--adm-green)">Have a verification code?</button>
+    </form>
+
+    <form id="signup-form" class="space-y-4 hidden">
+      <div>
+        <label class="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style="color:var(--adm-muted)">Email</label>
+        <input type="email" name="email" required class="adm-input w-full" placeholder="admin@example.com" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style="color:var(--adm-muted)">Password</label>
+        <input type="password" name="password" required minlength="6" class="adm-input w-full" placeholder="Min 6 characters" />
+      </div>
+      <p id="signup-error" class="text-sm hidden" style="color:#ff5b5b"></p>
+      <p id="signup-success" class="text-sm hidden" style="color:var(--adm-green)"></p>
+      <button type="submit" class="adm-btn adm-btn-primary w-full">Create Account</button>
+      <p class="text-xs text-center" style="color:var(--adm-muted)">After signup, ask the owner to grant admin access.</p>
+    </form>
+
+    <div id="google-auth-container" class="space-y-4">
+      <div class="adm-or-separator">or</div>
+      <button type="button" id="google-signin-btn" class="adm-btn adm-btn-google w-full">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+        <span id="google-btn-text">Sign in with Google</span>
+      </button>
+    </div>
+
+    <a href="/admin.html" class="block text-center text-sm mt-4 hover:underline" style="color:var(--adm-muted)">Already signed in? Go to dashboard →</a>
+    <a href="/" class="block text-center text-sm mt-3 hover:underline" style="color:var(--adm-green)">← Back to Restaurant Site</a>
+  </div>
+</div>
+
+<script type="module" src="/src/admin-login.js"></script>
+</body>
+</html>

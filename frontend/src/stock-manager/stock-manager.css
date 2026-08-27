@@ -1,0 +1,420 @@
+/* ==========================================================================
+   LIMRA Stock Manager — Stock Summary Dashboard UI & Architecture
+   ========================================================================== */
+
+:root {
+  /* Canvas & Panel Colors */
+  --stock-bg: #070a12;
+  --stock-bg-gradient: radial-gradient(circle at 50% 0%, #111827 0%, #070a12 70%);
+  --stock-card-bg: rgba(15, 23, 42, 0.82);
+  --stock-card-bg-hover: rgba(30, 41, 59, 0.92);
+  --stock-border: rgba(255, 255, 255, 0.08);
+  --stock-border-hover: rgba(255, 255, 255, 0.18);
+
+  /* Light-Blue Theme Banner Variables */
+  --sky-banner-bg: #e0f2fe;
+  --sky-banner-text: #0369a1;
+  --sky-banner-border: #bae6fd;
+
+  /* Status Accents & Glows */
+  --stock-emerald: #10b981;
+  --stock-emerald-glow: rgba(16, 185, 129, 0.35);
+  --stock-amber: #f59e0b;
+  --stock-rose: #ef4444;
+  --stock-rose-glow: rgba(239, 68, 68, 0.35);
+  --stock-teal: #14b8a6;
+
+  /* Typography */
+  --stock-font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Base Body Styling */
+body.stock-page-body {
+  background: var(--stock-bg-gradient);
+  background-attachment: fixed;
+  color: #f1f5f9;
+  font-family: var(--stock-font);
+  min-height: 100vh;
+}
+
+/* ── Custom Scrollbars ────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(7, 10, 18, 0.9);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(51, 65, 85, 0.8);
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--stock-emerald);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Top Header Navigation Bar ───────────────────────────────── */
+.stock-header-bar {
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ── Glass Cards ─────────────────────────────────────────────── */
+.stock-glass-card {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.25rem;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+/* ── KPI Summary Banner Container ────────────────────────────── */
+.stock-kpi-banner {
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.25rem;
+  padding: 1.25rem;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+.stock-kpi-val {
+  font-size: 1.625rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.stock-kpi-val.val-red {
+  color: #ef4444 !important;
+}
+
+/* ── Status Badges ────────────────────────────────────────────── */
+.stock-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+}
+
+.stock-badge-healthy {
+  background: rgba(6, 78, 59, 0.6);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.stock-badge-low {
+  background: rgba(120, 53, 15, 0.6);
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.stock-badge-out {
+  background: rgba(136, 19, 55, 0.6);
+  color: #fda4af;
+  border-color: rgba(244, 63, 94, 0.3);
+}
+
+.stock-badge-negative {
+  background: rgba(153, 27, 27, 0.8);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* ── Vertical Card Feed Items ────────────────────────────────── */
+.stock-item-feed-card {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  padding: 1.125rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+
+.stock-item-feed-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(30, 41, 59, 0.9);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+}
+
+.stock-item-feed-card.is-negative {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(23, 15, 25, 0.85);
+}
+
+.stock-item-feed-card.is-negative:hover {
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+/* ── Filter Pills & Buttons ──────────────────────────────────── */
+.stock-pill-btn {
+  padding: 0.375rem 0.875rem;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(7, 10, 18, 0.85);
+  color: #94a3b8;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.stock-pill-btn:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(30, 41, 59, 0.7);
+}
+
+.stock-pill-btn.active {
+  background: rgba(6, 78, 59, 0.8);
+  border-color: rgba(16, 185, 129, 0.6);
+  color: #34d399;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
+}
+
+/* ── Segmented Toggle Buttons ────────────────────────────────── */
+.erp-toggle-group {
+  display: flex;
+  background: rgba(7, 10, 18, 0.9);
+  padding: 0.25rem;
+  border-radius: 0.875rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.erp-toggle-btn {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-align: center;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: none;
+}
+
+.erp-toggle-btn.btn-add.active {
+  background: rgba(6, 78, 59, 0.9);
+  color: #34d399;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+}
+
+.erp-toggle-btn.btn-reduce.active {
+  background: rgba(136, 19, 55, 0.9);
+  color: #fda4af;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.25);
+}
+
+/* ── Interactive Table Styling ───────────────────────────────── */
+.stock-table-container {
+  background: var(--stock-card-bg);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--stock-border);
+  border-radius: 1.25rem;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+}
+
+.stock-table {
+  width: 100%;
+  text-align: left;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.stock-table th {
+  background: rgba(7, 10, 18, 0.85);
+  backdrop-filter: blur(8px);
+  color: #94a3b8;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stock-table td {
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.8125rem;
+}
+
+.stock-table-row {
+  transition: all 0.2s ease;
+  position: relative;
+  cursor: pointer;
+}
+
+.stock-table-row:hover {
+  background: rgba(30, 41, 59, 0.55);
+}
+
+/* ── Modals & Backdrop ────────────────────────────────────────── */
+.stock-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(7, 10, 18, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.stock-modal-backdrop:not(.hidden) {
+  display: flex !important;
+}
+
+.stock-modal-backdrop.hidden {
+  display: none !important;
+}
+
+.stock-modal-card {
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1.25rem;
+  max-width: 32rem;
+  width: 100%;
+  padding: 1.5rem;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.9);
+  animation: stockModalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes stockModalIn {
+  from { opacity: 0; transform: scale(0.94) translateY(10px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ── Toast Alerts ─────────────────────────────────────────────── */
+.stock-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 1.125rem;
+  border-radius: 0.875rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(12px);
+  animation: stockToastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes stockToastIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Monthly Calculation UI Components ────────────────────────── */
+.monthly-cat-card {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  padding: 1rem;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.3);
+}
+
+.monthly-cat-card:hover {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(52, 211, 153, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+.monthly-matrix-row {
+  transition: background-color 0.15s ease;
+}
+
+.monthly-matrix-row:hover {
+  background-color: rgba(30, 41, 59, 0.6);
+}
+
+.badge-monthly-status {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.badge-status-restocked {
+  background: rgba(6, 78, 59, 0.6);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.badge-status-consumed {
+  background: rgba(120, 53, 15, 0.6);
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.badge-status-low {
+  background: rgba(136, 19, 55, 0.6);
+  color: #fda4af;
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.badge-status-negative {
+  background: rgba(153, 27, 27, 0.8);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+.badge-status-unchanged {
+  background: rgba(30, 41, 59, 0.6);
+  color: #94a3b8;
+  border-color: rgba(71, 85, 105, 0.4);
+}
+
+/* ── Print Stylesheet ─────────────────────────────────────────── */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  header, .stock-no-print, #toast-container, .stock-modal-backdrop {
+    display: none !important;
+  }
+  .stock-table-container, .stock-item-feed-card, .stock-glass-card, .monthly-cat-card {
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}

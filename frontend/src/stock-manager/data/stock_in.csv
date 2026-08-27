@@ -1,0 +1,176 @@
+id,date,item_id,item_sku,item_name,qty,unit,cost_price,supplier,notes,created_at
+in_rep_1_1785854327201,04-08-2026,stk_1,J001,Rice (রাইস),4,packet,2574,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_2_1785854327201,04-08-2026,stk_2,J002,Palm Oil (পাম অয়েল),150,packet,107,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_3_1785854327201,04-08-2026,stk_3,J003,Refined Oil (রেফাইন্ড অয়েল),5,L,120,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_4_1785854327201,04-08-2026,stk_4,J004,Mustard Oil (মাস্টার অয়েল),5,L,180,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_5_1785854327201,04-08-2026,stk_5,J005,Maida (মাইদা),50,kg,36.4,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_6_1785854327201,04-08-2026,stk_6,J006,Atta (আটা),30,kg,44,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_7_1785854327201,04-08-2026,stk_7,J007,Chowmein Noodle (চাউমিন),100,packet,10.4,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_8_1785854327201,04-08-2026,stk_8,J008,Tomato Sauce (টমেটো sos),30,packet,33.6,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_9_1785854327201,04-08-2026,stk_9,J009,Chili Sauce,15,pcs,33.6,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_10_1785854327201,04-08-2026,stk_10,J010,Soy Sauce,4,pcs,65,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_11_1785854327201,04-08-2026,stk_11,J011,Vinegar,10,pcs,45,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_12_1785854327201,04-08-2026,stk_12,J012,Corn Flour,12,kg,62,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_13_1785854327201,04-08-2026,stk_13,J013,Kasuri Methi,120,pcs,12.5,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_14_1785854327201,04-08-2026,stk_14,J014,Chat Masala,20,packet,40,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_15_1785854327201,04-08-2026,stk_15,J015,Kashmiri Chilli Powder,10,pcs,52,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_16_1785854327201,04-08-2026,stk_16,J016,Ajinomoto (Ajina),7,kg,180,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_17_1785854327201,04-08-2026,stk_17,J017,Chilli Powder,80,packet,18.75,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_18_1785854327201,04-08-2026,stk_18,J018,Haldi (Turmeric Powder),50,packet,12.5,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_19_1785854327201,04-08-2026,stk_19,J019,Jeera (Cumin Seeds),3000,g,0.23,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_20_1785854327201,04-08-2026,stk_20,J020,Dal (Pulses),2000,g,0.14,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_21_1785854327201,04-08-2026,stk_21,J021,Kabuli Chana,3000,g,0.16,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_22_1785854327201,04-08-2026,stk_22,J022,Mix Dal,2000,g,0.1,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_23_1785854327201,04-08-2026,stk_23,J023,Attar / Essence,6,pcs,46.6,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_24_1785854327201,04-08-2026,stk_24,J024,Red Food Color,4,box,85,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_25_1785854327201,04-08-2026,stk_25,J025,Yellow Food Color,2,box,85,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_26_1785854327201,04-08-2026,stk_26,J026,Green Food Color,2,box,85,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_27_1785854327201,04-08-2026,stk_28,J028,Mouri (Fennel Seeds),1000,g,0.13,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_28_1785854327201,04-08-2026,stk_29,J029,Sugar,7,kg,0.06,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_29_1785854327201,04-08-2026,stk_30,J030,Posto (Poppy Seeds),10,packet,20,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_30_1785854327201,04-08-2026,stk_31,J031,Dalda / Vanaspati,12,packet,15,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_31_1785854327201,04-08-2026,stk_32,J032,Kaju (Cashew Nuts),2000,g,0.6,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_32_1785854327201,04-08-2026,stk_33,J033,Mogoz (Melon Seeds),500,g,0.54,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_33_1785854327201,04-08-2026,stk_34,J034,Elachi (Cardamom),700,g,3.1,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_34_1785854327201,04-08-2026,stk_35,J035,Long (Cloves),300,g,0.46,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_35_1785854327201,04-08-2026,stk_36,J036,Jaitri (Mace),450,g,2.58,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_36_1785854327201,04-08-2026,stk_37,J037,Dalchini (Cinnamon),500,g,0.28,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_37_1785854327201,04-08-2026,stk_38,J038,Starful (Star Anise),500,g,0.78,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_38_1785854327201,04-08-2026,stk_39,J039,Rose Petals,450,g,0.8,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_39_1785854327201,04-08-2026,stk_40,J040,Shahi Jeera,5,packet,230,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_40_1785854327201,04-08-2026,stk_41,J041,Black Pepper (Gol Morich),900,g,0.78,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_41_1785854327201,04-08-2026,stk_42,J042,Pure Ghee,3,box,590,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_42_1785854327201,04-08-2026,stk_43,J043,Baking Powder,1,box,80,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_43_1785854327201,04-08-2026,stk_44,J044,Mushroom,3,box,145,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_44_1785854327201,04-08-2026,stk_46,J046,Papad,30,packet,14,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_1785948630433,05-08-2026,stk_125,J125,Vim Liquid Dishwash,2,packet,0,,,2026-08-05T16:50:30.433Z
+in_rep_45_1785854327201,04-08-2026,stk_49,J049,Black Salt (Bit Nun),2,kg,25,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_46_1785854327201,04-08-2026,stk_50,J050,Regular Salt,25,pcs,10.4,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_47_1785854327201,04-08-2026,stk_51,J051,Dhania (Coriander Seeds),1500,g,0.18,Egra Supplier,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_48_1785854327201,04-08-2026,stk_54,J054,Milk (দুধ),2,packet,30,Local Dairy Farm,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_49_1785854327201,04-08-2026,stk_55,J055,Dahi (দই / Curd),4,kg,60,Local Dairy Farm,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_50_1785854327201,04-08-2026,stk_56,J056,Paneer (পনির),150,g,40,Amul Dairy Egra,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_51_1785854327201,04-08-2026,stk_57,J057,Butter,1,packet,60,Amul Dairy Egra,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_52_1785854327201,04-08-2026,stk_58,J058,Amul Fresh Cream,5,packet,75,Amul Dairy Egra,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_rep_53_1785854327201,04-08-2026,stk_59,J059,Cheese Block / Slice,1,packet,145,Amul Dairy Egra,Opening stock balance entry from inventory report,2026-08-04T14:38:54.196Z
+in_1785860827603,04-08-2026,stk_47,J047,Kissan Tomato Sauce Pouch,180,pcs,0,,,2026-08-04T16:27:07.604Z
+in_1785860841586,04-08-2026,stk_48,J048,Jaljeera Powder,50,pcs,0,,,2026-08-04T16:27:21.586Z
+in_1785860857242,04-08-2026,stk_52,J052,Egg (ডিম),7,packet,0,,,2026-08-04T16:27:37.242Z
+in_1785861316346,04-08-2026,stk_59,J059,Cheese Block / Slice,8,pcs,0,,,2026-08-04T16:35:16.346Z
+in_1785867226260,04-08-2026,stk_29,J029,Sugar,7000,g,0,,,2026-08-04T18:13:46.261Z
+in_1785868870914,04-08-2026,stk_75,J075,Potato (আলু),20,kg,0,,,2026-08-04T18:41:10.914Z
+in_1785868903675,04-08-2026,stk_76,J076,Onion (পেঁয়াজ),30,kg,0,,,2026-08-04T18:41:43.676Z
+in_1785868940687,04-08-2026,stk_79,J079,Capsicum,4.5,kg,0,,,2026-08-04T18:42:20.687Z
+in_1785868961589,04-08-2026,stk_80,J080,Carrot,3,kg,0,,,2026-08-04T18:42:41.590Z
+in_1785868986681,04-08-2026,stk_82,J082,Green Chilli (কাঁচা লঙ্কা),2.5,kg,0,,,2026-08-04T18:43:06.681Z
+in_1785869012766,04-08-2026,stk_83,J083,Tomato (টমেটো),5,kg,0,,,2026-08-04T18:43:32.766Z
+in_1785869053424,04-08-2026,stk_84,J084,Cabbage (বাঁধাকপি),10,kg,0,,,2026-08-04T18:44:13.425Z
+in_1785869072068,04-08-2026,stk_85,J085,Lemon (লেবু),50,pcs,0,,,2026-08-04T18:44:32.068Z
+in_1785869091357,04-08-2026,stk_86,J086,Dhania Pata (Coriander),9,kg,0,,,2026-08-04T18:44:51.357Z
+in_1785869141952,04-08-2026,stk_88,J088,Cucumber (শসা),5,kg,0,,,2026-08-04T18:45:41.952Z
+in_1785869360353,04-08-2026,stk_83,J083,Tomato (টমেটো),1,kg,0,,,2026-08-04T18:49:20.353Z
+in_1785870020726,04-08-2026,stk_54,J054,Milk (দুধ),3,packet,0,,,2026-08-04T19:00:20.726Z
+in_1785870126651,04-08-2026,stk_55,J055,Dahi (দই / Curd),16,kg,0,,,2026-08-04T19:02:06.651Z
+in_1785940034958,05-08-2026,stk_27,J027,Dry Chilli,1000,g,0,,,2026-08-05T14:27:14.958Z
+in_1785942899649,05-08-2026,stk_1785942899649,J135,rabar hand glove,3,packet,0,,,2026-08-05T15:14:59.650Z
+in_1785942932899,05-08-2026,stk_104,J104,1000ml Container,500,pcs,0,,,2026-08-05T15:15:32.899Z
+in_1785942956169,05-08-2026,stk_105,J105,750ml Silver Container,500,pcs,0,,,2026-08-05T15:15:56.169Z
+in_1785942972849,05-08-2026,stk_106,J106,750ml Container,500,pcs,0,,,2026-08-05T15:16:12.849Z
+in_1785942986785,05-08-2026,stk_107,J107,500ml Container,150,pcs,0,,,2026-08-05T15:16:26.785Z
+in_1785943012719,05-08-2026,stk_111,J111,16x20 Carry Bag,10,packet,0,,,2026-08-05T15:16:52.719Z
+in_1785943030001,05-08-2026,stk_112,J112,13x16 Carry Bag,10,packet,0,,,2026-08-05T15:17:10.001Z
+in_1785943055940,05-08-2026,stk_113,J113,Rubber Band Small (Gardar),250,kg,0,,,2026-08-05T15:17:35.940Z
+in_1785943090313,05-08-2026,stk_114,J114,Rubber Band Big (Gardar),250,kg,0,,,2026-08-05T15:18:10.314Z
+in_1785943148535,05-08-2026,stk_113,J113,Rubber Band Small (Gardar),0.25,kg,0,,,2026-08-05T15:19:08.535Z
+in_1785943160330,05-08-2026,stk_114,J114,Rubber Band Big (Gardar),0.25,kg,0,,,2026-08-05T15:19:20.330Z
+in_1785943176084,05-08-2026,stk_115,J115,Cling Wrap (Clean Tape),2,pcs,0,,,2026-08-05T15:19:36.084Z
+in_1785943195061,05-08-2026,stk_116,J116,7x9 SP Pouch,5,packet,0,,,2026-08-05T15:19:55.061Z
+in_1785943213661,05-08-2026,stk_117,J117,9x12 SP Pouch,3,packet,0,,,2026-08-05T15:20:13.661Z
+in_1785943226909,05-08-2026,stk_118,J118,6x8 SP Pouch,3,pcs,0,,,2026-08-05T15:20:26.909Z
+in_1785943246883,05-08-2026,stk_121,J121,Silver Roll Foil,1,packet,0,,,2026-08-05T15:20:46.883Z
+in_1785943288363,05-08-2026,stk_122,J122,plastic Hand Gloves,2,packet,0,,,2026-08-05T15:21:28.363Z
+in_1785943319399,05-08-2026,stk_123,J123,Chef Cap,2,packet,0,,,2026-08-05T15:21:59.399Z
+in_1785943419314,05-08-2026,stk_108,J108,Tissue Paper,30,packet,0,,,2026-08-05T15:23:39.314Z
+in_1785943473242,05-08-2026,stk_133,J00133,thermal copy,33,pcs,0,,,2026-08-05T15:24:33.243Z
+in_1785944787556,05-08-2026,stk_109,J109,Raita Pouch,10,packet,0,,,2026-08-05T15:46:27.556Z
+in_1785944822934,05-08-2026,stk_119,J119,Plastic Spoon,2,packet,0,,,2026-08-05T15:47:02.934Z
+in_1785945217893,05-08-2026,stk_1785945217892,J137,STRO,2,packet,0,,,2026-08-05T15:53:37.893Z
+in_1785945290174,05-08-2026,stk_1785945290174,J138,CAMPA JEERA,24,pcs,0,,,2026-08-05T15:54:50.175Z
+in_1785946977550,05-08-2026,stk_62,J062,Campa White 500ml,27,pcs,0,,,2026-08-05T16:22:57.550Z
+in_1785947026044,05-08-2026,stk_62,J062,Campa White 500ml,31,pcs,0,,,2026-08-05T16:23:46.045Z
+in_1785947095859,05-08-2026,stk_61,J061,Campa Black 500ml,27,pcs,0,,,2026-08-05T16:24:55.860Z
+in_1785947171877,05-08-2026,stk_60,J060,Campa White 100ml,24,pcs,0,,,2026-08-05T16:26:11.877Z
+in_1785947215012,05-08-2026,stk_73,J073,Sprite 500ml,4,pcs,0,,,2026-08-05T16:26:55.012Z
+in_1785947241730,05-08-2026,stk_69,J069,Kinley Soda,4,pcs,0,,,2026-08-05T16:27:21.730Z
+in_1785947300869,05-08-2026,stk_64,J064,Bisleri Water 1L,73,pcs,0,,,2026-08-05T16:28:20.869Z
+in_1785947315263,05-08-2026,stk_67,J067,Bisleri Water 500ml,45,pcs,0,,,2026-08-05T16:28:35.263Z
+in_1785948089347,05-08-2026,stk_124,J124,Vim Soap / Bar (Bhim Srap),20,pcs,0,,,2026-08-05T16:41:29.347Z
+in_1785948170274,05-08-2026,stk_126,J126,Surf Excel Detergent,3,packet,0,,,2026-08-05T16:42:50.274Z
+in_1785948330748,05-08-2026,stk_127,J127,Hand Wash Liquid,2,packet,0,,,2026-08-05T16:45:30.748Z
+in_1785948591761,05-08-2026,stk_129,J129,Phenyl (Finaile),1,packet,0,,,2026-08-05T16:49:51.761Z
+in_1785948613538,05-08-2026,stk_128,J128,Harpic Toilet Cleaner,1,packet,0,,,2026-08-05T16:50:13.538Z
+in_1785948738473,05-08-2026,stk_79,J079,Capsicum,6,kg,0,,,2026-08-05T16:52:18.473Z
+in_1785948763873,05-08-2026,stk_80,J080,Carrot,5,kg,0,,,2026-08-05T16:52:43.874Z
+in_1785948786679,05-08-2026,stk_82,J082,Green Chilli (কাঁচা লঙ্কা),2,kg,0,,,2026-08-05T16:53:06.679Z
+in_1785948852865,05-08-2026,stk_83,J083,Tomato (টমেটো),7,kg,0,,,2026-08-05T16:54:12.865Z
+in_1785948995807,05-08-2026,stk_84,J084,Cabbage (বাঁধাকপি),10,kg,0,,,2026-08-05T16:56:35.807Z
+in_1785949013119,05-08-2026,stk_88,J088,Cucumber (শসা),5,kg,0,,,2026-08-05T16:56:53.119Z
+in_1785949026952,05-08-2026,stk_27,J027,Dry Chilli,1000,g,0,,,2026-08-05T16:57:06.952Z
+in_1785949059694,05-08-2026,stk_77,J077,Ginger (আদা),3,kg,0,,,2026-08-05T16:57:39.695Z
+in_1785949070581,05-08-2026,stk_78,J078,Garlic (রসুন),3,kg,0,,,2026-08-05T16:57:50.581Z
+in_1785949082733,05-08-2026,stk_81,J081,Beans,2.5,kg,0,,,2026-08-05T16:58:02.733Z
+in_1785949096906,05-08-2026,stk_55,J055,Dahi (দই / Curd),4,kg,0,,,2026-08-05T16:58:16.906Z
+in_1785949120021,05-08-2026,stk_54,J054,Milk (দুধ),2,packet,0,,,2026-08-05T16:58:40.021Z
+in_1785949134277,05-08-2026,stk_57,J057,Butter,5,packet,0,,,2026-08-05T16:58:54.277Z
+in_1785949162502,05-08-2026,stk_53,J053,Staff Rice,10,kg,0,,,2026-08-05T16:59:22.502Z
+in_1786023296387,06-08-2026,stk_75,J075,Potato (আলু),10,kg,0,,,2026-08-06T13:34:56.388Z
+in_1786023315111,06-08-2026,stk_76,J076,Onion (পেঁয়াজ),17,kg,0,,,2026-08-06T13:35:15.111Z
+in_1786023338366,06-08-2026,stk_56,J056,Paneer (পনির),250,g,0,,,2026-08-06T13:35:38.367Z
+in_1786023349415,06-08-2026,stk_54,J054,Milk (দুধ),2,packet,0,,,2026-08-06T13:35:49.415Z
+in_1786023554320,06-08-2026,stk_54,J054,Milk (দুধ),1,packet,0,,,2026-08-06T13:39:14.321Z
+in_1786024009515,06-08-2026,stk_55,J055,Dahi (দই / Curd),1,kg,0,,,2026-08-06T13:46:49.516Z
+in_1786024035499,06-08-2026,stk_55,J055,Dahi (দই / Curd),2,kg,0,,,2026-08-06T13:47:15.499Z
+in_1786033809641,06-08-2026,stk_76,J076,Onion (পেঁয়াজ),5,kg,0,,,2026-08-06T16:30:09.643Z
+in_1786107725442,07-08-2026,stk_52,J052,Egg (ডিম),4,packet,0,,,2026-08-07T13:02:05.443Z
+in_1786198115506,08-08-2026,stk_54,J054,Milk (দুধ),2,packet,0,,,2026-08-08T14:08:35.507Z
+in_1786198132448,08-08-2026,stk_55,J055,Dahi (দই / Curd),3,kg,0,,,2026-08-08T14:08:52.448Z
+in_1786198191952,08-08-2026,stk_76,J076,Onion (পেঁয়াজ),3,kg,0,,,2026-08-08T14:09:51.952Z
+in_1786291795902,09-08-2026,stk_54,J054,Milk (দুধ),2,packet,0,,,2026-08-09T16:09:55.903Z
+in_1786291805824,09-08-2026,stk_55,J055,Dahi (দই / Curd),5,kg,0,,,2026-08-09T16:10:05.824Z
+in_1786291822920,09-08-2026,stk_56,J056,Paneer (পনির),0.5,g,0,,,2026-08-09T16:10:22.921Z
+in_1786291841072,09-08-2026,stk_58,J058,Amul Fresh Cream,5,packet,0,,,2026-08-09T16:10:41.072Z
+in_1786291892277,09-08-2026,stk_75,J075,Potato (আলু),50,kg,0,,,2026-08-09T16:11:32.277Z
+in_1786291910321,09-08-2026,stk_76,J076,Onion (পেঁয়াজ),50,kg,0,,,2026-08-09T16:11:50.321Z
+in_1786292005255,09-08-2026,stk_64,J064,Bisleri Water 1L,120,pcs,0,,,2026-08-09T16:13:25.255Z
+in_1786378387144,10-08-2026,stk_52,J052,Egg (ডিম),7,packet,0,,,2026-08-10T16:13:07.144Z
+in_1786429049189,11-08-2026,stk_4,J004,Mustard Oil (মাস্টার অয়েল),1,L,0,,,2026-08-11T06:17:29.190Z
+in_1786429174396,11-08-2026,stk_16,J016,Ajinomoto (Ajina),4,kg,0,,,2026-08-11T06:19:34.397Z
+in_1786459186258,11-08-2026,stk_54,J054,Milk (দুধ),2,packet,0,,,2026-08-11T14:39:46.258Z
+in_1786459199983,11-08-2026,stk_55,J055,Dahi (দই / Curd),8,kg,0,,,2026-08-11T14:39:59.983Z
+in_1786459223902,11-08-2026,stk_83,J083,Tomato (টমেটো),2,kg,0,,,2026-08-11T14:40:23.902Z
+in_1786459246307,11-08-2026,stk_86,J086,Dhania Pata (Coriander),0.3,kg,0,,,2026-08-11T14:40:46.307Z
+in_1786550834342,12-08-2026,stk_1,J001,Rice (রাইস),1,packet,0,,,2026-08-12T16:07:14.343Z
+in_1786550852209,12-08-2026,stk_54,J054,Milk (দুধ),2,packet,0,,,2026-08-12T16:07:32.209Z
+in_1786550872712,12-08-2026,stk_55,J055,Dahi (দই / Curd),5,kg,0,,,2026-08-12T16:07:52.712Z
+in_1786550891134,12-08-2026,stk_57,J057,Butter,4,packet,0,,,2026-08-12T16:08:11.134Z
+in_1786550911117,12-08-2026,stk_77,J077,Ginger (আদা),3,kg,0,,,2026-08-12T16:08:31.117Z
+in_1786550923603,12-08-2026,stk_78,J078,Garlic (রসুন),3,kg,0,,,2026-08-12T16:08:43.603Z
+in_1786550955440,12-08-2026,stk_86,J086,Dhania Pata (Coriander),2,kg,0,,,2026-08-12T16:09:15.440Z
+in_1786550977904,12-08-2026,stk_110,J110,Chatni Box,10,packet,0,,,2026-08-12T16:09:37.904Z
+in_1786636277678,13-08-2026,stk_55,J055,Dahi (দই / Curd),5,kg,0,,,2026-08-13T15:51:17.678Z
+in_1786642394437,13-08-2026,stk_55,J055,Dahi (দই / Curd),3,kg,0,,,2026-08-13T17:33:14.437Z
+in_1786686672238,14-08-2026,stk_85,J085,Lemon (লেবু),16,pcs,0,,,2026-08-14T05:51:12.238Z
+in_1786688947671,14-08-2026,stk_79,J079,Capsicum,2.5,kg,0,,,2026-08-14T06:29:07.671Z
+in_1786688988804,14-08-2026,stk_83,J083,Tomato (টমেটো),5.2,kg,0,,,2026-08-14T06:29:48.804Z
+in_1786689057679,14-08-2026,stk_80,J080,Carrot,3.55,kg,0,,,2026-08-14T06:30:57.679Z
+in_1786689137555,14-08-2026,stk_82,J082,Green Chilli (কাঁচা লঙ্কা),2.15,kg,0,,,2026-08-14T06:32:17.555Z
+in_1786689292250,14-08-2026,stk_88,J088,Cucumber (শসা),2.4,kg,0,,,2026-08-14T06:34:52.250Z
+in_1786729085327,14-08-2026,stk_71,J071,Thums Up 500ml,24,pcs,0,,,2026-08-14T17:38:05.327Z
+in_1786729114207,14-08-2026,stk_73,J073,Sprite 500ml,24,pcs,0,,,2026-08-14T17:38:34.207Z
+in_1786800343048,15-08-2026,stk_3,J003,Refined Oil (রেফাইন্ড অয়েল),1,L,0,,,2026-08-15T13:25:43.048Z
+in_1786800354459,15-08-2026,stk_1,J001,Rice (রাইস),5,packet,0,,,2026-08-15T13:25:54.459Z
+in_1786800368827,15-08-2026,stk_76,J076,Onion (পেঁয়াজ),7,kg,0,,,2026-08-15T13:26:08.827Z
+in_1786800629301,15-08-2026,stk_54,J054,Milk (দুধ),3,packet,0,,,2026-08-15T13:30:29.302Z
+in_1786800645014,15-08-2026,stk_55,J055,Dahi (দই / Curd),4,packet,0,,,2026-08-15T13:30:45.014Z
+in_1786800721322,15-08-2026,stk_61,J061,Campa Black 500ml,24,pcs,0,,,2026-08-15T13:32:01.322Z
+in_1786800737853,15-08-2026,stk_62,J062,Campa White 500ml,24,pcs,0,,,2026-08-15T13:32:17.853Z

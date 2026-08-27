@@ -1,0 +1,352 @@
+[
+  {
+    "_id": "6a899dd65cf5fe5751834c68",
+    "order_number": "ORD-20260822-3845",
+    "customer_name": "Arfat Ali",
+    "customer_phone": "9876543210",
+    "order_type": "delivery",
+    "table_number": null,
+    "table_zone": null,
+    "round_number": 1,
+    "items": [
+      {
+        "id": 1,
+        "name": "Hot & Sour Veg Soup",
+        "quantity": 2,
+        "unit_price": 75,
+        "line_total": 150
+      }
+    ],
+    "subtotal": 150,
+    "total_amount": 150,
+    "notes": "Test Atlas Order",
+    "location": {
+      "latitude": null,
+      "longitude": null,
+      "landmark": null,
+      "delivery_notes": null
+    },
+    "payment": {
+      "method": "cod",
+      "status": "pending",
+      "txn_ref": null
+    },
+    "status": "pending",
+    "created_at": "2026-08-22T13:02:14.975Z",
+    "updated_at": "2026-08-22T13:02:14.975Z"
+  },
+  {
+    "_id": "6a899f903fb8c43ecce7be4e",
+    "id": "5c3b62f8-f7cc-4173-a146-6782a6888d32",
+    "created_at": "2026-08-22T11:38:01.742Z",
+    "customer_name": "SK ARFAT ALI",
+    "customer_phone": "7501299357",
+    "delivery_notes": null,
+    "landmark": null,
+    "latitude": null,
+    "location_verified": false,
+    "longitude": null,
+    "notes": "[TABLE: 4] [FINAL_BILL] [KOTS: #471] [CGST: 2.5%] [SGST: 2.5%] [PAYMENT: cash]",
+    "order_number": 471,
+    "order_type": "table",
+    "payment_status": "paid",
+    "status": "delivered",
+    "table_number": 4,
+    "table_zone": "indoor",
+    "total_amount": "3045.00",
+    "txn_ref": null,
+    "updated_at": "2026-08-22T12:17:55.050Z",
+    "user_id": "12345678-1234-5678-90ab-cdef12345678",
+    "_migrated_at": "2026-08-22T13:49:15.610Z",
+    "_migrated_from": "\"public\".\"orders\""
+  },
+  {
+    "_id": "6a899f913fb8c43ecce7be4f",
+    "id": "608ce1cc-cc20-4275-b89c-f06b4ebca8ae",
+    "created_at": "2026-08-22T11:25:33.502Z",
+    "customer_name": "Ataur Rahaman Khan",
+    "customer_phone": "8250390518",
+    "delivery_notes": null,
+    "landmark": null,
+    "latitude": null,
+    "location_verified": false,
+    "longitude": null,
+    "notes": "[TABLE: 10] [FINAL_BILL] [KOTS: #469] [CGST: 2.5%] [SGST: 2.5%] [PAYMENT: cash]",
+    "order_number": 469,
+    "order_type": "table",
+    "payment_status": "paid",
+    "status": "delivered",
+    "table_number": 10,
+    "table_zone": "outdoor",
+    "total_amount": "682.50",
+    "txn_ref": null,
+    "updated_at": "2026-08-22T12:18:01.361Z",
+    "user_id": "12345678-1234-5678-90ab-cdef12345678",
+    "_migrated_at": "2026-08-22T13:49:15.610Z",
+    "_migrated_from": "\"public\".\"orders\""
+  },
+  {
+    "_id": "6a899f913fb8c43ecce7be50",
+    "id": "1941300f-a37a-484b-adfb-206cef9056c6",
+    "created_at": "2026-08-22T11:04:41.923Z",
+    "customer_name": "SK ARFAT ALI",
+    "customer_phone": "7501299357",
+    "delivery_notes": null,
+    "landmark": null,
+    "latitude": null,
+    "location_verified": false,
+    "longitude": null,
+    "notes": "[TABLE: 12] [FINAL_BILL] [KOTS: #468] [CGST: 2.5%] [SGST: 2.5%] [PAYMENT: cash]",
+    "order_number": 468,
+    "order_type": "table",
+    "payment_status": "paid",
+    "status": "delivered",
+    "table_number": 12,
+    "table_zone": "outdoor",
+    "total_amount": "441.00",
+    "txn_ref": null,
+    "updated_at": "2026-08-22T12:18:05.464Z",
+    "user_id": "12345678-1234-5678-90ab-cdef12345678",
+    "_migrated_at": "2026-08-22T13:49:15.610Z",
+    "_migrated_from": "\"public\".\"orders\""
+  },
+  {
+    "_id": "6a899f913fb8c43ecce7be51",
+    "id": "86cda1af-03b2-49a7-99df-97b394a7a78c",
+    "created_at": "2026-08-22T11:33:49.235Z",
+    "customer_name": "SK ARFAT ALI",
+    "customer_phone": "7501299357",
+    "delivery_notes": null,
+    "landmark": null,
+    "latitude": null,
+    "location_verified": false,
+    "longitude": null,
+    "notes": "[TABLE: 1] [FINAL_BILL] [KOTS: #03] [CGST: 2.5%] [SGST: 2.5%] [PAYMENT: cash]",
+    "order_number": 470,
+    "order_type": "table",
+    "payment_status": "paid",
+    "status": "delivered",
+    "table_number": 1,
+    "table_zone": "indoor",
+    "total_amount": "1128.75",
+    "txn_ref": null,
+    "updated_at": "2026-08-22T11:39:53.176Z",
+    "user_id": "12345678-1234-5678-90ab-cdef12345678",
+    "_migrated_at": "2026-08-22T13:49:15.610Z",
+    "_migrated_from": "\"public\".\"orders\""
+  },
+  {
+    "_id": "6a89a0a8e87083af550ea5e7",
+    "order_number": "ORD-20260822-7272",
+    "customer_name": "SK Arfat Ali",
+    "customer_phone": "7501299357",
+    "order_type": "delivery",
+    "table_number": null,
+    "table_zone": null,
+    "round_number": 1,
+    "items": [
+      {
+        "menu_item_id": 1,
+        "item_name": "Hot & Sour Veg Soup",
+        "quantity": 1,
+        "unit_price": 75,
+        "line_total": 75
+      }
+    ],
+    "subtotal": 75,
+    "total_amount": 75,
+    "notes": "Ring bell on arrival",
+    "latitude": null,
+    "longitude": null,
+    "landmark": null,
+    "delivery_notes": null,
+    "location_verified": false,
+    "status": "pending",
+    "payment_status": "paid",
+    "txn_ref": null,
+    "created_at": "2026-08-22T13:14:16.656Z",
+    "updated_at": "2026-08-22T13:14:18.431Z",
+    "payment": {
+      "notes": "Cash on delivery confirmed"
+    }
+  },
+  {
+    "_id": "6a89a0a8e87083af550ea5ea",
+    "order_number": "ORD-20260822-3331",
+    "customer_name": "Dine In Guest",
+    "customer_phone": "9876543210",
+    "order_type": "table",
+    "table_number": 5,
+    "table_zone": "indoor",
+    "round_number": 1,
+    "items": [
+      {
+        "menu_item_id": 58,
+        "item_name": "Chicken Biryani",
+        "quantity": 2,
+        "unit_price": 220,
+        "line_total": 440
+      }
+    ],
+    "subtotal": 440,
+    "total_amount": 440,
+    "notes": "[ROUND: 1] [TABLE: 5]",
+    "latitude": null,
+    "longitude": null,
+    "landmark": null,
+    "delivery_notes": null,
+    "location_verified": false,
+    "status": "pending",
+    "payment_status": "pending",
+    "txn_ref": null,
+    "created_at": "2026-08-22T13:14:16.959Z",
+    "updated_at": "2026-08-22T13:14:16.959Z"
+  },
+  {
+    "_id": "6a89a0a9e87083af550ea5ed",
+    "order_number": "ORD-20260822-1970",
+    "parent_order_id": "6a89a0a8e87083af550ea5ea",
+    "customer_name": "Dine In Guest",
+    "customer_phone": "9876543210",
+    "order_type": "table",
+    "table_number": 5,
+    "table_zone": "indoor",
+    "round_number": 2,
+    "is_subsequent_round": true,
+    "items": [
+      {
+        "menu_item_id": 2,
+        "item_name": "Hot & Sour Chicken Soup",
+        "quantity": 1,
+        "unit_price": 95,
+        "line_total": 95
+      }
+    ],
+    "subtotal": 95,
+    "total_amount": 95,
+    "notes": "[ROUND: 2] [TABLE: 5] Extra spicy",
+    "status": "pending",
+    "payment_status": "pending",
+    "created_at": "2026-08-22T13:14:17.224Z",
+    "updated_at": "2026-08-22T13:14:17.224Z"
+  },
+  {
+    "_id": "6a89ad845c8d4fe949b45a94",
+    "order_number": "ORD-20260822-8979",
+    "customer_name": "Test Table Guest",
+    "customer_phone": "9876543210",
+    "order_type": "table",
+    "table_number": 5,
+    "table_zone": "AC Dining Hall",
+    "round_number": 1,
+    "items": [
+      {
+        "id": null,
+        "name": "Chicken Biryani Special",
+        "quantity": 2,
+        "unit_price": 280,
+        "line_total": 560
+      },
+      {
+        "id": null,
+        "name": "Butter Naan",
+        "quantity": 4,
+        "unit_price": 40,
+        "line_total": 160
+      }
+    ],
+    "subtotal": 720,
+    "total_amount": 720,
+    "notes": "",
+    "location": {
+      "latitude": null,
+      "longitude": null,
+      "landmark": null,
+      "delivery_notes": null
+    },
+    "payment": {
+      "method": "cod",
+      "status": "pending",
+      "txn_ref": null
+    },
+    "status": "pending",
+    "created_at": "2026-08-22T14:09:08.667Z",
+    "updated_at": "2026-08-22T14:09:08.667Z"
+  },
+  {
+    "_id": "6a89ff1515416b8b69c1463c",
+    "order_number": "ORD-20260822-4810",
+    "customer_name": "Architecture Test User",
+    "customer_phone": "9998887776",
+    "order_type": "dine_in",
+    "table_number": 1,
+    "table_zone": null,
+    "round_number": 1,
+    "items": [
+      {
+        "id": "stk_10",
+        "name": "Soy Sauce",
+        "quantity": 2,
+        "unit_price": 150,
+        "line_total": 300
+      }
+    ],
+    "subtotal": 300,
+    "total_amount": 300,
+    "notes": "",
+    "location": {
+      "latitude": null,
+      "longitude": null,
+      "landmark": null,
+      "delivery_notes": null
+    },
+    "payment": {
+      "method": "cod",
+      "status": "pending",
+      "txn_ref": null
+    },
+    "status": "completed",
+    "stock_deducted": true,
+    "created_at": "2026-08-22T19:57:09.662Z",
+    "updated_at": "2026-08-22T19:57:09.731Z",
+    "completed_at": "2026-08-22T19:57:09.731Z"
+  },
+  {
+    "_id": "6a89ff40b49fecce8618d4d3",
+    "order_number": "ORD-20260822-7847",
+    "customer_name": "Architecture Test User",
+    "customer_phone": "9998887776",
+    "order_type": "dine_in",
+    "table_number": 1,
+    "table_zone": null,
+    "round_number": 1,
+    "items": [
+      {
+        "id": "stk_10",
+        "name": "Soy Sauce",
+        "quantity": 2,
+        "unit_price": 150,
+        "line_total": 300
+      }
+    ],
+    "subtotal": 300,
+    "total_amount": 300,
+    "notes": "",
+    "location": {
+      "latitude": null,
+      "longitude": null,
+      "landmark": null,
+      "delivery_notes": null
+    },
+    "payment": {
+      "method": "cod",
+      "status": "pending",
+      "txn_ref": null
+    },
+    "status": "completed",
+    "stock_deducted": true,
+    "created_at": "2026-08-22T19:57:52.483Z",
+    "updated_at": "2026-08-22T19:57:52.541Z",
+    "completed_at": "2026-08-22T19:57:52.541Z"
+  }
+]

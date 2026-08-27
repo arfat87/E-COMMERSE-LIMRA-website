@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LIMRA Restaurant — Stock Summary Dashboard</title>
+  <link rel="icon" href="/images/logo.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/images/logo.png" />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- SheetJS (Excel .xlsx Export Engine) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- jsPDF & AutoTable (PDF Report Engine) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+  <!-- Dedicated Stock Manager Styling System -->
+  <link rel="stylesheet" href="/src/stock-manager/stock-manager.css" />
+</head>
+<body class="stock-page-body flex flex-col antialiased selection:bg-emerald-500 selection:text-slate-950">
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- 1. APP HEADER BAR (TOP NAVIGATION) -->
+  <header class="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800/80 px-4 lg:px-8 py-3.5 flex items-center justify-between shadow-2xl">
+    
+    <!-- Left Navigation: Back Arrow + Title -->
+    <div class="flex items-center gap-3.5">
+      <a href="../admin.html" id="btn-header-back" class="group p-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-700/60 shadow-sm flex items-center justify-center" title="Back to Admin Dashboard">
+        <svg class="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+      </a>
+
+      <div>
+        <h1 class="text-lg lg:text-xl font-extrabold text-white tracking-tight leading-tight">Stock Summary</h1>
+        <p class="text-[11px] text-slate-400 font-medium hidden sm:block">LIMRA Restaurant Warehouse & Stock Inventory</p>
+      </div>
+    </div>
+
+    <!-- Right Action Items: Database status, Search, PDF, Excel, Add Item, More Options -->
+    <div class="flex items-center gap-2 stock-no-print">
+      
+      <!-- 🟢 Live DB Connection Indicator -->
+      <div id="db-status-badge" class="px-2.5 py-1 bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 font-bold text-[10px] rounded-xl flex items-center gap-1.5 shadow-sm" title="Connected to PostgreSQL Database">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="db-status-text" class="hidden sm:inline">Database Live</span>
+      </div>
+
+      <!-- 🔍 Search Icon Button -->
+      <button id="btn-toggle-search" class="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-700/60 cursor-pointer shadow-sm" title="Search Items">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      </button>
+
+      <!-- 📄 PDF Export Red Badge -->
+      <button id="btn-header-pdf" class="px-3 py-1.5 bg-rose-950/90 hover:bg-rose-900/90 border border-rose-700/80 text-rose-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm" title="Export PDF Report">
+        <span class="w-2 h-2 rounded-full bg-rose-400 animate-pulse"></span>
+        <span class="hidden xs:inline">PDF</span>
+      </button>
+
+      <!-- 📊 Excel Export Green Badge -->
+      <button id="btn-header-excel" class="px-3 py-1.5 bg-emerald-950/90 hover:bg-emerald-900/90 border border-emerald-700/80 text-emerald-300 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm" title="Export Excel (.xlsx)">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span class="hidden xs:inline">XLS</span>
+      </button>
+
+      <!-- ➕ Add Item Button -->
+      <button id="btn-add-item" class="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1 cursor-pointer active:scale-95">
+        <span class="text-sm font-bold">+</span>
+        <span class="hidden md:inline">Add Item</span>
+      </button>
+
+      <!-- ⚙️ More Options Vertical Dots Menu (⋮) -->
+      <div class="relative">
+        <button id="btn-more-options" class="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-700/60 cursor-pointer shadow-sm" title="More Options">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+          </svg>
+        </button>
+
+        <!-- Dropdown Menu Popup -->
+        <div id="dropdown-more-menu" class="hidden absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 z-50 text-xs">
+          <button id="menu-toggle-view" class="w-full px-4 py-2 text-left text-slate-200 hover:bg-slate-800 flex items-center gap-2">
+            <span>📱</span> Switch Feed / Table View
+          </button>
+          <button id="menu-reset-defaults" class="w-full px-4 py-2 text-left text-amber-300 hover:bg-slate-800 flex items-center gap-2 border-t border-slate-800">
+            <span>🔄</span> Reset Seed Defaults
+          </button>
+          <button id="menu-print-page" class="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-800 flex items-center gap-2">
+            <span>🖨️</span> Print Summary Sheet
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- SEARCH OVERLAY BAR (Toggled via 🔍 Icon) -->
+  <div id="search-overlay-bar" class="hidden bg-slate-900/95 border-b border-slate-800 px-4 py-2.5 shadow-xl transition-all stock-no-print">
+    <div class="max-w-7xl mx-auto flex items-center gap-2">
+      <span class="text-slate-400">🔍</span>
+      <input id="stock-search" type="text" placeholder="Search stock item name, SKU, category, or supplier..." class="flex-1 bg-transparent text-sm text-white focus:outline-none placeholder-slate-500" />
+      <button id="btn-close-search" class="text-xs text-slate-400 hover:text-white px-2 py-1 bg-slate-800 rounded-lg">Esc</button>
+    </div>
+  </div>
+
+  <!-- MAIN APP BODY -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 space-y-6">
+
+    <!-- ERROR BOUNDARY FALLBACK CONTAINER -->
+    <div id="stock-error-boundary" class="hidden bg-rose-950/90 border border-rose-700/80 rounded-2xl p-6 shadow-2xl text-center space-y-4">
+      <div class="w-12 h-12 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center text-2xl mx-auto font-bold">⚠️</div>
+      <h3 class="text-base font-extrabold text-rose-200">Inventory Storage Repair Triggered</h3>
+      <p class="text-xs text-rose-300/80 max-w-md mx-auto">Click below to automatically repair and restore default stock inventory items.</p>
+      <button id="btn-repair-inventory" class="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer">
+        🔄 Repair & Restore Stock Items
+      </button>
+    </div>
+
+    <!-- 0. MODE TOGGLE BAR: LIVE SUMMARY vs MONTHLY CALCULATION -->
+    <div class="flex items-center justify-between flex-wrap gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-xl stock-no-print">
+      <div class="flex items-center gap-2">
+        <button id="tab-mode-live" class="px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 bg-emerald-500 text-slate-950 shadow-lg cursor-pointer">
+          <span>⚡</span> Live Stock Summary
+        </button>
+        <button id="tab-mode-monthly" class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 bg-slate-950 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 cursor-pointer">
+          <span>📅</span> Monthly Stock Calculation
+        </button>
+      </div>
+
+      <!-- Quick Month Navigation Indicator (visible in Monthly Mode) -->
+      <div id="monthly-quick-controls" class="hidden flex items-center gap-2 flex-wrap">
+        <label for="monthly-select-picker" class="text-xs font-bold text-slate-300 flex items-center gap-1">
+          <span>🗓️</span> Month:
+        </label>
+        <input type="month" id="monthly-select-picker" value="2026-08" class="bg-slate-950 border border-emerald-600/70 rounded-xl px-3 py-1.5 text-xs text-emerald-300 font-bold font-mono focus:outline-none focus:border-emerald-400 shadow-inner" />
+        <button id="btn-month-current" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition-all cursor-pointer">
+          This Month
+        </button>
+        <button id="btn-month-prev" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition-all cursor-pointer" title="Previous Month">
+          ◀ Prev
+        </button>
+        <button id="btn-month-next" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition-all cursor-pointer" title="Next Month">
+          Next ▶
+        </button>
+        <button id="btn-month-excel" class="px-3 py-1.5 bg-emerald-950 hover:bg-emerald-900 border border-emerald-700 text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer" title="Export Month Excel (.xlsx)">
+          📊 Month .xlsx
+        </button>
+        <button id="btn-month-pdf" class="px-3 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-300 rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer" title="Export Month PDF Report">
+          📄 Month PDF
+        </button>
+      </div>
+    </div>
+
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <!-- VIEW A: LIVE REAL-TIME STOCK SUMMARY -->
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <div id="view-live-container" class="space-y-6">
+
+      <!-- 2. DATE FILTER & GLOBAL CONTROLS SECTION -->
+      <div class="space-y-3 stock-no-print">
+        
+        <!-- Date Checkbox Control -->
+        <div class="flex items-center justify-between bg-slate-900/80 border border-slate-800/80 rounded-xl px-3.5 py-2.5 text-xs text-slate-300">
+          <div class="flex items-center gap-2.5">
+            <input type="checkbox" id="chk-as-on-date" class="w-4 h-4 rounded accent-emerald-500 cursor-pointer" />
+            <label for="chk-as-on-date" class="cursor-pointer font-semibold text-slate-200 select-none">
+              Show stock as on Date:
+            </label>
+            <input type="date" id="date-as-on" value="2026-08-01" class="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-emerald-500 disabled:opacity-40 font-mono" disabled />
+          </div>
+          <span class="text-[11px] text-slate-500 font-medium hidden sm:inline">Historical Stock Ledger Snapshot</span>
+        </div>
+
+        <!-- Filters Header Bar (Filters Applied: All Items | Funnel Icon + Filters Button) -->
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold text-slate-400">Filters Applied:</span>
+            <span id="active-filter-badge" class="text-xs font-extrabold text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-2.5 py-0.5 rounded-full">
+              All Categories
+            </span>
+          </div>
+
+          <button id="btn-open-funnel" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm">
+            <span>🌪️</span> Filters
+          </button>
+        </div>
+
+        <!-- Filter Pills/Chips Bar (Strictly the 7 Stock Categories Specified by User) -->
+        <div class="flex items-center gap-2 overflow-x-auto pt-1 pb-1 scrollbar-none border-t border-slate-800/60">
+          <!-- Category Dropdown Chip -->
+          <select id="chip-cat-select" class="stock-pill-btn bg-slate-900 border-slate-800 text-slate-300 font-semibold focus:outline-none cursor-pointer">
+            <option value="all">Category - All (7 Stock Groups)</option>
+            <option value="Bhusimal & Spices">1. 🌾 Bhusimal & Spices</option>
+            <option value="Dairy Items">2. 🥛 Dairy Items</option>
+            <option value="Cold Drinks">3. 🥤 Cold Drinks</option>
+            <option value="Fresh Vegetables">4. 🥦 Fresh Vegetables</option>
+            <option value="Ice Cream">5. 🍦 Ice Cream</option>
+            <option value="Packaging & Carry Bags">6. 📦 Carry Bags & Packaging</option>
+            <option value="Cleaning & Washings">7. 🧹 Washings & Cleaning</option>
+          </select>
+
+          <!-- Stock Level Dropdown Chip -->
+          <select id="chip-stock-select" class="stock-pill-btn bg-slate-900 border-slate-800 text-slate-300 font-semibold focus:outline-none cursor-pointer">
+            <option value="all">Stock - All</option>
+            <option value="instock">In Stock (&gt;0)</option>
+            <option value="low">Low Stock</option>
+            <option value="negative">Negative Stock (&lt;0)</option>
+          </select>
+
+          <!-- Status Dropdown Chip -->
+          <select id="chip-status-select" class="stock-pill-btn bg-slate-900 border-slate-800 text-slate-300 font-semibold focus:outline-none cursor-pointer">
+            <option value="all">Status - All</option>
+            <option value="active">Active Stock</option>
+            <option value="out">Out of Stock (=0)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 3. TOP METRICS & KPI CARDS GRID (3-Column Banner Container) -->
+      <div class="stock-kpi-banner">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center divide-y sm:divide-y-0 sm:divide-x divide-slate-800/80">
+          
+          <!-- Card 1 — No. of Items -->
+          <div class="py-1.5 sm:py-0">
+            <span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Stock Items</span>
+            <span id="kpi-total-items" class="stock-kpi-val mt-0.5 block">0</span>
+          </div>
+
+          <!-- Card 2 — Low Stock Items (Highlighted in Bold Red #EF4444) -->
+          <div class="py-1.5 sm:py-0 sm:pl-3">
+            <span class="block text-[11px] font-bold text-rose-400 uppercase tracking-wider">Low Stock / Out</span>
+            <span id="kpi-low-items" class="stock-kpi-val val-red mt-0.5 block">0</span>
+          </div>
+
+          <!-- Card 3 — Stock Value (₹) -->
+          <div class="py-1.5 sm:py-0 sm:pl-3">
+            <span class="block text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Stock Value (Estimated)</span>
+            <span id="kpi-total-value" class="stock-kpi-val text-emerald-300 mt-0.5 block">₹ 0.00</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ═════════════════════════════════════════════════════════════════════ -->
+      <!-- 4. SPREADSHEET SECTION: STOCK IN, STOCK OUT & REAL-TIME BALANCE -->
+      <!-- ═════════════════════════════════════════════════════════════════════ -->
+      <div class="space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 class="text-base font-extrabold text-white tracking-tight flex items-center gap-2">
+              <span>📊</span> STOCK IN-OUT & BALANCE
+            </h2>
+            <p class="text-xs text-slate-400">Record IN & OUT stock entries. Actual Balance Qty is dynamically calculated (Total IN - Total OUT).</p>
+          </div>
+          <div class="flex items-center gap-2 stock-no-print">
+            <button id="btn-record-in" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1 cursor-pointer active:scale-95">
+              ➕ Record IN Stock
+            </button>
+            <button id="btn-record-out" class="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1 cursor-pointer active:scale-95">
+              ➖ Record OUT Stock
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2-Column Side-by-Side Grid for TABLE 1 (IN) and TABLE 2 (OUT) -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        
+        <!-- TABLE 1: STOCK IN (Green Theme) -->
+        <div class="stock-glass-card border border-emerald-500/30 overflow-hidden shadow-xl">
+          <div class="bg-emerald-700/90 px-3.5 py-2.5 flex items-center justify-between text-white font-black text-xs sm:text-sm uppercase tracking-wider">
+            <span class="flex items-center gap-1.5">📥 STOCK IN</span>
+            <span id="badge-in-count" class="text-[10px] sm:text-xs bg-emerald-950/80 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-bold">0 entries</span>
+          </div>
+          <div class="max-h-72 overflow-y-auto scrollbar-thin bg-slate-950/60">
+            <table class="w-full text-left text-[11px] sm:text-xs">
+              <thead class="bg-slate-900 text-slate-300 font-bold border-b border-emerald-500/20 sticky top-0 backdrop-blur-md">
+                <tr>
+                  <th class="py-2 px-2">DATE</th>
+                  <th class="py-2 px-2">SKU</th>
+                  <th class="py-2 px-2">DESCRIPTION</th>
+                  <th class="py-2 px-2">UNIT</th>
+                  <th class="py-2 px-2 text-right">QTY</th>
+                  <th class="py-2 px-1 text-center stock-no-print">DEL</th>
+                </tr>
+              </thead>
+              <tbody id="table-in-body" class="divide-y divide-slate-800/60 text-slate-200">
+                <!-- Injected dynamically via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TABLE 2: STOCK OUT (Orange/Amber Theme) -->
+        <div class="stock-glass-card border border-amber-500/30 overflow-hidden shadow-xl">
+          <div class="bg-amber-700/90 px-3.5 py-2.5 flex items-center justify-between text-white font-black text-xs sm:text-sm uppercase tracking-wider">
+            <span class="flex items-center gap-1.5">📤 STOCK OUT</span>
+            <span id="badge-out-count" class="text-[10px] sm:text-xs bg-amber-950/80 border border-amber-500/40 px-2.5 py-0.5 rounded-full font-bold">0 entries</span>
+          </div>
+          <div class="max-h-72 overflow-y-auto scrollbar-thin bg-slate-950/60">
+            <table class="w-full text-left text-[11px] sm:text-xs">
+              <thead class="bg-slate-900 text-slate-300 font-bold border-b border-amber-500/20 sticky top-0 backdrop-blur-md">
+                <tr>
+                  <th class="py-2 px-2">DATE</th>
+                  <th class="py-2 px-2">SKU</th>
+                  <th class="py-2 px-2">DESCRIPTION</th>
+                  <th class="py-2 px-2">UNIT</th>
+                  <th class="py-2 px-2 text-right">QTY</th>
+                  <th class="py-2 px-1 text-center stock-no-print">DEL</th>
+                </tr>
+              </thead>
+              <tbody id="table-out-body" class="divide-y divide-slate-800/60 text-slate-200">
+                <!-- Injected dynamically via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ⬇️ DOWN SECTION: TABLE 3 (REAL-TIME BALANCE) IN LINE BELOW IN & OUT ⬇️ -->
+      <div class="stock-glass-card border border-sky-500/30 overflow-hidden shadow-xl">
+        <div class="bg-sky-700/90 px-3.5 py-2.5 flex items-center justify-between text-white font-black text-xs sm:text-sm uppercase tracking-wider">
+          <span class="flex items-center gap-1.5">⚖️ REAL-TIME STOCK BALANCE</span>
+          <span id="badge-balance-count" class="text-[10px] sm:text-xs bg-sky-950/80 border border-sky-500/40 px-2.5 py-0.5 rounded-full font-bold">0 items</span>
+        </div>
+        <div class="max-h-72 overflow-y-auto scrollbar-thin bg-slate-950/60">
+          <table class="w-full text-left text-[11px] sm:text-xs">
+            <thead class="bg-slate-900 text-slate-300 font-bold border-b border-sky-500/20 sticky top-0 backdrop-blur-md">
+              <tr>
+                <th class="py-2 px-3">SKU</th>
+                <th class="py-2 px-3">DESCRIPTION</th>
+                <th class="py-2 px-3">UNIT</th>
+                <th class="py-2 px-3 text-right">ACTUAL BALANCE QTY</th>
+              </tr>
+            </thead>
+            <tbody id="table-balance-body" class="divide-y divide-slate-800/60 text-slate-200">
+              <!-- Injected dynamically via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <!-- 5. CRITICAL STOCK & LOW BALANCE ALERT SECTION (Compact Mini-Cards) -->
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <div id="critical-stock-section" class="stock-glass-card border border-rose-500/30 p-4 sm:p-5 space-y-3.5 hidden shadow-2xl">
+      <div class="flex items-center justify-between border-b border-rose-500/20 pb-2.5">
+        <h3 class="text-sm font-extrabold text-rose-400 flex items-center gap-2">
+          <span>🚨</span> OUT-OF-STOCK & LOW-STOCK ALERTS (Balance ≤ Minimum Balance)
+        </h3>
+        <span id="critical-count-badge" class="text-xs bg-rose-950/90 text-rose-300 border border-rose-700 px-3 py-0.5 rounded-full font-bold">0 critical items</span>
+      </div>
+      <div id="critical-items-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <!-- Injected dynamically via JS as compact square cards -->
+      </div>
+    </div>
+
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <!-- 6. INTERACTIVE MASTER INVENTORY DIRECTORY (FEED & TABLE TOGGLE) -->
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <div>
+      
+      <!-- List Header & View Mode Switcher -->
+      <div class="flex items-center justify-between mb-3 px-1">
+        <h2 class="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+          <span>📦</span> Inventory Directory
+          <span id="stock-count-badge" class="text-xs font-semibold text-slate-400 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-full">0 items</span>
+        </h2>
+
+        <div class="flex items-center gap-2 stock-no-print">
+          <button id="btn-toggle-view-feed" class="px-2.5 py-1 bg-slate-800 text-emerald-400 border border-slate-700 rounded-lg text-xs font-bold transition-all" title="Card Feed View">
+            🎴 Cards
+          </button>
+          <button id="btn-toggle-view-table" class="px-2.5 py-1 bg-slate-900 text-slate-400 hover:text-white border border-slate-800 rounded-lg text-xs font-semibold transition-all" title="Table Directory View">
+            📋 Table
+          </button>
+        </div>
+      </div>
+
+      <!-- A) VERTICAL CARD FEED VIEW (Primary Mobile-First View) -->
+      <div id="stock-feed-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+        <!-- Rendered dynamically via JS -->
+      </div>
+
+      <!-- B) TABLE DIRECTORY VIEW (Secondary Alternative View) -->
+      <div id="stock-table-container" class="stock-table-container hidden">
+        <div class="overflow-x-auto">
+          <table class="stock-table">
+            <thead>
+              <tr>
+                <th>SKU & Item Name</th>
+                <th>Category</th>
+                <th>Godown</th>
+                <th class="text-center">Actual Balance</th>
+                <th class="text-right">Sale Price</th>
+                <th class="text-right">Purchase Price</th>
+                <th class="text-right">Stock Value</th>
+                <th class="text-center">Status</th>
+                <th class="text-right stock-no-print">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="stock-table-body" class="divide-y divide-slate-800/40 text-slate-200">
+              <!-- Rendered dynamically via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- EMPTY SEARCH / FILTER STATE -->
+      <div id="stock-empty-state" class="hidden py-16 text-center">
+        <div class="w-16 h-16 rounded-2xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-center text-3xl mx-auto mb-3">📦</div>
+        <h3 class="text-sm font-bold text-slate-300">No matching stock items found</h3>
+        <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Try clearing search filters or click "Add Item" to register new items.</p>
+        <button id="btn-empty-clear-filters" class="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-emerald-400 border border-slate-700 rounded-xl transition-all">
+          Clear All Filters
+        </button>
+      </div>
+
+    </div>
+
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <!-- 7. RECENT INVENTORY AUDIT & TRANSACTION LEDGER -->
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <div class="stock-glass-card p-5 space-y-4">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 class="text-sm font-bold text-white flex items-center gap-2">
+            📜 Recent Inventory Audit & Transaction Ledger
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">Real-time log of IN, OUT, adjustments, and inventory alterations</p>
+        </div>
+        <div class="flex items-center gap-3 stock-no-print">
+          <select id="log-filter-type" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none">
+            <option value="all">All Action Logs</option>
+            <option value="IN">Stock IN (+)</option>
+            <option value="OUT">Stock OUT (-)</option>
+            <option value="Delete">Deleted Entries</option>
+            <option value="Adjustment">Adjustments</option>
+          </select>
+          <button id="btn-clear-logs" class="text-xs text-slate-500 hover:text-slate-300 transition-colors">Clear History</button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800">
+            <tr>
+              <th class="py-2.5 px-4">Date & Time</th>
+              <th class="py-2.5 px-4">Item Name / SKU</th>
+              <th class="py-2.5 px-4">Action Type</th>
+              <th class="py-2.5 px-4 text-center">Quantity</th>
+              <th class="py-2.5 px-4">Notes / Remarks</th>
+            </tr>
+          </thead>
+          <tbody id="stock-logs-body" class="divide-y divide-slate-800/40 text-slate-300">
+            <!-- Rendered dynamically via JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <!-- VIEW B: DEDICATED MONTHLY STOCK CALCULATION & AUDIT DASHBOARD -->
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <div id="view-monthly-container" class="hidden space-y-6">
+
+      <!-- 1. MONTH HEADER & BANNER OVERVIEW -->
+      <div class="bg-gradient-to-r from-slate-900 via-emerald-950/40 to-slate-900 border border-emerald-500/30 rounded-2xl p-4 sm:p-6 shadow-2xl flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-0.5 text-[10px] font-extrabold uppercase rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Monthly Inventory Statement</span>
+            <span id="monthly-badge-selected-month" class="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-800 text-slate-300 border border-slate-700">August 2026</span>
+          </div>
+          <h2 id="monthly-banner-title" class="text-lg sm:text-xl font-extrabold text-white tracking-tight mt-1.5 flex items-center gap-2">
+            <span>📅</span> Stock Calculation — August 2026
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">Automated accounting of Opening Inventory, Monthly Inward Purchases, Outward Usage & Closing Balance Valuation.</p>
+        </div>
+
+        <div class="flex items-center gap-2 stock-no-print">
+          <button id="btn-monthly-export-xls-hero" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1.5 cursor-pointer active:scale-95">
+            <span>📊</span> Export Monthly Excel (.xlsx)
+          </button>
+          <button id="btn-monthly-export-pdf-hero" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1.5 cursor-pointer active:scale-95">
+            <span>📄</span> Export Monthly PDF
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. MONTHLY FINANCIAL & INVENTORY METRICS KPI CARDS (4-Column Banner) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        
+        <!-- Monthly KPI 1: Inward Stock / Purchases -->
+        <div class="stock-glass-card border border-emerald-500/30 p-4 space-y-1 relative overflow-hidden">
+          <div class="flex items-center justify-between text-xs text-emerald-400 font-bold">
+            <span class="flex items-center gap-1"><span>📥</span> Monthly Inward (Purchases)</span>
+            <span id="mkpi-in-count" class="text-[10px] bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-700/60 font-mono">0 entries</span>
+          </div>
+          <div class="text-xl font-black text-emerald-300 font-mono" id="mkpi-in-qty">+0 units</div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+            <span>Total Purchase Spend:</span>
+            <span id="mkpi-in-value" class="font-extrabold text-white font-mono">₹ 0.00</span>
+          </div>
+        </div>
+
+        <!-- Monthly KPI 2: Outward Stock / Consumption -->
+        <div class="stock-glass-card border border-amber-500/30 p-4 space-y-1 relative overflow-hidden">
+          <div class="flex items-center justify-between text-xs text-amber-400 font-bold">
+            <span class="flex items-center gap-1"><span>📤</span> Monthly Outward (Usage)</span>
+            <span id="mkpi-out-count" class="text-[10px] bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-700/60 font-mono">0 entries</span>
+          </div>
+          <div class="text-xl font-black text-amber-300 font-mono" id="mkpi-out-qty">-0 units</div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+            <span>Kitchen Consumption Cost:</span>
+            <span id="mkpi-out-value" class="font-extrabold text-white font-mono">₹ 0.00</span>
+          </div>
+        </div>
+
+        <!-- Monthly KPI 3: Net Movement -->
+        <div class="stock-glass-card border border-sky-500/30 p-4 space-y-1 relative overflow-hidden">
+          <div class="flex items-center justify-between text-xs text-sky-400 font-bold">
+            <span class="flex items-center gap-1"><span>⚖️</span> Monthly Net Movement</span>
+            <span id="mkpi-active-items" class="text-[10px] bg-sky-950/80 px-2 py-0.5 rounded-full border border-sky-700/60 font-mono">0 active SKUs</span>
+          </div>
+          <div class="text-xl font-black text-sky-300 font-mono" id="mkpi-net-qty">0 units</div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+            <span>Net Value Impact:</span>
+            <span id="mkpi-net-value" class="font-extrabold text-white font-mono">₹ 0.00</span>
+          </div>
+        </div>
+
+        <!-- Monthly KPI 4: Month-End Closing Valuation -->
+        <div class="stock-glass-card border border-teal-500/30 p-4 space-y-1 relative overflow-hidden">
+          <div class="flex items-center justify-between text-xs text-teal-400 font-bold">
+            <span class="flex items-center gap-1"><span>💰</span> Closing Stock Valuation</span>
+            <span id="mkpi-opening-value-chip" class="text-[10px] bg-slate-900 px-2 py-0.5 rounded-full border border-slate-700 font-mono text-slate-400">Open: ₹ 0</span>
+          </div>
+          <div class="text-xl font-black text-teal-300 font-mono" id="mkpi-closing-value">₹ 0.00</div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+            <span>Month-End Closing Qty:</span>
+            <span id="mkpi-closing-qty" class="font-extrabold text-white font-mono">0 units</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 3. CATEGORY-WISE MONTHLY SPEND & USAGE BREAKDOWN CARDS -->
+      <div class="stock-glass-card p-4 sm:p-5 space-y-3.5 shadow-xl">
+        <div class="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
+          <h3 class="text-sm font-extrabold text-white flex items-center gap-2">
+            <span>🏷️</span> Category-Wise Monthly Spend & Usage (7 Stock Groups)
+          </h3>
+          <span class="text-xs text-slate-400">Purchases vs Consumption Breakdown</span>
+        </div>
+        
+        <div id="monthly-categories-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <!-- Injected dynamically via JS -->
+        </div>
+      </div>
+
+      <!-- 3.5. MONTHLY BALANCE GONE & HIGHEST CONSUMPTION LEADERBOARDS -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        
+        <!-- Left: Top Quantity Gone (Highest Physical Depletion) -->
+        <div class="stock-glass-card border border-rose-500/30 p-4 space-y-3 shadow-xl">
+          <div class="flex items-center justify-between border-b border-rose-500/20 pb-2">
+            <h4 class="text-xs font-black text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🔥</span> Top Items — Most Balance Gone (By Quantity)
+            </h4>
+            <span class="text-[10px] bg-rose-950 text-rose-300 px-2 py-0.5 rounded-full border border-rose-700 font-bold">Kitchen Usage</span>
+          </div>
+          <div id="monthly-top-qty-gone-list" class="space-y-2">
+            <!-- Injected dynamically via JS -->
+          </div>
+        </div>
+
+        <!-- Right: Top Financial Value Gone (Highest Cost Expenditure) -->
+        <div class="stock-glass-card border border-amber-500/30 p-4 space-y-3 shadow-xl">
+          <div class="flex items-center justify-between border-b border-amber-500/20 pb-2">
+            <h4 class="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>💸</span> Top Items — Highest Cost Gone (By Total ₹)
+            </h4>
+            <span class="text-[10px] bg-amber-950 text-amber-300 px-2 py-0.5 rounded-full border border-amber-700 font-bold">Value Consumed</span>
+          </div>
+          <div id="monthly-top-value-gone-list" class="space-y-2">
+            <!-- Injected dynamically via JS -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 4. MONTHLY STOCK CALCULATION MASTER MATRIX LEDGER TABLE -->
+      <div class="stock-glass-card p-5 space-y-4 shadow-2xl border border-slate-800">
+        
+        <div class="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h2 class="text-base font-extrabold text-white flex items-center gap-2">
+              <span>📋</span> Monthly Stock Calculation Ledger
+              <span id="monthly-matrix-count-badge" class="text-xs bg-slate-900 text-slate-300 border border-slate-800 px-2.5 py-0.5 rounded-full font-bold">0 items</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-0.5">Opening Stock (before 1st) + Purchases (IN) - Total Balance Gone (OUT) = Ending Balance & Valuation</p>
+          </div>
+
+          <div class="flex items-center gap-2.5 flex-wrap stock-no-print">
+            <!-- Category Filter for Monthly Matrix -->
+            <select id="monthly-cat-filter" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none cursor-pointer">
+              <option value="all">Category - All 7 Groups</option>
+              <option value="Bhusimal & Spices">1. 🌾 Bhusimal & Spices</option>
+              <option value="Dairy Items">2. 🥛 Dairy Items</option>
+              <option value="Cold Drinks">3. 🥤 Cold Drinks</option>
+              <option value="Fresh Vegetables">4. 🥦 Fresh Vegetables</option>
+              <option value="Ice Cream">5. 🍦 Ice Cream</option>
+              <option value="Packaging & Carry Bags">6. 📦 Carry Bags & Packaging</option>
+              <option value="Cleaning & Washings">7. 🧹 Washings & Cleaning</option>
+            </select>
+
+            <!-- Activity Filter -->
+            <select id="monthly-activity-filter" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none cursor-pointer">
+              <option value="all">Activity - All Items</option>
+              <option value="consumed">🔥 Balance Gone (OUT > 0)</option>
+              <option value="moved">Moved This Month (IN > 0 or OUT > 0)</option>
+              <option value="purchased">Purchased Only (IN > 0)</option>
+              <option value="low">Low Ending Stock (≤ Min)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/60">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-900/90 text-slate-300 font-bold border-b border-slate-800 sticky top-0 backdrop-blur-md">
+              <tr>
+                <th class="py-2.5 px-3">SKU & Item Name</th>
+                <th class="py-2.5 px-2">Category</th>
+                <th class="py-2.5 px-2">Unit</th>
+                <th class="py-2.5 px-2 text-right">Cost (₹)</th>
+                <th class="py-2.5 px-3 text-right bg-slate-900/60 text-slate-400">Opening Stock</th>
+                <th class="py-2.5 px-3 text-right bg-emerald-950/40 text-emerald-300">Purchases (+)</th>
+                <th class="py-2.5 px-3 text-right bg-rose-950/60 text-rose-300 font-black border-x border-rose-900/40">🔥 Balance Gone (-OUT)</th>
+                <th class="py-2.5 px-3 text-right bg-teal-950/40 text-teal-300">Closing Stock</th>
+                <th class="py-2.5 px-3 text-right text-sky-300">Closing Value (₹)</th>
+                <th class="py-2.5 px-2 text-center">Status</th>
+                <th class="py-2.5 px-2 text-center stock-no-print">Ledger</th>
+              </tr>
+            </thead>
+            <tbody id="monthly-matrix-body" class="divide-y divide-slate-800/50 text-slate-200">
+              <!-- Rendered dynamically via JS -->
+            </tbody>
+            <tfoot id="monthly-matrix-foot" class="bg-slate-900/95 font-bold border-t-2 border-slate-700 text-slate-200">
+              <!-- Total summary row rendered dynamically -->
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- 5. SIDE-BY-SIDE MONTHLY IN AND OUT LEDGERS -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        
+        <!-- Month IN Table -->
+        <div class="stock-glass-card border border-emerald-500/30 overflow-hidden shadow-xl">
+          <div class="bg-emerald-700/90 px-3.5 py-2.5 flex items-center justify-between text-white font-black text-xs sm:text-sm uppercase tracking-wider">
+            <span class="flex items-center gap-1.5">📥 Month Purchases (Stock IN)</span>
+            <span id="monthly-badge-in-count" class="text-[10px] sm:text-xs bg-emerald-950/80 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-bold">0 entries</span>
+          </div>
+          <div class="max-h-64 overflow-y-auto scrollbar-thin bg-slate-950/60">
+            <table class="w-full text-left text-[11px] sm:text-xs">
+              <thead class="bg-slate-900 text-slate-300 font-bold border-b border-emerald-500/20 sticky top-0">
+                <tr>
+                  <th class="py-2 px-2">Date</th>
+                  <th class="py-2 px-2">SKU</th>
+                  <th class="py-2 px-2">Description</th>
+                  <th class="py-2 px-2 text-right">Qty</th>
+                  <th class="py-2 px-2 text-right">Amount (₹)</th>
+                </tr>
+              </thead>
+              <tbody id="monthly-in-body" class="divide-y divide-slate-800/60 text-slate-200">
+                <!-- Injected dynamically via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Month OUT Table -->
+        <div class="stock-glass-card border border-amber-500/30 overflow-hidden shadow-xl">
+          <div class="bg-amber-700/90 px-3.5 py-2.5 flex items-center justify-between text-white font-black text-xs sm:text-sm uppercase tracking-wider">
+            <span class="flex items-center gap-1.5">📤 Month Usage (Stock OUT)</span>
+            <span id="monthly-badge-out-count" class="text-[10px] sm:text-xs bg-amber-950/80 border border-amber-500/40 px-2.5 py-0.5 rounded-full font-bold">0 entries</span>
+          </div>
+          <div class="max-h-64 overflow-y-auto scrollbar-thin bg-slate-950/60">
+            <table class="w-full text-left text-[11px] sm:text-xs">
+              <thead class="bg-slate-900 text-slate-300 font-bold border-b border-amber-500/20 sticky top-0">
+                <tr>
+                  <th class="py-2 px-2">Date</th>
+                  <th class="py-2 px-2">SKU</th>
+                  <th class="py-2 px-2">Description</th>
+                  <th class="py-2 px-2 text-right">Qty</th>
+                  <th class="py-2 px-2 text-right">Cost (₹)</th>
+                </tr>
+              </thead>
+              <tbody id="monthly-out-body" class="divide-y divide-slate-800/60 text-slate-200">
+                <!-- Injected dynamically via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ═════════════════════════════════════════════════════════════════════ -->
+  <!-- MODAL: RECORD STOCK IN / OUT ENTRY (`#modal-inout-entry`) -->
+  <!-- ═════════════════════════════════════════════════════════════════════ -->
+  <div id="modal-inout-entry" class="stock-modal-backdrop hidden">
+    <div class="stock-modal-card max-w-md space-y-4 relative shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 id="modal-inout-title" class="text-sm font-extrabold text-white flex items-center gap-2">
+          📥 Record Stock IN Entry
+        </h3>
+        <button id="modal-inout-close" class="text-slate-400 hover:text-white text-lg p-1 rounded-lg hover:bg-slate-800 transition-all">✕</button>
+      </div>
+      <form id="form-inout-entry" class="space-y-3.5 text-xs">
+        <input type="hidden" id="inout-mode" value="IN" />
+        
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Date *</label>
+            <input type="date" id="inout-date" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono" />
+          </div>
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Item (SKU & Name) *</label>
+            <select id="inout-item-select" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+              <!-- Dynamically populated options with SKU & Item Name -->
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Unit</label>
+            <input type="text" id="inout-unit-display" readonly class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-bold opacity-75 cursor-not-allowed" />
+          </div>
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Quantity *</label>
+            <input type="number" step="0.01" min="0.01" id="inout-qty" required placeholder="10" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-bold" />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <button type="button" id="inout-cancel-btn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition-all">Cancel</button>
+          <button type="submit" id="inout-submit-btn" class="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl shadow-lg transition-all">Save Entry</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MULTI-FILTER FUNNEL DRAWER / MODAL (`#modal-filters`) -->
+  <div id="modal-filters" class="stock-modal-backdrop hidden">
+    <div class="stock-modal-card max-w-md space-y-4 relative">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-extrabold text-white flex items-center gap-2">
+          <span>🌪️</span> Multi-Filter Drawer
+        </h3>
+        <button id="modal-filters-close" class="text-slate-400 hover:text-white text-lg p-1 rounded-lg hover:bg-slate-800">✕</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Item Category (7 Stock Groups)</label>
+          <select id="drawer-cat-select" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white">
+            <option value="all">All 7 Categories</option>
+            <option value="Bhusimal & Spices">1. 🌾 Bhusimal & Spices</option>
+            <option value="Dairy Items">2. 🥛 Dairy Items</option>
+            <option value="Cold Drinks">3. 🥤 Cold Drinks</option>
+            <option value="Fresh Vegetables">4. 🥦 Fresh Vegetables</option>
+            <option value="Ice Cream">5. 🍦 Ice Cream</option>
+            <option value="Packaging & Carry Bags">6. 📦 Carry Bags & Packaging</option>
+            <option value="Cleaning & Washings">7. 🧹 Washings & Cleaning</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Stock Level Status</label>
+          <select id="drawer-stock-select" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white">
+            <option value="all">All Stock Levels</option>
+            <option value="instock">In Stock (&gt;0)</option>
+            <option value="low">Low Stock</option>
+            <option value="negative">Negative Stock (&lt;0)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Godown / Warehouse Location</label>
+          <select id="drawer-godown-select" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white">
+            <option value="all">All Godowns</option>
+            <option value="Main Godown">Main Godown</option>
+            <option value="Kitchen Store">Kitchen Store</option>
+            <option value="Storage 1">Storage 1</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+        <button id="btn-drawer-reset" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold">Reset</button>
+        <button id="btn-drawer-apply" class="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl shadow-lg">Apply Filters</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DETAILED ITEM VIEW MODAL (`Item Details Page / Modal`) -->
+  <div id="modal-item-details" class="stock-modal-backdrop hidden">
+    <div class="stock-modal-card max-w-xl space-y-5 relative">
+      <!-- Header Bar: Back (<-), Title, Excel, Edit -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3.5">
+        <div class="flex items-center gap-3">
+          <button id="btn-details-back" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all text-xs font-bold">
+            ← Back
+          </button>
+          <h3 class="text-sm font-extrabold text-white flex items-center gap-2">
+            Item Details
+          </h3>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btn-details-excel" class="px-2.5 py-1 bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-700/60 rounded-lg text-xs font-bold transition-all" title="Export Item Ledger to Excel">
+            📊 xls
+          </button>
+          <button id="btn-details-edit" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition-all" title="Edit Item Details">
+            ✏️ Edit
+          </button>
+          <button id="modal-details-close" class="text-slate-400 hover:text-white text-lg p-1 rounded-lg hover:bg-slate-800 transition-all">✕</button>
+        </div>
+      </div>
+
+      <!-- Item Meta & Supplier Link Banner -->
+      <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3.5 space-y-2">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="detail-item-sku" class="text-xs font-bold font-mono text-emerald-400 bg-emerald-950 border border-emerald-800/80 px-2 py-0.5 rounded-lg">SKU</span>
+              <h4 id="detail-item-name" class="text-base font-extrabold text-white">Item Name</h4>
+            </div>
+            <p id="detail-item-supplier" class="text-xs text-slate-400 mt-1">Supplier: -</p>
+          </div>
+          <span id="detail-item-category-badge" class="stock-pill-btn active">Category</span>
+        </div>
+
+        <!-- Supplier Quick Restock Link Banner -->
+        <div id="detail-supplier-banner" class="pt-1 flex items-center justify-between text-xs border-t border-slate-800/60">
+          <span class="text-slate-400">Need quick restocking for this item?</span>
+          <a id="detail-supplier-link" href="#" target="_blank" rel="noopener" class="text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1">
+            💬 Restock via WhatsApp Supplier →
+          </a>
+        </div>
+      </div>
+
+      <!-- Item Pricing Grid (Sale Price, Purchase Price, Actual Balance, Stock Value) -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+        <div class="bg-slate-950/80 border border-slate-800/80 p-3 rounded-xl">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase">Sale Price</span>
+          <span id="detail-sale-price" class="text-sm font-extrabold text-white mt-1 block">₹ 0.00</span>
+        </div>
+        <div class="bg-slate-950/80 border border-slate-800/80 p-3 rounded-xl">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase">Purchase Price</span>
+          <span id="detail-purchase-price" class="text-sm font-extrabold text-slate-300 mt-1 block">₹ 0.00</span>
+        </div>
+        <div class="bg-slate-950/80 border border-slate-800/80 p-3 rounded-xl">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase">Actual Balance</span>
+          <span id="detail-in-stock" class="text-sm font-extrabold text-emerald-400 mt-1 block">0 Pcs</span>
+        </div>
+        <div class="bg-slate-950/80 border border-slate-800/80 p-3 rounded-xl">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase">Stock Value</span>
+          <span id="detail-stock-value" class="text-sm font-extrabold text-teal-300 mt-1 block">₹ 0.00</span>
+        </div>
+      </div>
+
+      <!-- 📉 MONTHLY BALANCE GONE & CONSUMPTION METRICS -->
+      <div class="bg-gradient-to-r from-rose-950/40 via-amber-950/30 to-slate-950 border border-rose-500/30 rounded-xl p-3.5 space-y-2">
+        <div class="flex items-center justify-between">
+          <h4 class="text-xs font-black text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🔥</span> Monthly Balance Gone & Consumption
+          </h4>
+          <span id="detail-month-label-badge" class="text-[10px] bg-slate-900 border border-rose-800/60 text-rose-300 px-2 py-0.5 rounded-full font-bold">Month</span>
+        </div>
+        
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+          <div class="bg-slate-950/80 p-2 rounded-lg border border-slate-800/60">
+            <span class="text-[10px] text-slate-400 font-semibold block">Total Balance Gone:</span>
+            <span id="detail-month-gone-qty" class="text-sm font-black text-rose-400 font-mono">0 units</span>
+          </div>
+          <div class="bg-slate-950/80 p-2 rounded-lg border border-slate-800/60">
+            <span class="text-[10px] text-slate-400 font-semibold block">Total ₹ Cost Gone:</span>
+            <span id="detail-month-gone-value" class="text-sm font-black text-amber-300 font-mono">₹ 0.00</span>
+          </div>
+          <div class="bg-slate-950/80 p-2 rounded-lg border border-slate-800/60 col-span-2 sm:col-span-1">
+            <span class="text-[10px] text-slate-400 font-semibold block">Stock Depletion:</span>
+            <span id="detail-month-depletion-rate" class="text-sm font-black text-sky-300 font-mono">0% used</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stock Transactions Ledger -->
+      <div class="space-y-2">
+        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+          <span>📜 Stock Transactions Ledger</span>
+          <span id="detail-tx-count" class="text-[10px] text-slate-400 font-normal">0 records</span>
+        </h4>
+        <div class="overflow-x-auto max-h-48 scrollbar-thin bg-slate-950/80 border border-slate-800 rounded-xl">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-900 text-slate-400 font-semibold sticky top-0">
+              <tr>
+                <th class="py-2 px-3">Type & Date</th>
+                <th class="py-2 px-3 text-center">Quantity</th>
+                <th class="py-2 px-3 text-right">Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody id="detail-ledger-body" class="divide-y divide-slate-800/40 text-slate-300">
+              <!-- Rendered dynamically via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Bottom Floating Action: Adjust Stock Button -->
+      <div class="pt-2 border-t border-slate-800 flex justify-end">
+        <button id="btn-details-adjust-stock" class="w-full py-2.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-400 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95">
+          ⚡ Adjust Stock
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL / DRAWER: ADJUST STOCK WORKFLOW -->
+  <div id="modal-adjust-stock" class="stock-modal-backdrop hidden">
+    <div class="stock-modal-card space-y-5 relative">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-extrabold text-white flex items-center gap-2">
+          <span>⚡</span> Adjust Stock Workflow
+        </h3>
+        <button id="modal-adjust-stock-close" class="text-slate-400 hover:text-white text-lg p-1 rounded-lg hover:bg-slate-800 transition-all">✕</button>
+      </div>
+
+      <form id="form-adjust-stock-workflow" class="space-y-4 text-xs">
+        <input type="hidden" id="adjust-target-id" />
+
+        <!-- 1. Adjustment Type Toggle (Add Stock (+) vs Reduce/Sale Stock (-)) -->
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1.5">Adjustment Type *</label>
+          <div class="erp-toggle-group">
+            <button type="button" id="toggle-type-add" class="erp-toggle-btn btn-add active">
+              ➕ Add Stock (+)
+            </button>
+            <button type="button" id="toggle-type-reduce" class="erp-toggle-btn btn-reduce">
+              ➖ Reduce / Sale Stock (-)
+            </button>
+          </div>
+          <input type="hidden" id="adjust-mode" value="add" />
+        </div>
+
+        <!-- 2. Target Item & Godown Selection -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Target Item *</label>
+            <input id="adjust-item-display" type="text" readonly class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-bold opacity-80" />
+          </div>
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Godown / Warehouse *</label>
+            <select id="adjust-godown-select" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+              <option value="Main Godown">Main Godown</option>
+              <option value="Kitchen Store">Kitchen Store</option>
+              <option value="Storage 1">Storage 1</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 3. Quantity & Unit -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Quantity *</label>
+            <input id="adjust-workflow-qty" type="number" step="0.01" min="0.01" required placeholder="5.0" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-bold" />
+          </div>
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Unit *</label>
+            <select id="adjust-workflow-unit" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+              <option value="Pcs">Pcs (Pieces)</option>
+              <option value="kg">kg (Kilograms)</option>
+              <option value="g">g (Grams)</option>
+              <option value="L">L (Liters)</option>
+              <option value="ml">ml (Milliliters)</option>
+              <option value="packet">packet</option>
+              <option value="box">box</option>
+              <option value="roll">roll</option>
+              <option value="Btl">Btl (Bottles)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 4. Notes / Reason -->
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Notes / Reason</label>
+          <input id="adjust-workflow-notes" type="text" placeholder="e.g. Daily prep batch / Supplier purchase / Spoilage" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500" />
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <button type="button" id="btn-cancel-adjust-workflow" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition-all">Cancel</button>
+          <button type="submit" class="px-5 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold rounded-xl shadow-lg transition-all">Save Stock Adjustment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD / EDIT STOCK ITEM -->
+  <div id="modal-item" class="stock-modal-backdrop hidden">
+    <div class="stock-modal-card space-y-5 relative shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 id="modal-item-title" class="text-sm font-extrabold text-white flex items-center gap-2">
+          <span>📦</span> Add New Item
+        </h3>
+        <button id="modal-item-close" class="text-slate-400 hover:text-white text-lg p-1 rounded-lg hover:bg-slate-800 transition-all">✕</button>
+      </div>
+
+      <form id="form-stock-item" class="space-y-4 text-xs">
+        <input type="hidden" id="form-item-id" />
+
+        <div class="grid grid-cols-3 gap-3">
+          <div class="col-span-2">
+            <label class="block text-slate-400 font-semibold mb-1">Item Name *</label>
+            <input id="form-item-name" type="text" required placeholder="e.g. Basmati Rice / Amul Paneer / Vim Bar" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500" />
+          </div>
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">SKU Code</label>
+            <input id="form-item-sku" type="text" placeholder="Auto-generated" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-emerald-400 font-mono focus:outline-none focus:border-emerald-500" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Category (7 Stock Groups) *</label>
+            <select id="form-item-category" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+              <option value="Bhusimal & Spices">1. 🌾 Bhusimal & Spices</option>
+              <option value="Dairy Items">2. 🥛 Dairy Items</option>
+              <option value="Cold Drinks">3. 🥤 Cold Drinks</option>
+              <option value="Fresh Vegetables">4. 🥦 Fresh Vegetables</option>
+              <option value="Ice Cream">5. 🍦 Ice Cream</option>
+              <option value="Packaging & Carry Bags">6. 📦 Carry Bags & Packaging</option>
+              <option value="Cleaning & Washings">7. 🧹 Washings & Cleaning</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Godown / Location *</label>
+            <select id="form-item-godown" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+              <option value="Main Godown">Main Godown</option>
+              <option value="Kitchen Store">Kitchen Store</option>
+              <option value="Storage 1">Storage 1</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Unit of Measurement *</label>
+            <select id="form-item-unit" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+              <option value="kg">kg (Kilograms)</option>
+              <option value="L">L (Liters)</option>
+              <option value="pcs">pcs (Pieces)</option>
+              <option value="g">g (Grams)</option>
+              <option value="ml">ml (Milliliters)</option>
+              <option value="packet">packet</option>
+              <option value="box">box</option>
+              <option value="roll">roll</option>
+              <option value="Btl">Btl (Bottles)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Opening / Balance Qty *</label>
+            <input id="form-item-qty" type="number" step="0.01" required placeholder="25" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 font-bold" />
+          </div>
+          <div>
+            <label class="block text-rose-400 font-bold mb-1">Min Balance Level *</label>
+            <input id="form-item-min" type="number" step="0.01" min="0" required placeholder="10" class="w-full bg-slate-950 border border-rose-800/80 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-rose-500 font-bold" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Sale / Issue Price (₹)</label>
+            <input id="form-item-sale-price" type="number" step="0.01" min="0" placeholder="150" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500" />
+          </div>
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Purchase Cost (₹) *</label>
+            <input id="form-item-cost" type="number" step="0.01" min="0" required placeholder="110" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Supplier Name & Contact</label>
+          <input id="form-item-supplier" type="text" placeholder="e.g. Royal Rice Traders (9876543212)" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500" />
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <button type="button" id="btn-cancel-item" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition-all">Cancel</button>
+          <button type="submit" class="px-5 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold rounded-xl shadow-lg transition-all">Save Item</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="/src/stock-manager/stock-manager.js"></script>
+</body>
+</html>

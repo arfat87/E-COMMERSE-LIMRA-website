@@ -1,0 +1,18 @@
+{
+  "buildCommand": "echo 'Build skipped'",
+  "outputDirectory": ".",
+  "rewrites": [
+
+    { "source": "/admin-login", "destination": "/admin-login.html" },
+
+    { "source": "/admin-login/", "destination": "/admin-login.html" },
+
+    { "source": "/admin", "destination": "/admin.html" },
+
+    { "source": "/admin/", "destination": "/admin.html" },
+
+    { "source": "/((?!assets/|images/|favicon\\.svg|icons\\.svg|robots\\.txt|sitemap\\.xml|admin\\.html|admin-login\\.html).*)", "destination": "/index.html" }
+
+  ]
+
+}

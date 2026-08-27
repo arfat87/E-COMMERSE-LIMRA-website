@@ -1,0 +1,27 @@
+[
+  {
+    "_id": "6a89a3013fb8c43ecce7c397",
+    "id": "e794fb8f-5e99-4480-b16d-7a23cc2b688d",
+    "booking_date": "2026-07-01T00:00:00.000Z",
+    "booking_number": 10,
+    "booking_time": "04:46",
+    "budget": null,
+    "catering": null,
+    "created_at": "2026-07-01T09:16:39.821Z",
+    "customer_name": "Sambhu",
+    "customer_phone": "8101848426",
+    "event_type": null,
+    "guests": 5,
+    "message": null,
+    "notes": "[EMAIL: sambhu721436@gmail.com]",
+    "preference": "Outdoor",
+    "seat_label": null,
+    "status": "cancelled",
+    "type": "table",
+    "updated_at": "2026-07-15T13:01:56.371Z",
+    "user_id": "12345678-1234-5678-90ab-cdef12345678",
+    "venue": null,
+    "_migrated_at": "2026-08-22T13:49:05.374Z",
+    "_migrated_from": "\"public\".\"bookings\""
+  }
+]

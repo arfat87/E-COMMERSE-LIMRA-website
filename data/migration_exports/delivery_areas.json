@@ -1,0 +1,191 @@
+[
+  {
+    "_id": "6a89a3033fb8c43ecce7c39d",
+    "id": 5,
+    "charge": "30",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "ALANGIRI",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c39e",
+    "id": 10,
+    "charge": "150",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "ANTLA",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c39f",
+    "id": 11,
+    "charge": "40",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "BAITA",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3a0",
+    "id": 6,
+    "charge": "90",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "DOBANDHI",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3a1",
+    "id": 3,
+    "charge": "100",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "EGRA",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3a2",
+    "id": 8,
+    "charge": "80",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "KASBAGOLA",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3a3",
+    "id": 2,
+    "charge": "40",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "KUDI",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3a4",
+    "id": 7,
+    "charge": "80",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "MOHANPUR",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3a5",
+    "id": 4,
+    "charge": "20",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "QIYA",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3a6",
+    "id": 9,
+    "charge": "95",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "RAJMAGAR",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3a7",
+    "id": 12,
+    "charge": "60",
+    "created_at": "2026-07-15T10:31:21.823Z",
+    "name": "PANCHROL",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3a8",
+    "id": 13,
+    "charge": "40",
+    "created_at": "2026-07-15T10:31:39.397Z",
+    "name": "HAMIRJITA",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3a9",
+    "id": 14,
+    "charge": "30",
+    "created_at": "2026-07-15T10:31:51.767Z",
+    "name": "TELAMI",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3aa",
+    "id": 15,
+    "charge": "100",
+    "created_at": "2026-07-15T10:32:05.578Z",
+    "name": "AMDAI",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3ab",
+    "id": 16,
+    "charge": "110",
+    "created_at": "2026-07-15T10:32:20.112Z",
+    "name": "NEGHWA",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3ac",
+    "id": 17,
+    "charge": "80",
+    "created_at": "2026-07-15T10:32:40.850Z",
+    "name": "KHAL SHUTIA",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3ad",
+    "id": 18,
+    "charge": "80",
+    "created_at": "2026-07-15T10:32:58.325Z",
+    "name": "PURANDA",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3ae",
+    "id": 19,
+    "charge": "60",
+    "created_at": "2026-07-15T10:33:10.019Z",
+    "name": "RASAN",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3af",
+    "id": 20,
+    "charge": "50",
+    "created_at": "2026-07-15T10:33:49.270Z",
+    "name": "KUDI DHOBANDI / AILAN",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3b0",
+    "id": 21,
+    "charge": "70",
+    "created_at": "2026-07-15T10:35:56.351Z",
+    "name": "GANTA PUKUR",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  },
+  {
+    "_id": "6a89a3033fb8c43ecce7c3b1",
+    "id": 1,
+    "charge": "10",
+    "created_at": "2026-07-15T09:46:35.335Z",
+    "name": "JERTHAN",
+    "_migrated_at": "2026-08-22T13:49:10.823Z",
+    "_migrated_from": "\"public\".\"delivery_areas\""
+  }
+]

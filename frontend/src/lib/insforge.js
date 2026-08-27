@@ -1,0 +1,495 @@
+import { createClient } from "@insforge/sdk";
+
+const DEFAULT_URL = "https://vb9ucr22.us-east.insforge.app";
+const DEFAULT_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwNzQ3MjZ9.CORVtgdxoKKq0AhdUN0RY8s1h3jHMUF3ZOB0CpmnoYk";
+
+const baseUrl =
+  import.meta.env.VITE_INSFORGE_URL && import.meta.env.VITE_INSFORGE_URL !== "undefined"
+    ? import.meta.env.VITE_INSFORGE_URL
+    : DEFAULT_URL;
+
+const anonKey =
+  import.meta.env.VITE_INSFORGE_ANON_KEY && import.meta.env.VITE_INSFORGE_ANON_KEY !== "undefined"
+    ? import.meta.env.VITE_INSFORGE_ANON_KEY
+    : DEFAULT_ANON_KEY;
+
+export const insforge = createClient({
+  baseUrl: baseUrl,
+  anonKey: anonKey
+});
+
+// Alias for backward compatibility
+export const mongodb = insforge;
+
+function formatInsforgeError(error) {
+  if (!error) return "Unknown error";
+  return error.message || error.details || error.hint || JSON.stringify(error);
+}
+
+/**
+ * 1. Place order via InsForge RPC / backend API
+ */
+export async function saveOrder({
+  customerName,
+  customerPhone,
+  items,
+  notes = "",
+  latitude = null,
+  longitude = null,
+  landmark = null,
+  deliveryNotes = null,
+  locationVerified = false,
+  orderType = "delivery",
+  tableNumber = null,
+  tableZone = null,
+  txnRef = null
+}) {
+  if (!items || !items.length) {
+    throw new Error("Your cart is empty");
+  }
+
+  const p_items = items.map(function(item) {
+    const isVirtual = typeof item.id === "string" || Number(item.id) >= 9000;
+    return {
+      menu_item_id: isVirtual ? null : Number(item.id),
+      item_name: String(item.name),
+      quantity: Math.max(1, Number(item.qty || item.quantity) || 1),
+      unit_price: Number(item.price) || 0,
+      line_total: (Number(item.price) || 0) * (Number(item.qty || item.quantity) || 1)
+    };
+  });
+
+  try {
+    const result = await insforge.database.rpc("place_order", {
+      p_customer_name: (customerName || "Customer").trim(),
+      p_customer_phone: (customerPhone || "").trim(),
+      p_notes: notes ? notes.trim() : "",
+      p_items: p_items,
+      p_latitude: latitude,
+      p_longitude: longitude,
+      p_landmark: landmark,
+      p_delivery_notes: deliveryNotes,
+      p_location_verified: locationVerified,
+      p_order_type: orderType,
+      p_table_number: tableNumber,
+      p_table_zone: tableZone,
+      p_txn_ref: txnRef
+    });
+
+    if (!result.error && result.data) return result.data;
+  } catch (e) {}
+
+  // Fallback to backend /api/orders
+  const res = await fetch("/api/orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      customerName,
+      customerPhone,
+      items: p_items,
+      notes,
+      latitude,
+      longitude,
+      landmark,
+      deliveryNotes,
+      orderType,
+      tableNumber,
+      tableZone,
+      txnRef
+    })
+  });
+
+  const json = await res.json();
+  if (json.success && json.data) return json.data;
+  throw new Error(json.error || "Failed to place order");
+}
+
+/**
+ * 2. Save Dine-In Round via RPC
+ */
+export async function saveTableRound({
+  tableNumber,
+  customerName,
+  customerPhone,
+  items,
+  notes = "",
+  tableZone = "indoor",
+  roundNumber = 1
+}) {
+  if (!items || !items.length) {
+    throw new Error("Cannot place an empty round");
+  }
+
+  const p_items = items.map(function(item) {
+    const isVirtual = typeof item.id === "string" || Number(item.id) >= 9000;
+    return {
+      menu_item_id: isVirtual ? null : Number(item.id),
+      item_name: String(item.name),
+      quantity: Math.max(1, Number(item.qty || item.quantity) || 1),
+      unit_price: Number(item.price) || 0,
+      line_total: (Number(item.price) || 0) * (Number(item.qty || item.quantity) || 1)
+    };
+  });
+
+  try {
+    const result = await insforge.database.rpc("place_table_round", {
+      p_table_number: Number(tableNumber) || 1,
+      p_customer_name: (customerName || "Table Customer").trim(),
+      p_customer_phone: (customerPhone || "").trim(),
+      p_table_zone: tableZone,
+      p_round_number: Number(roundNumber) || 1,
+      p_notes: notes ? notes.trim() : "",
+      p_items: p_items
+    });
+
+    if (!result.error && result.data) return result.data;
+  } catch (e) {}
+
+  // Fallback to /api/db rpc
+  const res = await fetch("/api/db", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "rpc",
+      rpc: "place_table_round",
+      params: {
+        p_table_number: Number(tableNumber) || 1,
+        p_customer_name: (customerName || "Table Customer").trim(),
+        p_customer_phone: (customerPhone || "").trim(),
+        p_table_zone: tableZone,
+        p_round_number: Number(roundNumber) || 1,
+        p_notes: notes ? notes.trim() : "",
+        p_items: p_items
+      }
+    })
+  });
+
+  const json = await res.json();
+  if (json.data) return json.data;
+  throw new Error(json.error?.message || "Failed to place table round");
+}
+
+/**
+ * 3. Save Booking via RPC
+ */
+export async function saveBooking(booking) {
+  if (!booking.customer_name || !booking.customer_phone) {
+    throw new Error("Name and phone are required");
+  }
+
+  const payload = {
+    p_type: booking.type || "table",
+    p_customer_name: booking.customer_name,
+    p_customer_phone: booking.customer_phone,
+    p_booking_date: booking.booking_date || null,
+    p_booking_time: booking.booking_time || null,
+    p_guests: booking.guests !== undefined ? booking.guests : null,
+    p_preference: booking.preference || null,
+    p_seat_label: booking.seat_label || null,
+    p_event_type: booking.event_type || null,
+    p_budget: booking.budget || null,
+    p_catering: booking.catering || null,
+    p_venue: booking.venue || null,
+    p_message: booking.message || null,
+    p_notes: booking.notes || null
+  };
+
+  try {
+    const result = await insforge.database.rpc("place_booking", payload);
+    if (!result.error && result.data) return result.data;
+  } catch (e) {}
+
+  const res = await fetch("/api/db", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "rpc", rpc: "place_booking", params: payload })
+  });
+  const json = await res.json();
+  if (json.data) return json.data;
+  throw new Error(json.error?.message || "Failed to save booking");
+}
+
+function normalizeRpcList(data) {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (typeof data === "string") {
+    try {
+      var parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  return [data];
+}
+
+export async function getCustomerBookings(phone) {
+  try {
+    const result = await insforge.database.rpc("get_customer_bookings", {
+      p_phone: String(phone).trim()
+    });
+    if (!result.error && result.data) return normalizeRpcList(result.data);
+  } catch (e) {}
+
+  const res = await fetch("/api/db", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "rpc", rpc: "get_customer_bookings", params: { p_phone: String(phone).trim() } })
+  });
+  const json = await res.json();
+  return normalizeRpcList(json.data);
+}
+
+export async function getCustomerOrders(phone) {
+  try {
+    const result = await insforge.database.rpc("get_customer_orders", {
+      p_phone: String(phone).trim()
+    });
+    if (!result.error && result.data) return normalizeRpcList(result.data);
+  } catch (e) {}
+
+  const res = await fetch("/api/db", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "rpc", rpc: "get_customer_orders", params: { p_phone: String(phone).trim() } })
+  });
+  const json = await res.json();
+  return normalizeRpcList(json.data);
+}
+
+export async function getMenuOverrides() {
+  const { data, error } = await insforge.database.from("menu_overrides").select("*");
+  if (!error && data) return data;
+
+  const res = await fetch("/api/menu");
+  const json = await res.json();
+  return json.data || [];
+}
+
+export async function saveMenuOverride(override) {
+  const { data: existing } = await insforge.database
+    .from("menu_overrides")
+    .select("id")
+    .eq("id", override.id);
+
+  if (existing && existing.length > 0) {
+    const result = await insforge.database
+      .from("menu_overrides")
+      .update({
+        price: override.price,
+        available: override.available,
+        featured: override.featured,
+        mrp: override.mrp,
+        description: override.description,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", override.id);
+    if (result.error) throw new Error(formatInsforgeError(result.error));
+    return result.data;
+  } else {
+    const result = await insforge.database
+      .from("menu_overrides")
+      .insert([{
+        id: override.id,
+        price: override.price,
+        available: override.available,
+        featured: override.featured,
+        mrp: override.mrp,
+        description: override.description,
+        updated_at: new Date().toISOString()
+      }]);
+    if (result.error) throw new Error(formatInsforgeError(result.error));
+    return result.data;
+  }
+}
+
+export async function getCoupons() {
+  const { data, error } = await insforge.database
+    .from("coupons")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(formatInsforgeError(error));
+  return data || [];
+}
+
+export async function deleteCoupon(code) {
+  const cleanCode = String(code).trim().toUpperCase();
+  const { data, error } = await insforge.database
+    .from("coupons")
+    .delete()
+    .eq("code", cleanCode);
+  if (error) throw new Error(formatInsforgeError(error));
+  return data;
+}
+
+export async function saveCoupon(coupon) {
+  const cleanCode = String(coupon.code).trim().toUpperCase();
+
+  if (coupon.is_auto_send) {
+    await insforge.database
+      .from("coupons")
+      .update({ is_auto_send: false })
+      .eq("is_auto_send", true);
+  }
+
+  const { data: existing } = await insforge.database
+    .from("coupons")
+    .select("code")
+    .eq("code", cleanCode);
+
+  const payload = {
+    code: cleanCode,
+    discount_pct: parseInt(coupon.discount_pct || coupon.discount_value, 10) || 10,
+    max_uses: parseInt(coupon.max_uses || coupon.usage_limit, 10) || 100,
+    expiry_date: coupon.expiry_date || coupon.valid_until,
+    min_bill: parseFloat(coupon.min_bill || coupon.min_order) || 0,
+    active: coupon.active !== false && coupon.is_active !== false,
+    is_auto_send: coupon.is_auto_send === true
+  };
+
+  if (existing && existing.length > 0) {
+    const result = await insforge.database
+      .from("coupons")
+      .update(payload)
+      .eq("code", cleanCode);
+    if (result.error) throw new Error(formatInsforgeError(result.error));
+    return result.data;
+  } else {
+    payload.used_count = 0;
+    const result = await insforge.database
+      .from("coupons")
+      .insert([payload]);
+    if (result.error) throw new Error(formatInsforgeError(result.error));
+    return result.data;
+  }
+}
+
+export async function validateCouponCode(code, subtotal = 0, phone = null) {
+  if (!code) return { valid: false, message: "Coupon code is required" };
+  const cleanCode = String(code).trim().toUpperCase();
+
+  const { data: list, error } = await insforge.database
+    .from("coupons")
+    .select("*")
+    .eq("code", cleanCode)
+    .eq("active", true);
+
+  if (error || !list || list.length === 0) {
+    return { valid: false, message: "Invalid or inactive coupon code" };
+  }
+
+  const coupon = list[0];
+
+  if (coupon.expiry_date && new Date(coupon.expiry_date) < new Date()) {
+    return { valid: false, message: "Coupon code has expired" };
+  }
+
+  if (coupon.max_uses && coupon.used_count >= coupon.max_uses) {
+    return { valid: false, message: "Coupon usage limit reached" };
+  }
+
+  if (coupon.min_bill && subtotal < parseFloat(coupon.min_bill)) {
+    return { valid: false, message: `Minimum bill of ₹${parseFloat(coupon.min_bill).toFixed(2)} required` };
+  }
+
+  if (phone && String(phone).trim()) {
+    const cleanPhone = String(phone).trim();
+    const { data: usage } = await insforge.database
+      .from("coupon_usage")
+      .select("id")
+      .eq("coupon_code", cleanCode)
+      .eq("customer_phone", cleanPhone);
+
+    if (usage && usage.length > 0) {
+      return { valid: false, message: "You have already used this coupon" };
+    }
+  }
+
+  const discountPct = Number(coupon.discount_pct || coupon.discount_value) || 0;
+  const discountAmount = Math.round((subtotal * discountPct) / 100 * 100) / 100;
+  const finalAmount = Math.max(0, subtotal - discountAmount);
+
+  return {
+    valid: true,
+    coupon,
+    discountAmount,
+    finalAmount
+  };
+}
+
+export async function redeemCoupon(code, phone, orderId) {
+  const cleanCode = String(code).trim().toUpperCase();
+  const cleanPhone = phone ? String(phone).trim() : null;
+
+  await insforge.database
+    .from("coupon_usage")
+    .insert([{
+      coupon_code: cleanCode,
+      customer_phone: cleanPhone,
+      order_id: orderId || null
+    }]);
+
+  const { data: current } = await insforge.database
+    .from("coupons")
+    .select("used_count")
+    .eq("code", cleanCode);
+
+  const newCount = (current && current[0] ? current[0].used_count : 0) + 1;
+
+  await insforge.database
+    .from("coupons")
+    .update({ used_count: newCount })
+    .eq("code", cleanCode);
+
+  return true;
+}
+
+export async function recordCouponUsage(couponCode, orderId, discountAmount, customerPhone) {
+  return await redeemCoupon(couponCode, customerPhone, orderId);
+}
+
+export async function getCombos() {
+  const { data, error } = await insforge.database
+    .from("combos")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(formatInsforgeError(error));
+  return data || [];
+}
+
+export async function deleteCombo(id) {
+  const { data, error } = await insforge.database
+    .from("combos")
+    .delete()
+    .eq("id", Number(id));
+  if (error) throw new Error(formatInsforgeError(error));
+  return data;
+}
+
+export async function saveCombo(combo) {
+  const payload = {
+    name: combo.name.trim(),
+    description: combo.description ? combo.description.trim() : "",
+    price: parseFloat(combo.price) || 0,
+    mrp: combo.mrp ? parseFloat(combo.mrp) : null,
+    items: combo.items,
+    available: combo.available !== false,
+    image_url: combo.image_url || null
+  };
+
+  if (combo.id) {
+    const { data, error } = await insforge.database
+      .from("combos")
+      .update(payload)
+      .eq("id", Number(combo.id));
+    if (error) throw new Error(formatInsforgeError(error));
+    return data;
+  } else {
+    const { data, error } = await insforge.database
+      .from("combos")
+      .insert([payload]);
+    if (error) throw new Error(formatInsforgeError(error));
+    return data;
+  }
+}

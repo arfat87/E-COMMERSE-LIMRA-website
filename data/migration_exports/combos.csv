@@ -1,0 +1,2 @@
+_id,id,available,created_at,description,image_url,items,mrp,name,price,_migrated_at,_migrated_from
+"6a899fa83fb8c43ecce7beea","6","true","2026-08-15T12:17:23.275Z","Chicken tikka ,haryali kabab , malai kabab","https://vb9ucr22.us-east.insforge.app/api/storage/buckets/combos/objects/92820.jpg?v=dab864ca5f430898177f480b6eeacdf2","[{""id"":30,""qty"":1,""name"":""Murg Chicken Tikka""},{""id"":31,""qty"":1,""name"":""Malai Kabab""},{""id"":32,""qty"":1,""name"":""Haryali Kabab""}]","625.00","Tranga kabab plater","595.00","""2026-08-22T13:49:05.802Z""","""public"".""combos"""
