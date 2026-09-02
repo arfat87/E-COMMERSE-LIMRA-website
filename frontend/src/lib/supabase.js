@@ -9,6 +9,7 @@ const supabaseUrl =
   DEFAULT_URL;
 
 const supabaseAnonKey =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY) ||
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_INSFORGE_ANON_KEY) ||
   DEFAULT_ANON_KEY;
