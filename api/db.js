@@ -59,7 +59,7 @@ export default async function handler(req, res) {
   try {
     const parsedBody = await parseRequestBody(req);
     const { action, table, collection, filter, data, updates, options, rpc, params, auth } = parsedBody || {};
-    const targetTable = table || collection;
+    const targetTable = table || collection || req.query?.table || req.query?.collection;
 
     // --- 1. RPC DISPATCHER ---
     if (action === "rpc" || rpc) {

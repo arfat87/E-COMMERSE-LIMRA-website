@@ -1,18 +1,13 @@
 {
-  "buildCommand": "echo 'Build skipped'",
-  "outputDirectory": ".",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-
+    { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/admin-login", "destination": "/admin-login.html" },
-
-    { "source": "/admin-login/", "destination": "/admin-login.html" },
-
     { "source": "/admin", "destination": "/admin.html" },
-
-    { "source": "/admin/", "destination": "/admin.html" },
-
-    { "source": "/((?!assets/|images/|favicon\\.svg|icons\\.svg|robots\\.txt|sitemap\\.xml|admin\\.html|admin-login\\.html).*)", "destination": "/index.html" }
-
+    { "source": "/privacy", "destination": "/privacy.html" },
+    { "source": "/table/qr-admin", "destination": "/table/qr-admin.html" },
+    { "source": "/table", "destination": "/table/index.html" },
+    { "source": "/stock-manager", "destination": "/stock-manager/index.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
-
 }

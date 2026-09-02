@@ -3160,6 +3160,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
+    const emailNote = email ? `[EMAIL: ${email}]` : '';
+    const paymentNote = payment ? `[PAYMENT: ${payment}]` : '';
     const deliveryNote = isDelivery
       ? `[DELIVERY] Address: ${address} | Selected Area: ${selectedDeliveryArea ? (selectedDeliveryArea.charAt(0).toUpperCase() + selectedDeliveryArea.slice(1)) : 'Custom'} | Distance: ${km.toFixed(1)} km | Delivery charge: ₹${charge}`
       : '[SELF PICKUP]';
@@ -3182,13 +3184,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       </svg> Placing order...
     `;
 
+    const cartSnapshot = [...cart];
+
     // Strictly food items and their base prices (no tax/fee/discount pseudo line items)
-    const foodItems = cart.map(c => ({
-      id: c.item.id,
-      name: c.item.isCombo ? `🍱 [COMBO] ${c.item.name}` : c.item.name,
-      price: Number(c.item.price),
-      qty: Number(c.quantity)
-    }));
+    const foodItems = cart.map(c => {
+      const isCombo = typeof c.id === 'string' && c.id.startsWith('combo-');
+      return {
+        id: c.id,
+        name: isCombo ? `🍱 [COMBO] ${c.name}` : c.name,
+        price: Number(c.price),
+        qty: Number(c.qty)
+      };
+    });
 
     const saveAndCompleteOrder = async (utrVal = null) => {
       try {
@@ -3205,11 +3212,17 @@ document.addEventListener('DOMContentLoaded', async () => {
           txnRef: utrVal
         });
 
-        if (appliedCoupon) {
+        if (appliedCoupon && appliedCoupon.code) {
           try {
-            await insforge.database.rpc('run_raw_sql', {
-              query: `UPDATE coupons SET used_count = used_count + 1 WHERE code = '${appliedCoupon.code}'`
-            });
+            const { data: current } = await insforge.database
+              .from('coupons')
+              .select('used_count')
+              .eq('code', appliedCoupon.code);
+            const newCount = (current && current[0] ? Number(current[0].used_count) || 0 : 0) + 1;
+            await insforge.database
+              .from('coupons')
+              .update({ used_count: newCount })
+              .eq('code', appliedCoupon.code);
           } catch (couponErr) {
             console.warn('[Checkout] Failed to increment coupon usage count:', couponErr);
           }

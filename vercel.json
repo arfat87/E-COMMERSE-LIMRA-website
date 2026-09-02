@@ -5,6 +5,7 @@
     { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/admin-login", "destination": "/admin-login.html" },
     { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/privacy", "destination": "/privacy.html" },
     { "source": "/table/qr-admin", "destination": "/table/qr-admin.html" },
     { "source": "/table", "destination": "/table/index.html" },
     { "source": "/stock-manager", "destination": "/stock-manager/index.html" },

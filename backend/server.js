@@ -147,13 +147,27 @@ const server = http.createServer(async (req, res) => {
     filePath = filePath + ".html";
   }
 
+  // If filePath is a directory, check for index.html inside it
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+    const dirIndex = path.join(filePath, "index.html");
+    if (fs.existsSync(dirIndex)) {
+      filePath = dirIndex;
+    }
+  }
+
   // Fallback to frontend raw directory if dist is not yet built
-  if (!fs.existsSync(filePath)) {
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     let rawPath = path.join(FRONTEND_DIR, relativePath);
     if (!fs.existsSync(rawPath) && fs.existsSync(rawPath + ".html")) {
       rawPath = rawPath + ".html";
     }
-    if (fs.existsSync(rawPath)) {
+    if (fs.existsSync(rawPath) && fs.statSync(rawPath).isDirectory()) {
+      const rawDirIndex = path.join(rawPath, "index.html");
+      if (fs.existsSync(rawDirIndex)) {
+        rawPath = rawDirIndex;
+      }
+    }
+    if (fs.existsSync(rawPath) && fs.statSync(rawPath).isFile()) {
       filePath = rawPath;
     }
   }

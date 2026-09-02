@@ -632,15 +632,29 @@ function setupCartUI() {
     const subtotal = cart.reduce((s, c) => s + (c.item.price * c.quantity), 0);
     
     try {
-      const coupon = await validateCouponCode(code, subtotal, phone);
-      appliedCoupon = coupon;
-      feedback.textContent = `✓ Code applied! Saved ${coupon.discount_pct}% on subtotal.`;
+      const res = await validateCouponCode(code, subtotal, phone);
+      if (!res || !res.valid) {
+        appliedCoupon = null;
+        feedback.textContent = `✗ ${res?.message || 'Invalid or inactive coupon code'}`;
+        feedback.style.color = '#ff5b5b';
+        feedback.classList.remove('hidden');
+        updateCartUI();
+        return;
+      }
+      appliedCoupon = {
+        code: res.code || code,
+        discount_pct: res.discount_pct || res.coupon?.discount_pct || 0,
+        min_bill: res.min_bill || res.coupon?.min_bill || 0
+      };
+      feedback.textContent = `✓ Code applied! Saved ${appliedCoupon.discount_pct}% on subtotal.`;
       feedback.style.color = '#10b981';
+      feedback.classList.remove('hidden');
       updateCartUI();
     } catch (err) {
       appliedCoupon = null;
-      feedback.textContent = `✗ ${err.message}`;
+      feedback.textContent = `✗ ${err.message || 'Failed to validate coupon'}`;
       feedback.style.color = '#ff5b5b';
+      feedback.classList.remove('hidden');
       updateCartUI();
     }
   });

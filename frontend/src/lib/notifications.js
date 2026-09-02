@@ -1,4 +1,4 @@
-import { supabase } from './supabase.js';
+import { supabase, insforge } from './supabase.js';
 import { sendEmailNotification } from './email-service.js';
 
 export const NotificationService = {
