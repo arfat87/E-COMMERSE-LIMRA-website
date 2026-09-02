@@ -286,15 +286,34 @@ function initAuthUI() {
     hide($('login-error'));
     hide($('signup-error'));
     const btn = $('google-signin-btn');
-    if (btn) btn.disabled = true;
+    if (btn) {
+      btn.disabled = true;
+      const text = $('google-btn-text');
+      if (text) text.textContent = 'Connecting to Google...';
+    }
     const redirectTo = window.location.origin + '/admin-login.html';
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      redirectTo
+      redirectTo,
+      options: {
+        redirectTo,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent'
+        }
+      }
     });
-    if (btn) btn.disabled = false;
+    if (btn) {
+      btn.disabled = false;
+      const text = $('google-btn-text');
+      if (text) text.textContent = 'Sign in with Google';
+    }
     if (error) {
-      $('login-error').textContent = error.message;
+      let friendlyMsg = error.message || 'Failed to sign in with Google.';
+      if (friendlyMsg.toLowerCase().includes('not enabled') || friendlyMsg.toLowerCase().includes('unsupported_provider')) {
+        friendlyMsg = 'Google Auth is not enabled in your Supabase project. Go to Supabase Dashboard > Authentication > Providers > Google and enable it.';
+      }
+      $('login-error').textContent = friendlyMsg;
       show($('login-error'));
     }
   });
@@ -327,49 +346,63 @@ function handleOAuthCallback() {
 function cleanAuthParams() {
   try {
     const url = new URL(window.location.href);
+    const paramsToRemove = ['insforge_code', 'insforge_status', 'insforge_type', 'insforge_error'];
+    paramsToRemove.forEach(p => url.searchParams.delete(p));
+    window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+  } catch (e) {}
+}
+
+function clearUrlTokens() {
+  try {
+    const url = new URL(window.location.href);
     const paramsToRemove = ['code', 'error', 'error_code', 'error_description', 'insforge_code', 'insforge_status', 'insforge_type', 'insforge_error'];
     paramsToRemove.forEach(p => url.searchParams.delete(p));
-    
-    // Clear hash fragment if it contains auth tokens
-    if (window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('error'))) {
-      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
-    } else {
-      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
-    }
-  } catch (e) {
-    console.warn('Failed to clean auth URL params:', e);
-  }
+    window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+  } catch (e) {}
 }
 
 async function init() {
   handleEmailVerifyCallback();
-  handleOAuthCallback();
+  const hasCallbackError = handleOAuthCallback();
 
-  // Listen for Supabase OAuth sign-in events
+  const isOAuthRedirect = window.location.hash.includes('access_token') || window.location.search.includes('code');
+  if (isOAuthRedirect && !hasCallbackError) {
+    const btnText = $('google-btn-text');
+    if (btnText) btnText.textContent = 'Verifying Google Account...';
+    hide($('login-error'));
+  }
+
+  // 1. Listen for Supabase OAuth sign-in events
   if (supabase?.auth?.onAuthStateChange) {
     supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        cleanAuthParams();
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+        clearUrlTokens();
         await afterAuthSuccess(session.user);
       }
     });
   }
 
-  const { data } = await supabase.auth.getCurrentUser();
-  cleanAuthParams();
-
-  if (data?.user) {
-    const isAdmin = await checkAdminAccess(data.user);
-    if (isAdmin) {
-      goToDashboard();
+  // 2. Check existing session
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const activeUser = sessionData?.session?.user;
+    if (activeUser) {
+      clearUrlTokens();
+      await afterAuthSuccess(activeUser);
       return;
-    } else {
-      await supabase.auth.signOut();
-      $('login-error').textContent = 'Your account is authenticated, but admin access has not been granted. Contact the owner.';
-      show($('login-error'));
     }
+
+    const { data: userData } = await supabase.auth.getCurrentUser();
+    if (userData?.user) {
+      clearUrlTokens();
+      await afterAuthSuccess(userData.user);
+      return;
+    }
+  } catch (e) {
+    console.warn('Session check error:', e);
   }
 
+  cleanAuthParams();
   initAuthUI();
 }
 
