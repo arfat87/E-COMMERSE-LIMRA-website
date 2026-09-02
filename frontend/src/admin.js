@@ -7486,9 +7486,15 @@ function renderAll() {
   if (selectedOrderId) renderOrderDetail(selectedOrderId);
 }
 
+let isDashboardSyncing = false;
+
 async function refreshDashboard(isManual = false) {
+  if (isDashboardSyncing) return;
+  if (!isManual && typeof document !== 'undefined' && document.hidden) return;
+
+  isDashboardSyncing = true;
   const syncIndicator = $('sync-indicator');
-  if (syncIndicator) {
+  if (syncIndicator && isManual) {
     show(syncIndicator);
     syncIndicator.textContent = 'Syncing...';
     syncIndicator.style.background = 'rgba(242,153,74,0.12)';
@@ -7499,7 +7505,7 @@ async function refreshDashboard(isManual = false) {
     await loadData();
     renderAll();
     
-    if (syncIndicator) {
+    if (syncIndicator && isManual) {
       syncIndicator.textContent = 'Synced';
       syncIndicator.style.background = 'rgba(0,176,116,0.12)';
       syncIndicator.style.color = 'var(--adm-green)';
@@ -7507,11 +7513,11 @@ async function refreshDashboard(isManual = false) {
         if (syncIndicator.textContent === 'Synced') {
           hide(syncIndicator);
         }
-      }, 3000);
+      }, 2000);
     }
   } catch (err) {
     console.error('Auto sync error:', err);
-    if (syncIndicator) {
+    if (syncIndicator && isManual) {
       syncIndicator.textContent = 'Sync Failed';
       syncIndicator.style.background = 'rgba(255,91,91,0.12)';
       syncIndicator.style.color = '#ff5b5b';
@@ -7519,6 +7525,8 @@ async function refreshDashboard(isManual = false) {
     if (isManual) {
       alert('Failed to load data. Please check your network connection or admin permissions.');
     }
+  } finally {
+    isDashboardSyncing = false;
   }
 }
 
@@ -7786,8 +7794,8 @@ function initDashboardUI() {
   // Connect to QZ Tray
   initQZTray();
 
-  // Auto-refresh every 4 seconds for immediate real-time notifications
-  setInterval(() => refreshDashboard(false), 4000);
+  // Auto-refresh every 10 seconds for real-time notifications
+  setInterval(() => refreshDashboard(false), 10000);
 
   // Setup modal listeners for menu editor, coupon manager, and combo manager
   setupEditModalListeners();
