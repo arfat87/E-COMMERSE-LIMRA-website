@@ -49,3 +49,7 @@ dist-ssr
 src/MEDIA
 src/MEDIA/
 src/MEDIA/**
+
+.vercel
+scratch
+scratch/

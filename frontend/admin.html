@@ -669,9 +669,14 @@
             <strong id="orders-summary-count" style="color: var(--adm-text); font-weight: 800;">0 orders</strong>
             <span id="orders-date-active-label" class="adm-badge" style="background: rgba(99, 102, 241, 0.1); color: #6366f1; font-size: 0.75rem; display: none;"></span>
           </div>
-          <div>
-            <span style="color: var(--adm-muted); font-weight: 600;">Total Amount: </span>
-            <strong id="orders-summary-amount" style="color: var(--adm-green); font-size: 1.1rem; font-weight: 800;">₹0.00</strong>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <button type="button" id="orders-bulk-delete-btn" class="adm-btn adm-btn-danger" style="display:none;padding:.35rem .75rem;font-size:0.8rem;font-weight:700;background:#ef4444;border-color:#dc2626;align-items:center;gap:0.35rem;" title="Delete all selected orders">
+              <span>🗑️</span> Delete Selected (<span id="orders-selected-count">0</span>)
+            </button>
+            <div>
+              <span style="color: var(--adm-muted); font-weight: 600;">Total Amount: </span>
+              <strong id="orders-summary-amount" style="color: var(--adm-green); font-size: 1.1rem; font-weight: 800;">₹0.00</strong>
+            </div>
           </div>
         </div>
 
@@ -680,7 +685,10 @@
           <table class="adm-table">
             <thead>
               <tr>
-                <th style="padding-left:1.25rem;">Order #</th>
+                <th style="width:36px;padding-left:1rem;text-align:center;">
+                  <input type="checkbox" id="orders-select-all" title="Select all orders on this page" style="cursor:pointer;width:16px;height:16px;accent-color:#ef4444;" />
+                </th>
+                <th>Order #</th>
                 <th>Customer &amp; Channel</th>
                 <th>Ordered Items</th>
                 <th>Total Amount</th>
@@ -2749,83 +2757,132 @@
   </div>
 </div>
 
-<!-- Add Items to Running Table Modal (Hold Section) -->
+<!-- Manage & Edit Items in Hold Order / Table Session Modal -->
 <div id="adm-hold-add-modal" class="adm-hold-modal">
-  <div class="adm-hold-modal-content">
+  <div class="adm-hold-modal-content" style="max-width:980px;">
     <!-- Modal Header -->
-    <div style="padding:1rem 1.25rem;background:#1e293b;color:#fff;display:flex;justify-content:space-between;align-items:center;">
+    <div style="padding:1rem 1.25rem;background:#1e293b;color:#fff;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;">
       <div>
         <h3 id="hold-modal-title" style="font-size:1.15rem;font-weight:800;margin:0;display:flex;align-items:center;gap:.5rem;">
-          <span>🍽️ Add Dishes to Table</span>
+          <span>🍽️ Manage &amp; Edit Dishes</span>
         </h3>
-        <p id="hold-modal-sub" style="font-size:.8rem;color:#94a3b8;margin:2px 0 0 0;">Select dishes to send additional KOT to kitchen</p>
+        <p id="hold-modal-sub" style="font-size:.8rem;color:#94a3b8;margin:2px 0 0 0;">Edit quantities, cancel unwanted items, or add new dishes to this order</p>
       </div>
+      
+      <!-- Tab Switcher -->
+      <div style="display:flex;background:rgba(255,255,255,0.1);padding:3px;border-radius:10px;gap:4px;">
+        <button type="button" id="hold-modal-tab-btn-edit" class="adm-btn adm-btn-sm" style="background:#6366f1;color:#fff;border:none;font-weight:700;font-size:.8rem;padding:.35rem .75rem;border-radius:7px;">
+          📋 Edit / Cancel Ordered (<span id="hold-modal-tab1-count">0</span>)
+        </button>
+        <button type="button" id="hold-modal-tab-btn-add" class="adm-btn adm-btn-sm" style="background:transparent;color:#cbd5e1;border:none;font-weight:700;font-size:.8rem;padding:.35rem .75rem;border-radius:7px;">
+          ➕ Add New Dishes
+        </button>
+      </div>
+
       <button type="button" id="hold-modal-close-btn" style="background:rgba(255,255,255,0.1);border:none;color:#fff;font-size:1.2rem;width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
     </div>
 
     <!-- Modal Body (2-Column Grid) -->
-    <div style="display:grid;grid-template-columns:1fr 340px;flex:1;overflow:hidden;background:#f8fafc;">
+    <div style="display:grid;grid-template-columns:1fr 340px;flex:1;overflow:hidden;background:#f8fafc;min-height:480px;">
       
-      <!-- Left Column: Menu Browser -->
-      <div style="padding:1rem;display:flex;flex-direction:column;gap:.75rem;overflow-y:auto;border-right:1px solid var(--adm-border);">
-        <!-- Search & Filter -->
-        <div style="display:flex;gap:.5rem;align-items:center;">
-          <input type="search" id="hold-modal-search" class="adm-input" placeholder="🔍 Search dishes by name or category..." style="flex:1;font-size:.85rem;" />
-          <span id="hold-modal-items-count" style="font-size:.75rem;font-weight:700;color:#6366f1;background:#eef2ff;padding:.3rem .6rem;border-radius:999px;white-space:nowrap;">202 Dishes</span>
-        </div>
-
-        <!-- Category Pills -->
-        <div id="hold-modal-categories" class="pos-cat-pill-bar" style="display:flex;gap:.35rem;overflow-x:auto;padding-bottom:.25rem;">
-          <!-- Populated dynamically via JS -->
-        </div>
-
-        <!-- Food Picture Grid -->
-        <div id="hold-modal-food-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.65rem;flex:1;min-height:340px;max-height:460px;overflow-y:auto;padding-right:4px;">
-          <!-- Populated dynamically with picture cards -->
-        </div>
-      </div>
-
-      <!-- Right Column: New Items Cart & Actions -->
-      <div style="padding:1rem;display:flex;flex-direction:column;justify-content:space-between;background:#fff;">
-        <div style="overflow-y:auto;max-height:340px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;border-bottom:1px solid var(--adm-border);padding-bottom:.5rem;">
-            <h4 style="font-size:.9rem;font-weight:700;margin:0;color:#111827;">🛒 Additional Dishes</h4>
-            <button type="button" id="hold-modal-clear-cart-btn" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:.7rem;padding:.2rem .45rem;">Clear</button>
+      <!-- Left Column: Tab 1 (Edit/Cancel Items) or Tab 2 (Menu Browser) -->
+      <div id="hold-modal-left-pane" style="padding:1rem;display:flex;flex-direction:column;gap:.75rem;overflow-y:auto;border-right:1px solid var(--adm-border);">
+        
+        <!-- VIEW A: Edit & Cancel Existing Ordered Items -->
+        <div id="hold-modal-view-edit" style="display:flex;flex-direction:column;gap:.6rem;flex:1;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;">
+            <div style="display:flex;gap:.5rem;align-items:center;flex:1;">
+              <input type="search" id="hold-modal-edit-search" class="adm-input" placeholder="🔍 Filter ordered dishes..." style="flex:1;font-size:.85rem;" />
+            </div>
+            <span id="hold-modal-edit-badge" style="font-size:.75rem;font-weight:700;color:#059669;background:#ecfdf5;border:1px solid #a7f3d0;padding:.3rem .6rem;border-radius:999px;white-space:nowrap;">
+              0 Dishes Active
+            </span>
           </div>
 
-          <div id="hold-modal-cart-items">
-            <p style="color:var(--adm-muted);font-size:.82rem;text-align:center;padding:1.5rem 0;">No dishes selected yet.<br/><span style="font-size:.75rem;">Click dishes on the left to add.</span></p>
+          <div id="hold-modal-existing-items-list" style="display:flex;flex-direction:column;gap:.5rem;overflow-y:auto;max-height:420px;padding-right:2px;">
+            <!-- Populated dynamically via JS -->
+          </div>
+        </div>
+
+        <!-- VIEW B: Menu Browser (Add New Dishes) -->
+        <div id="hold-modal-view-add" style="display:none;flex-direction:column;gap:.75rem;flex:1;">
+          <!-- Search & Filter -->
+          <div style="display:flex;gap:.5rem;align-items:center;">
+            <input type="search" id="hold-modal-search" class="adm-input" placeholder="🔍 Search dishes by name or category..." style="flex:1;font-size:.85rem;" />
+            <span id="hold-modal-items-count" style="font-size:.75rem;font-weight:700;color:#6366f1;background:#eef2ff;padding:.3rem .6rem;border-radius:999px;white-space:nowrap;">202 Dishes</span>
+          </div>
+
+          <!-- Category Pills -->
+          <div id="hold-modal-categories" class="pos-cat-pill-bar" style="display:flex;gap:.35rem;overflow-x:auto;padding-bottom:.25rem;">
+            <!-- Populated dynamically via JS -->
+          </div>
+
+          <!-- Food Picture Grid -->
+          <div id="hold-modal-food-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.65rem;flex:1;min-height:340px;max-height:420px;overflow-y:auto;padding-right:4px;">
+            <!-- Populated dynamically with picture cards -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Live Summary, Added New Dishes & Actions -->
+      <div style="padding:1rem;display:flex;flex-direction:column;justify-content:space-between;background:#fff;overflow-y:auto;">
+        <div>
+          <!-- Newly Added Dishes Cart Header -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;border-bottom:1px solid var(--adm-border);padding-bottom:.4rem;">
+            <h4 style="font-size:.88rem;font-weight:800;margin:0;color:#111827;display:flex;align-items:center;gap:.35rem;">
+              <span>🛒 Newly Added Dishes</span>
+              <span id="hold-modal-new-badge" style="font-size:.7rem;padding:1px 6px;border-radius:999px;background:#e0e7ff;color:#4338ca;font-weight:700;">0</span>
+            </h4>
+            <button type="button" id="hold-modal-clear-cart-btn" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:.7rem;padding:.15rem .4rem;">Clear</button>
+          </div>
+
+          <div id="hold-modal-cart-items" style="max-height:160px;overflow-y:auto;margin-bottom:.6rem;">
+            <p style="color:var(--adm-muted);font-size:.8rem;text-align:center;padding:1rem 0;">No extra dishes selected.<br/><span style="font-size:.72rem;">Switch to "Add New Dishes" tab to pick items.</span></p>
+          </div>
+
+          <!-- Modifications / Cancellations Notice -->
+          <div id="hold-modal-cancellations-summary" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.5rem .75rem;margin-bottom:.6rem;font-size:.75rem;color:#b91c1c;">
+            <div style="font-weight:800;display:flex;align-items:center;gap:.3rem;">⚠️ Pending Cancellations:</div>
+            <div id="hold-modal-cancellations-list" style="margin-top:2px;font-weight:600;"></div>
           </div>
         </div>
 
         <!-- Order Total & Actions -->
-        <div style="border-top:1px solid var(--adm-border);padding-top:.75rem;margin-top:.5rem;">
-          <div style="display:flex;flex-direction:column;gap:.35rem;font-size:.82rem;margin-bottom:.85rem;">
+        <div style="border-top:1px solid var(--adm-border);padding-top:.6rem;margin-top:.4rem;">
+          <div style="display:flex;flex-direction:column;gap:.3rem;font-size:.8rem;margin-bottom:.75rem;">
             <div style="display:flex;justify-content:space-between;color:var(--adm-muted);">
-              <span>Current Table Total:</span>
-              <span id="hold-modal-curr-total" style="font-weight:600;">₹0.00</span>
+              <span>Original Subtotal:</span>
+              <span id="hold-modal-orig-subtotal" style="font-weight:600;">₹0.00</span>
             </div>
-            <div style="display:flex;justify-content:space-between;color:var(--adm-muted);">
+            <div id="hold-modal-row-cancelled" style="display:none;justify-content:space-between;color:#dc2626;">
+              <span>- Cancelled Items:</span>
+              <span id="hold-modal-cancelled-amt" style="font-weight:700;">-₹0.00</span>
+            </div>
+            <div id="hold-modal-row-added" style="display:none;justify-content:space-between;color:#4f46e5;">
               <span>+ New Dishes Subtotal:</span>
-              <span id="hold-modal-new-subtotal" style="font-weight:600;color:#6366f1;">₹0.00</span>
+              <span id="hold-modal-new-subtotal" style="font-weight:700;">+₹0.00</span>
             </div>
             <div style="display:flex;justify-content:space-between;color:var(--adm-muted);">
-              <span>+ Taxes (CGST + SGST):</span>
-              <span id="hold-modal-new-tax" style="font-weight:600;">₹0.00</span>
+              <span>Taxes (CGST + SGST):</span>
+              <span id="hold-modal-tax-amt" style="font-weight:600;">₹0.00</span>
             </div>
-            <div style="display:flex;justify-content:space-between;font-size:.95rem;font-weight:800;border-top:1px dashed var(--adm-border);padding-top:.4rem;margin-top:.2rem;color:#111827;">
+            <div style="display:flex;justify-content:space-between;font-size:1rem;font-weight:900;border-top:1.5px dashed var(--adm-border);padding-top:.4rem;margin-top:.2rem;color:#111827;">
               <span>Updated Total:</span>
               <span id="hold-modal-updated-total" style="color:#059669;">₹0.00</span>
             </div>
           </div>
 
           <!-- Action Buttons -->
-          <div style="display:flex;flex-direction:column;gap:.5rem;">
-            <button type="button" id="hold-modal-kot-btn" class="adm-btn adm-btn-primary" style="width:100%;font-weight:700;font-size:.88rem;background:#f59e0b;border-color:#f59e0b;">
-              🖨️ KOT &amp; Save New Dishes
+          <div style="display:flex;flex-direction:column;gap:.45rem;">
+            <button type="button" id="hold-modal-save-btn" class="adm-btn adm-btn-primary" style="width:100%;font-weight:800;font-size:.88rem;background:#10b981;border-color:#10b981;">
+              💾 Save All Item Changes
             </button>
-            <button type="button" id="hold-modal-save-btn" class="adm-btn adm-btn-outline" style="width:100%;font-weight:600;font-size:.82rem;">
-              💾 Save Only (No Kitchen Ticket)
+            <button type="button" id="hold-modal-kot-btn" class="adm-btn adm-btn-outline" style="width:100%;font-weight:700;font-size:.82rem;background:#fffbeb;border-color:#f59e0b;color:#b45309;">
+              🖨️ Save &amp; Print Kitchen Slip (KOT / Cancel)
+            </button>
+            <button type="button" id="hold-modal-discard-btn" class="adm-btn adm-btn-outline" style="width:100%;font-weight:600;font-size:.78rem;color:#64748b;border-color:#cbd5e1;">
+              ✕ Discard &amp; Close
             </button>
           </div>
         </div>
@@ -2902,83 +2959,127 @@
 
 <!-- Closed Order Correction & Editor Modal -->
 <div id="adm-closed-order-edit-modal" class="adm-hold-modal">
-  <div class="adm-hold-modal-content" style="max-width:820px;">
-    <!-- Modal Header -->
-    <div style="padding:1rem 1.25rem;background:#1e293b;color:#fff;display:flex;justify-content:space-between;align-items:center;">
+  <div class="adm-hold-modal-content" style="max-width:880px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
+    <!-- Modal Header (Fixed) -->
+    <div style="padding:1rem 1.25rem;background:#1e293b;color:#fff;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
       <div>
         <h3 id="closed-edit-title" style="font-size:1.15rem;font-weight:800;margin:0;display:flex;align-items:center;gap:.5rem;">
           <span>✏️ Edit &amp; Correct Closed Order</span>
         </h3>
-        <p id="closed-edit-sub" style="font-size:.8rem;color:#94a3b8;margin:2px 0 0 0;">Update items, adjust quantities, recalculate taxes, and reprint correct bill</p>
+        <p id="closed-edit-sub" style="font-size:.8rem;color:#94a3b8;margin:2px 0 0 0;">Update items, adjust quantities, add missing dishes or custom items, and reprint bill</p>
       </div>
       <button type="button" id="closed-edit-close-btn" style="background:rgba(255,255,255,0.1);border:none;color:#fff;font-size:1.2rem;width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
     </div>
 
-    <!-- Modal Body -->
-    <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem;overflow-y:auto;max-height:calc(90vh - 140px);background:#f8fafc;">
+    <!-- Modal Body (Scrollable Container) -->
+    <div class="closed-edit-scroll-body" style="padding:1.1rem 1.25rem;display:flex;flex-direction:column;gap:.85rem;background:#f8fafc;flex:1 1 auto;overflow-y:auto;min-height:0;">
       
       <!-- Customer Info Row -->
-      <div class="adm-card" style="padding:.75rem 1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;background:#fff;">
-        <div style="display:flex;gap:1.5rem;flex-wrap:wrap;font-size:.85rem;">
-          <div><span style="color:var(--adm-muted);">Customer:</span> <strong id="closed-edit-cust-name">—</strong></div>
-          <div><span style="color:var(--adm-muted);">Phone:</span> <strong id="closed-edit-cust-phone">—</strong></div>
-          <div><span style="color:var(--adm-muted);">Type:</span> <strong id="closed-edit-type">—</strong></div>
-          <div><span style="color:var(--adm-muted);">Placed:</span> <span id="closed-edit-date" style="color:var(--adm-muted);">—</span></div>
+      <div class="adm-card" style="padding:.75rem 1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;background:#fff;border:1px solid var(--adm-border);border-radius:10px;">
+        <div style="display:flex;gap:1.25rem;flex-wrap:wrap;font-size:.85rem;align-items:center;">
+          <div><span style="color:var(--adm-muted);">Customer:</span> <strong id="closed-edit-cust-name" style="color:#111827;">—</strong></div>
+          <div><span style="color:var(--adm-muted);">Phone:</span> <strong id="closed-edit-cust-phone" style="color:#111827;">—</strong></div>
+          <div><span style="color:var(--adm-muted);">Type:</span> <span id="closed-edit-type" class="adm-pill" style="background:#eef2ff;color:#4f46e5;font-weight:700;">—</span></div>
+          <div><span style="color:var(--adm-muted);">Placed:</span> <span id="closed-edit-date" style="color:#64748b;font-weight:600;">—</span></div>
         </div>
       </div>
 
-      <!-- Add Dish Row -->
-      <div class="adm-card" style="padding:.75rem 1rem;background:#fff;">
-        <p style="font-size:.8rem;font-weight:700;margin-bottom:.5rem;color:#1e293b;">+ Add Missing Dish to this Order:</p>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;">
-          <select id="closed-edit-add-select" class="adm-select" style="flex:2;min-width:200px;">
-            <option value="">— Select a dish to add —</option>
-          </select>
-          <input type="number" id="closed-edit-add-price" class="adm-input" placeholder="Price" min="0" step="any" style="width:90px;" />
-          <input type="number" id="closed-edit-add-qty" class="adm-input" placeholder="Qty" min="1" value="1" style="width:65px;" />
-          <button type="button" id="closed-edit-add-btn" class="adm-btn adm-btn-primary adm-btn-sm">+ Add Item</button>
+      <!-- Add Dish or Custom Item Section -->
+      <div class="adm-card" style="padding:.85rem 1rem;background:#fff;border:1px solid var(--adm-border);border-radius:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;flex-wrap:wrap;gap:.4rem;">
+          <div style="font-size:.82rem;font-weight:800;color:#1e293b;display:flex;align-items:center;gap:.35rem;">
+            <span>➕ Add Dishes or Combos to this Order</span>
+          </div>
+          <!-- Mode Tabs -->
+          <div style="display:flex;gap:4px;background:#f1f5f9;padding:2px;border-radius:8px;">
+            <button type="button" id="closed-edit-tab-menu-btn" class="adm-btn adm-btn-sm" style="background:#6366f1;color:#fff;border:none;font-size:.75rem;padding:.2rem .55rem;border-radius:6px;font-weight:700;">🍽️ Menu &amp; Combos</button>
+            <button type="button" id="closed-edit-tab-custom-btn" class="adm-btn adm-btn-sm" style="background:transparent;color:#64748b;border:none;font-size:.75rem;padding:.2rem .55rem;border-radius:6px;font-weight:700;">✍️ Custom Item</button>
+          </div>
+        </div>
+
+        <!-- Mode A: From Combined Menu & Combos -->
+        <div id="closed-edit-add-menu-pane" style="display:flex;flex-direction:column;gap:.5rem;">
+          <div style="display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;">
+            <div style="flex:2;min-width:240px;position:relative;">
+              <input type="search" id="closed-edit-dish-search" class="adm-input" placeholder="🔍 Search menu item or combo package..." style="font-size:.82rem;margin-bottom:.35rem;" />
+              <select id="closed-edit-add-select" class="adm-select" style="width:100%;font-size:.82rem;">
+                <option value="">— Select dish or combo —</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:.35rem;align-items:center;">
+              <input type="number" id="closed-edit-add-price" class="adm-input" placeholder="Price (₹)" min="0" step="any" style="width:85px;font-size:.82rem;" />
+              <input type="number" id="closed-edit-add-qty" class="adm-input" placeholder="Qty" min="1" value="1" style="width:60px;font-size:.82rem;" />
+              <button type="button" id="closed-edit-add-btn" class="adm-btn adm-btn-primary adm-btn-sm" style="font-weight:700;font-size:.8rem;white-space:nowrap;background:#6366f1;border-color:#6366f1;">+ Add</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode B: Custom Dish / Manual Item -->
+        <div id="closed-edit-add-custom-pane" style="display:none;gap:.45rem;flex-wrap:wrap;align-items:center;">
+          <input type="text" id="closed-edit-custom-name" class="adm-input" placeholder="Custom dish name (e.g. Special Roti Pack)" style="flex:2;min-width:200px;font-size:.82rem;" />
+          <input type="number" id="closed-edit-custom-price" class="adm-input" placeholder="Price (₹)" min="0" step="any" style="width:85px;font-size:.82rem;" />
+          <input type="number" id="closed-edit-custom-qty" class="adm-input" placeholder="Qty" min="1" value="1" style="width:60px;font-size:.82rem;" />
+          <button type="button" id="closed-edit-custom-add-btn" class="adm-btn adm-btn-primary adm-btn-sm" style="font-weight:700;font-size:.8rem;white-space:nowrap;background:#10b981;border-color:#10b981;">+ Add Custom</button>
         </div>
       </div>
 
-      <!-- Order Items List Table -->
-      <div class="adm-card adm-table-wrap" style="background:#fff;padding:0;overflow:hidden;">
-        <table class="adm-table">
-          <thead>
-            <tr>
-              <th>Dish Name</th>
-              <th style="text-align:center;">Unit Price</th>
-              <th style="text-align:center;width:140px;">Quantity</th>
-              <th style="text-align:right;">Line Total</th>
-              <th style="text-align:center;width:60px;">Remove</th>
-            </tr>
-          </thead>
-          <tbody id="closed-edit-items-tbody"></tbody>
-        </table>
-      </div>
-
-      <!-- Summary & Action Bar -->
-      <div class="adm-card" style="padding:1rem;background:#fff;border-left:4px solid #6366f1;">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
-          <!-- Totals Breakdown -->
-          <div style="display:flex;flex-direction:column;gap:.25rem;font-size:.85rem;min-width:240px;">
-            <div style="display:flex;justify-content:space-between;color:var(--adm-muted);"><span>Subtotal:</span><strong id="closed-edit-subtotal">₹0.00</strong></div>
-            <div style="display:flex;justify-content:space-between;color:var(--adm-muted);"><span>CGST + SGST:</span><strong id="closed-edit-tax">₹0.00</strong></div>
-            <div style="display:flex;justify-content:space-between;font-size:1.05rem;font-weight:800;border-top:1px dashed var(--adm-border);padding-top:.35rem;margin-top:.2rem;color:#111827;"><span>Grand Total:</span><strong id="closed-edit-grand-total" style="color:#059669;">₹0.00</strong></div>
+      <!-- Order Items List Table with Search Filter -->
+      <div class="adm-card" style="padding:.75rem 1rem;background:#fff;border:1px solid var(--adm-border);border-radius:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem;">
+          <div style="display:flex;align-items:center;gap:.5rem;">
+            <span style="font-size:.84rem;font-weight:800;color:#111827;">📋 Ordered Items</span>
+            <span id="closed-edit-items-count-badge" style="font-size:.72rem;font-weight:700;background:#eef2ff;color:#4f46e5;padding:2px 7px;border-radius:999px;">0 Items</span>
           </div>
-
-          <!-- Buttons -->
-          <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;">
-            <button type="button" id="closed-edit-save-btn" class="adm-btn adm-btn-outline" style="font-weight:700;">
-              💾 Save Corrections
-            </button>
-            <button type="button" id="closed-edit-reprint-btn" class="adm-btn adm-btn-primary" style="font-weight:800;background:#10b981;border-color:#10b981;display:inline-flex;align-items:center;gap:.35rem;">
-              <span>🖨️</span> Save &amp; Reprint Bill
-            </button>
+          <!-- In-Order Filter Search -->
+          <div style="max-width:240px;width:100%;">
+            <input type="search" id="closed-edit-items-search" class="adm-input" placeholder="🔍 Filter items in order..." style="font-size:.78rem;padding:.25rem .5rem;" />
           </div>
+        </div>
+
+        <div class="closed-edit-items-scroll-table">
+          <table class="adm-table" style="margin:0;">
+            <thead>
+              <tr>
+                <th>Dish Name</th>
+                <th style="text-align:center;width:110px;">Unit Price</th>
+                <th style="text-align:center;width:130px;">Quantity</th>
+                <th style="text-align:right;width:120px;">Line Total</th>
+                <th style="text-align:center;width:60px;">Remove</th>
+              </tr>
+            </thead>
+            <tbody id="closed-edit-items-tbody"></tbody>
+          </table>
         </div>
       </div>
 
     </div>
+
+    <!-- Summary & Action Bar (Fixed at bottom) -->
+    <div style="padding:.9rem 1.25rem;background:#fff;border-top:1.5px solid var(--adm-border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.8rem;flex-shrink:0;box-shadow:0 -4px 12px rgba(0,0,0,0.04);">
+      <!-- Totals Breakdown -->
+      <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;font-size:.85rem;">
+        <div><span style="color:var(--adm-muted);">Subtotal:</span> <strong id="closed-edit-subtotal" style="color:#111827;">₹0.00</strong></div>
+        <div><span style="color:var(--adm-muted);">CGST + SGST:</span> <strong id="closed-edit-tax" style="color:#111827;">₹0.00</strong></div>
+        <div style="font-size:1.08rem;font-weight:900;color:#111827;"><span>Grand Total:</span> <strong id="closed-edit-grand-total" style="color:#059669;">₹0.00</strong></div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;">
+        <button type="button" id="closed-edit-delete-btn" class="adm-btn adm-btn-outline" style="font-weight:700;font-size:.82rem;background:#fef2f2;border-color:#fca5a5;color:#ef4444;margin-right:auto;" title="Permanently delete this closed order">
+          🗑️ Delete Order
+        </button>
+        <button type="button" id="closed-edit-discard-btn" class="adm-btn adm-btn-outline" style="font-weight:600;font-size:.82rem;color:#64748b;">
+          ✕ Close
+        </button>
+        <button type="button" id="closed-edit-save-btn" class="adm-btn adm-btn-outline" style="font-weight:700;font-size:.82rem;background:#f8fafc;">
+          💾 Save Corrections
+        </button>
+        <button type="button" id="closed-edit-reprint-btn" class="adm-btn adm-btn-primary" style="font-weight:800;font-size:.85rem;background:#10b981;border-color:#10b981;display:inline-flex;align-items:center;gap:.35rem;">
+          <span>🖨️</span> Save &amp; Reprint Bill
+        </button>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -3088,6 +3189,14 @@
         </div>
 
         <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+          <label style="font-size:.8rem;font-weight:600;color:var(--adm-muted);">Printer Model:</label>
+          <select id="printer-model-select" class="adm-select" style="min-width:180px;font-size:.8rem;font-weight:600;">
+            <option value="TVS RP3200 Plus" selected>🖨️ TVS RP3200 Plus (Default)</option>
+            <option value="TVS RP 3160 STAR">🖨️ TVS RP 3160 STAR</option>
+            <option value="TVS RP 3220 Star">🖨️ TVS RP 3220 Star</option>
+            <option value="TVS BS-C101 Star">🖨️ TVS BS-C101 Star</option>
+            <option value="TVS Generic Thermal 80mm">🖨️ TVS Generic 80mm ESC/POS</option>
+          </select>
           <label style="font-size:.8rem;font-weight:600;color:var(--adm-muted);">Print Method:</label>
           <select id="printer-connection-mode" class="adm-select" style="min-width:210px;font-size:.8rem;font-weight:600;">
             <option value="driver" selected>🖨️ Windows TVS Driver (Recommended)</option>
@@ -3319,20 +3428,21 @@
                 <div style="display:flex;gap:.25rem;margin-top:.4rem;flex-wrap:wrap;">
                   <button type="button" class="bill-font-preset adm-btn adm-btn-outline adm-btn-sm" data-size="8.5" style="padding:0.15rem 0.4rem;font-size:.7rem;">8.5px (Mini)</button>
                   <button type="button" class="bill-font-preset adm-btn adm-btn-outline adm-btn-sm" data-size="9.5" style="padding:0.15rem 0.4rem;font-size:.7rem;">9.5px (Compact)</button>
-                  <button type="button" class="bill-font-preset adm-btn adm-btn-primary adm-btn-sm" data-size="10" style="padding:0.15rem 0.4rem;font-size:.7rem;">10px (Default)</button>
-                  <button type="button" class="bill-font-preset adm-btn adm-btn-outline adm-btn-sm" data-size="11.5" style="padding:0.15rem 0.4rem;font-size:.7rem;">11.5px (Medium)</button>
+                  <button type="button" class="bill-font-preset adm-btn adm-btn-outline adm-btn-sm" data-size="10" style="padding:0.15rem 0.4rem;font-size:.7rem;">10px (Standard)</button>
+                  <button type="button" class="bill-font-preset adm-btn adm-btn-primary adm-btn-sm" data-size="11.5" style="padding:0.15rem 0.4rem;font-size:.7rem;">11.5px (High Contrast Default)</button>
                   <button type="button" class="bill-font-preset adm-btn adm-btn-outline adm-btn-sm" data-size="13" style="padding:0.15rem 0.4rem;font-size:.7rem;">13px (Large)</button>
                 </div>
               </div>
 
               <!-- 2. Text Boldness (Font Weight) -->
               <div style="background:#f8fafc;padding:.75rem;border:1px solid var(--adm-border);border-radius:8px;">
-                <label class="adm-label" style="font-weight:700;">💪 Text Boldness (Font Weight)</label>
+                <label class="adm-label" style="font-weight:700;">💪 Text Boldness (Font Weight &amp; Density)</label>
                 <select id="bill-font-weight-select" class="adm-select" style="width:100%;margin-top:.25rem;font-weight:700;">
                   <option value="400">Normal (400) — Standard Thickness</option>
                   <option value="600">Medium Semi-Bold (600) — Crisp &amp; Readable</option>
-                  <option value="700" selected>Bold (700) — High Contrast &amp; Sharp (Default)</option>
-                  <option value="900">Extra Bold / Heavy (900) — Maximum Darkness</option>
+                  <option value="700">Bold (700) — High Contrast &amp; Sharp</option>
+                  <option value="800" selected>Extra Bold (800) — KOT-Level Dark &amp; Clear (Recommended)</option>
+                  <option value="900">Black / Heavy (900) — Maximum Darkness</option>
                 </select>
                 <div style="margin-top:.5rem;display:flex;flex-direction:column;gap:.25rem;">
                   <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.75rem;font-weight:600;">
@@ -3825,8 +3935,8 @@
           <div style="display:flex;gap:.25rem;margin-top:.45rem;flex-wrap:wrap;">
             <button type="button" class="qb-font-preset adm-btn adm-btn-outline adm-btn-sm" data-size="8.5" style="padding:.2rem .45rem;font-size:.7rem;">8.5px (Mini / Smallest)</button>
             <button type="button" class="qb-font-preset adm-btn adm-btn-outline adm-btn-sm" data-size="9.5" style="padding:.2rem .45rem;font-size:.7rem;">9.5px (Compact)</button>
-            <button type="button" class="qb-font-preset adm-btn adm-btn-primary adm-btn-sm" data-size="10" style="padding:.2rem .45rem;font-size:.7rem;">10px (Default)</button>
-            <button type="button" class="qb-font-preset adm-btn adm-btn-outline adm-btn-sm" data-size="11.5" style="padding:.2rem .45rem;font-size:.7rem;">11.5px (Medium)</button>
+            <button type="button" class="qb-font-preset adm-btn adm-btn-outline adm-btn-sm" data-size="10" style="padding:.2rem .45rem;font-size:.7rem;">10px (Standard)</button>
+            <button type="button" class="qb-font-preset adm-btn adm-btn-primary adm-btn-sm" data-size="11.5" style="padding:.2rem .45rem;font-size:.7rem;">11.5px (High Contrast Default)</button>
             <button type="button" class="qb-font-preset adm-btn adm-btn-outline adm-btn-sm" data-size="13" style="padding:.2rem .45rem;font-size:.7rem;">13px (Large)</button>
           </div>
         </div>
@@ -3837,8 +3947,9 @@
           <select id="qb-font-weight-select" class="adm-select" style="width:100%;margin-top:.3rem;font-weight:700;">
             <option value="400">Normal (400) — Standard Thickness</option>
             <option value="600">Medium Semi-Bold (600) — Crisp</option>
-            <option value="700" selected>Bold (700) — High Contrast Sharp (Default)</option>
-            <option value="900">Extra Bold / Heavy (900) — Darkest Print</option>
+            <option value="700">Bold (700) — High Contrast Sharp</option>
+            <option value="800" selected>Extra Bold (800) — KOT-Level Dark &amp; Clear (Recommended)</option>
+            <option value="900">Black / Heavy (900) — Darkest Print</option>
           </select>
           <div style="margin-top:.5rem;display:flex;flex-direction:column;gap:.3rem;">
             <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.78rem;font-weight:600;">
@@ -3932,6 +4043,8 @@
 
   </div>
 </div>
+
+<iframe id="thermal-native-print-frame" name="thermal-native-print-frame" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;visibility:hidden;"></iframe>
 
 </body>
 </html>

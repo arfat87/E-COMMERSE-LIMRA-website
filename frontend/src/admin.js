@@ -806,7 +806,8 @@ function escapeHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function parseNotesMetadata(notes, order = null) {
@@ -3193,7 +3194,7 @@ function renderOrdersTable() {
 
   const tbody = $('orders-table-body');
   if (page.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="adm-empty" style="text-align:center;padding:2.5rem;color:var(--adm-muted);">No orders match your filter criteria</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="adm-empty" style="text-align:center;padding:2.5rem;color:var(--adm-muted);">No orders match your filter criteria</td></tr>`;
   } else {
     tbody.innerHTML = page.map(order => {
       const parsedMeta = parseNotesMetadata(order.notes, order);
@@ -3214,7 +3215,10 @@ function renderOrdersTable() {
 
       return `
         <tr data-order-id="${order.id}">
-          <td style="padding-left:1.25rem;">
+          <td style="width:36px;padding-left:1rem;text-align:center;" onclick="event.stopPropagation();">
+            <input type="checkbox" class="order-row-checkbox" data-order-id="${order.id}" style="cursor:pointer;width:16px;height:16px;accent-color:#ef4444;" />
+          </td>
+          <td>
             <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
               <strong style="font-size:.95rem;color:#1e293b;">#${formatDailyOrderNumber(order)}</strong>
               ${roundInfo.isTable && roundInfo.roundNumber ? `
@@ -3269,11 +3273,99 @@ function renderOrdersTable() {
                 👁️ View
               </button>
               ${(order.payment_status || 'unpaid') === 'unpaid' ? `<button type="button" class="adm-btn adm-btn-outline adm-btn-sm inline-mark-paid-btn" data-order-id="${order.id}" style="padding:.3rem .55rem;font-size:0.75rem;border-color:var(--adm-green);color:var(--adm-green);" title="Mark as Paid">✓ Paid</button>` : ''}
+              <!-- 🗑️ DELETE ORDER BUTTON -->
+              <button type="button" class="adm-btn adm-btn-outline adm-btn-sm delete-order-btn" data-order-id="${order.id}" style="padding:.3rem .55rem;font-size:0.75rem;border-color:#fca5a5;color:#ef4444;background:#fef2f2;font-weight:700;" title="Permanently delete this order">
+                🗑️ Delete
+              </button>
             </div>
           </td>
         </tr>
       `;
     }).join('');
+  }
+
+  // Checkbox & Bulk Delete Handler
+  const selectAllCb = $('orders-select-all');
+  const bulkDeleteBtn = $('orders-bulk-delete-btn');
+  const selectedCountSpan = $('orders-selected-count');
+
+  function updateBulkDeleteState() {
+    const checkedCbs = tbody.querySelectorAll('.order-row-checkbox:checked');
+    const count = checkedCbs.length;
+    if (selectedCountSpan) selectedCountSpan.textContent = count;
+    if (bulkDeleteBtn) {
+      bulkDeleteBtn.style.display = count > 0 ? 'inline-flex' : 'none';
+    }
+    if (selectAllCb) {
+      const totalCbs = tbody.querySelectorAll('.order-row-checkbox').length;
+      selectAllCb.checked = totalCbs > 0 && count === totalCbs;
+    }
+  }
+
+  if (selectAllCb) {
+    selectAllCb.checked = false;
+    selectAllCb.onchange = () => {
+      const checkboxes = tbody.querySelectorAll('.order-row-checkbox');
+      checkboxes.forEach(cb => { cb.checked = selectAllCb.checked; });
+      updateBulkDeleteState();
+    };
+  }
+
+  tbody.querySelectorAll('.order-row-checkbox').forEach(cb => {
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', updateBulkDeleteState);
+  });
+
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.onclick = async () => {
+      const checkedCbs = Array.from(tbody.querySelectorAll('.order-row-checkbox:checked'));
+      const ids = checkedCbs.map(cb => cb.dataset.orderId).filter(Boolean);
+      if (!ids.length) return;
+
+      const confirmed = confirm(`Are you sure you want to permanently delete ${ids.length} selected order(s)?\n\nThis will remove the selected orders and all their items from the database. This action cannot be undone.`);
+      if (!confirmed) return;
+
+      try {
+        bulkDeleteBtn.disabled = true;
+        bulkDeleteBtn.innerHTML = '<span>⏳</span> Deleting...';
+
+        for (const orderId of ids) {
+          await insforge.database.from('order_items').delete().eq('order_id', orderId);
+          try { await insforge.database.from('notifications').delete().eq('order_id', orderId); } catch (e) {}
+          await insforge.database.from('orders').delete().eq('id', orderId);
+
+          const oIdx = orders.findIndex(o => String(o.id) === String(orderId));
+          if (oIdx !== -1) orders.splice(oIdx, 1);
+
+          const remainingItems = orderItems.filter(i => String(i.order_id) !== String(orderId));
+          orderItems.length = 0;
+          orderItems.push(...remainingItems);
+
+          const remainingNotifs = notifications.filter(n => String(n.order_id) !== String(orderId));
+          notifications.length = 0;
+          notifications.push(...remainingNotifs);
+        }
+
+        showAdminToast(`${ids.length} order(s) permanently deleted 🗑️`, 'success');
+        renderOrdersTable();
+        renderOverview();
+        renderBillingQuickCards();
+        renderBillingTotalBills();
+        renderClosedOrdersPanel();
+        if (selectedOrderId && ids.includes(selectedOrderId)) {
+          selectedOrderId = null;
+          renderOrderDetail(null);
+        }
+      } catch (err) {
+        console.error('[Bulk Delete Orders Error]', err);
+        showAdminToast('Failed to delete selected orders: ' + err.message, 'error');
+      } finally {
+        if (bulkDeleteBtn) {
+          bulkDeleteBtn.disabled = false;
+          bulkDeleteBtn.innerHTML = `<span>🗑️</span> Delete Selected (<span id="orders-selected-count">0</span>)`;
+        }
+      }
+    };
   }
 
   // 1. Wire up Hold / Release buttons
@@ -3307,7 +3399,16 @@ function renderOrdersTable() {
     });
   });
 
-  // 4. Wire up View Order buttons and row clicks
+  // 4. Wire up Delete Order buttons
+  tbody.querySelectorAll('.delete-order-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const orderId = btn.dataset.orderId;
+      if (orderId) deleteUniversalOrder(orderId);
+    });
+  });
+
+  // 5. Wire up View Order buttons and row clicks
   tbody.querySelectorAll('.view-order-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -4150,6 +4251,10 @@ async function renderOrderDetail(orderId) {
               ${order.status !== 'cancelled' && order.status !== 'delivered' ? `<button type="button" class="adm-btn adm-btn-danger adm-btn-sm cancel-order">✕ Cancel</button>` : ''}
               ${(order.payment_status || 'unpaid') === 'unpaid' ? `<button type="button" class="adm-btn adm-btn-success adm-btn-sm mark-paid-btn">💵 Mark As Paid</button>` : ''}
             `}
+            <!-- 🗑️ PERMANENT DELETE BUTTON FOR ANY ORDER -->
+            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm detail-delete-order-btn" style="background:#fef2f2;color:#ef4444;border-color:#fca5a5;font-weight:700;display:inline-flex;align-items:center;gap:.35rem;" title="Permanently delete this order from database">
+              <span>🗑️</span> Delete Order
+            </button>
           </div>
 
           <h3 class="adm-card-title" style="margin-top: 1.5rem; margin-bottom: 0.75rem;">Customer Shortcuts</h3>
@@ -4177,6 +4282,7 @@ async function renderOrderDetail(orderId) {
   `;
 
   content.querySelector('.btn-detail-create-pos-bill')?.addEventListener('click', () => createBillForOrder(order.id));
+  content.querySelector('.detail-delete-order-btn')?.addEventListener('click', () => deleteUniversalOrder(order.id));
   content.querySelector('.accept-order')?.addEventListener('click', () => updateOrderStatus(order.id, 'confirmed'));
   content.querySelector('.prep-order')?.addEventListener('click', () => updateOrderStatus(order.id, 'preparing'));
   content.querySelector('.ready-order')?.addEventListener('click', () => updateOrderStatus(order.id, 'ready'));
@@ -4996,8 +5102,11 @@ function renderHoldOrdersPanel() {
         <div class="adm-hold-card-footer" style="margin-top:.85rem;">
           <strong class="adm-hold-amount" style="font-size:1.1rem;color:#6366f1;">₹${grandTotal.toFixed(2)}</strong>
           <div class="adm-hold-actions" style="flex-wrap:wrap;gap:.4rem;">
-            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm table-add-kot-btn" data-table="${sess.tableNumber}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;font-weight:700;" title="Add dishes with new KOT">
-              ✏️ Add Order KOT
+            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm table-edit-items-btn" data-table="${sess.tableNumber}" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;font-weight:700;" title="Edit items, change quantities or cancel dishes from Table ${sess.tableNumber}">
+              ✏️ Edit / Cancel Dishes
+            </button>
+            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm table-add-kot-btn" data-table="${sess.tableNumber}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;font-weight:700;" title="Add new dishes with KOT">
+              ➕ Add Dishes (KOT)
             </button>
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm table-print-kot-btn" data-table="${sess.tableNumber}" style="background:#fff3e0;border-color:#f59e0b;color:#b45309;" title="Print consolidated kitchen ticket">
               🖨️ Repr. KOTs
@@ -5044,10 +5153,12 @@ function renderHoldOrdersPanel() {
         <div class="adm-hold-card-footer" style="margin-top:.75rem;">
           <strong class="adm-hold-amount">₹${Number(order.total_amount).toFixed(2)}</strong>
           <div class="adm-hold-actions" style="flex-wrap:wrap;gap:.4rem;">
-            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-add-items-btn" data-order-id="${order.id}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;font-weight:700;">✏️ Add Items</button>
+            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-edit-items-btn" data-order-id="${order.id}" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;font-weight:700;" title="Edit items, change quantities or cancel dishes">✏️ Edit / Cancel Dishes</button>
+            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-add-items-btn" data-order-id="${order.id}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;font-weight:700;">➕ Add Dishes</button>
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-print-kot-btn" data-order-id="${order.id}" style="background:#fff3e0;border-color:#f59e0b;color:#b45309;">🖨️ Repr. KOT</button>
             <button type="button" class="adm-btn adm-btn-primary adm-btn-sm hold-final-bill-btn" data-order-id="${order.id}" style="background:#10b981;border-color:#10b981;font-weight:700;">🧾 Final Bill</button>
-            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-cancel-btn" data-order-id="${order.id}" style="border-color:#ff5b5b;color:#ff5b5b;font-weight:700;">✕ Cancel</button>
+            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-cancel-btn" data-order-id="${order.id}" style="border-color:#cbd5e1;color:#64748b;font-weight:700;">✕ Cancel</button>
+            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-delete-btn" data-order-id="${order.id}" style="border-color:#fca5a5;color:#ef4444;background:#fef2f2;font-weight:700;" title="Permanently delete this order from database">🗑️ Delete</button>
           </div>
         </div>
       </div>
@@ -5057,20 +5168,24 @@ function renderHoldOrdersPanel() {
   container.innerHTML = cardsHtml || `<div class="adm-card adm-empty">No held orders match your search</div>`;
 
   // Wire up Table Session Buttons
-  container.querySelectorAll('.table-final-bill-btn').forEach(btn => {
+  container.querySelectorAll('.table-edit-items-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const tableNum = parseInt(btn.dataset.table, 10);
-      if (tableNum) createFinalBillForTableSession(tableNum);
+      if (tableNum) openHoldEditModal(tableNum, 'edit');
     });
   });
 
   container.querySelectorAll('.table-add-kot-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const tableNum = parseInt(btn.dataset.table, 10);
-      const session = tableSessions.find(s => s.tableNumber === tableNum);
-      if (session && session.orders.length) {
-        openHoldAddItemsModal(session.orders[0].id);
-      }
+      if (tableNum) openHoldEditModal(tableNum, 'add');
+    });
+  });
+
+  container.querySelectorAll('.table-final-bill-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tableNum = parseInt(btn.dataset.table, 10);
+      if (tableNum) createFinalBillForTableSession(tableNum);
     });
   });
 
@@ -5136,9 +5251,15 @@ function renderHoldOrdersPanel() {
   });
 
   // Wire up Non-Table Hold Buttons
+  container.querySelectorAll('.hold-edit-items-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openHoldEditModal(btn.dataset.orderId, 'edit');
+    });
+  });
+
   container.querySelectorAll('.hold-add-items-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      openHoldAddItemsModal(btn.dataset.orderId);
+      openHoldEditModal(btn.dataset.orderId, 'add');
     });
   });
 
@@ -5196,6 +5317,14 @@ function renderHoldOrdersPanel() {
       }
     });
   });
+
+  container.querySelectorAll('.hold-delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const orderId = btn.dataset.orderId;
+      if (orderId) deleteUniversalOrder(orderId);
+    });
+  });
 }
 
 async function loadHoldOrderToPos(orderId) {
@@ -5204,16 +5333,7 @@ async function loadHoldOrderToPos(orderId) {
     showAdminToast('Held order not found.', 'error');
     return;
   }
-  const items = getItemsForOrder(orderId);
-
-  try {
-    window.dispatchEvent(new CustomEvent('limra:resume-hold-order', {
-      detail: { order, items }
-    }));
-    showAdminToast(`Order #${order.order_number} sent to POS.`, 'success');
-  } catch (err) {
-    showAdminToast('Failed to resume order: ' + err.message, 'error');
-  }
+  loadOrderIntoPos(order);
 }
 
 function renderPosHoldOrdersChips(containerEl) {
@@ -6579,6 +6699,9 @@ function renderClosedOrdersPanel() {
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm closed-kot-btn" data-id="${o.id}" style="font-size:.75rem;padding:.28rem .55rem;background:#fff3e0;border-color:#f59e0b;color:#b45309;" title="Reprint kitchen ticket">
               🗒️ KOT
             </button>
+            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm closed-delete-btn" data-id="${o.id}" style="font-size:.75rem;padding:.28rem .55rem;background:#fef2f2;border-color:#fca5a5;color:#ef4444;font-weight:700;" title="Permanently delete this closed order">
+              🗑️ Delete
+            </button>
           </div>
         </td>
       </tr>
@@ -6609,9 +6732,80 @@ function renderClosedOrdersPanel() {
       await printKOT(order, items);
     });
   });
+
+  tbody.querySelectorAll('.closed-delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteClosedOrder(btn.dataset.id);
+    });
+  });
 }
 
-function openClosedOrderEditModal(orderId) {
+let closedEditAddTab = 'menu';
+
+function switchClosedEditAddTab(tab) {
+  closedEditAddTab = tab;
+  const menuPane = $('closed-edit-add-menu-pane');
+  const customPane = $('closed-edit-add-custom-pane');
+  const menuBtn = $('closed-edit-tab-menu-btn');
+  const customBtn = $('closed-edit-tab-custom-btn');
+
+  if (tab === 'menu') {
+    if (menuPane) menuPane.style.display = 'flex';
+    if (customPane) customPane.style.display = 'none';
+    if (menuBtn) {
+      menuBtn.style.background = '#6366f1';
+      menuBtn.style.color = '#fff';
+    }
+    if (customBtn) {
+      customBtn.style.background = 'transparent';
+      customBtn.style.color = '#64748b';
+    }
+  } else {
+    if (menuPane) menuPane.style.display = 'none';
+    if (customPane) customPane.style.display = 'flex';
+    if (menuBtn) {
+      menuBtn.style.background = 'transparent';
+      menuBtn.style.color = '#64748b';
+    }
+    if (customBtn) {
+      customBtn.style.background = '#10b981';
+      customBtn.style.color = '#fff';
+    }
+  }
+}
+window.switchClosedEditAddTab = switchClosedEditAddTab;
+
+function populateClosedEditAddSelect(filterQuery = '') {
+  const sel = $('closed-edit-add-select');
+  if (!sel) return;
+
+  const q = (filterQuery || '').toLowerCase().trim();
+  const allDishes = getCombinedFoodItems();
+  const filtered = allDishes.filter(f => {
+    if (!q) return true;
+    return (f.name && f.name.toLowerCase().includes(q)) ||
+      (f.category && f.category.toLowerCase().includes(q)) ||
+      (categoryLabels[f.category] && categoryLabels[f.category].toLowerCase().includes(q)) ||
+      (f.description && f.description.toLowerCase().includes(q));
+  });
+
+  sel.innerHTML = '<option value="">— Select dish or combo (' + filtered.length + ' available) —</option>' +
+    filtered.map(f => {
+      const emoji = f.isCombo ? '🍱 ' : (categoryEmojis[f.category] || '🍽️ ') + ' ';
+      return `<option value="${f.id}" data-price="${f.price}" data-name="${escapeHtml(f.name)}">${emoji}${escapeHtml(f.name)} (₹${Number(f.price).toFixed(0)})</option>`;
+    }).join('');
+
+  sel.onchange = () => {
+    const opt = sel.options[sel.selectedIndex];
+    if (opt && opt.dataset.price && $('closed-edit-add-price')) {
+      $('closed-edit-add-price').value = opt.dataset.price;
+    }
+  };
+}
+window.populateClosedEditAddSelect = populateClosedEditAddSelect;
+
+async function openClosedOrderEditModal(orderId) {
   const order = orders.find(o => String(o.id) === String(orderId));
   if (!order) {
     showAdminToast('Order not found or no longer available.', 'error');
@@ -6619,6 +6813,15 @@ function openClosedOrderEditModal(orderId) {
   }
   closedEditingOrderId = orderId;
   closedEditingDeletedItemIds = [];
+
+  // Ensure combos are fetched
+  if (!adminCombos || adminCombos.length === 0) {
+    try {
+      adminCombos = await getCombos();
+    } catch (e) {
+      console.warn('[Closed Orders] Combos fetch failed:', e);
+    }
+  }
 
   const parsed = parseNotesMetadata(order.notes, order);
   const tableNum = parsed.tableNumber || order.table_number || '';
@@ -6630,33 +6833,43 @@ function openClosedOrderEditModal(orderId) {
   if ($('closed-edit-type')) $('closed-edit-type').textContent = typeText;
   if ($('closed-edit-date')) $('closed-edit-date').textContent = new Date(order.created_at).toLocaleString('en-IN');
 
-  // Load existing items
-  const rawItems = getItemsForOrder(order.id);
-  const items = rawItems && rawItems.length > 0 ? rawItems : [];
-  closedEditingCart = items.map(i => ({
-    order_item_id: i.id,
-    id: i.menu_item_id || null,
-    name: i.item_name,
-    price: Number(i.unit_price || (i.quantity > 0 ? (i.line_total / i.quantity) : 0)),
-    qty: Number(i.quantity || 1),
-    line_total: Number(i.line_total || 0)
-  }));
-
-  // Populate Add Item Select
-  const sel = $('closed-edit-add-select');
-  if (sel) {
-    const dishes = (menuItems && menuItems.length > 0) ? menuItems : getCombinedFoodItems();
-    sel.innerHTML = '<option value="">— Select a dish to add —</option>' +
-      dishes.map(f => `<option value="${f.id}" data-price="${f.price}">${escapeHtml(f.name)} (₹${Number(f.price).toFixed(0)})</option>`).join('');
-    
-    sel.onchange = () => {
-      const opt = sel.options[sel.selectedIndex];
-      if (opt && opt.dataset.price && $('closed-edit-add-price')) {
-        $('closed-edit-add-price').value = opt.dataset.price;
+  // Load existing items from cache or fetch from DB if missing
+  let rawItems = getItemsForOrder(order.id);
+  if (!rawItems || rawItems.length === 0) {
+    try {
+      const { data: dbItems } = await insforge.database.from('order_items').select('*').eq('order_id', order.id);
+      if (dbItems && dbItems.length > 0) {
+        rawItems = dbItems;
+        for (const dbi of dbItems) {
+          if (!orderItems.some(x => x.id === dbi.id)) orderItems.push(dbi);
+        }
       }
-    };
+    } catch (err) {
+      console.warn('[Closed Edit] Failed to fetch items from DB:', err);
+    }
   }
 
+  const cleanItems = (rawItems || []).filter(i => i && !/delivery|discount|tax|fee/i.test(i.item_name || i.name || ''));
+  closedEditingCart = cleanItems.map(i => ({
+    order_item_id: i.id,
+    id: i.menu_item_id || null,
+    name: i.item_name || i.name,
+    price: Number(i.unit_price || (i.quantity > 0 ? (i.line_total / i.quantity) : (i.price || 0))),
+    qty: Number(i.quantity || i.qty || 1),
+    line_total: Number(i.line_total || ((i.unit_price || i.price || 0) * (i.quantity || i.qty || 1)))
+  }));
+
+  // Reset inputs
+  if ($('closed-edit-dish-search')) $('closed-edit-dish-search').value = '';
+  if ($('closed-edit-items-search')) $('closed-edit-items-search').value = '';
+  if ($('closed-edit-custom-name')) $('closed-edit-custom-name').value = '';
+  if ($('closed-edit-custom-price')) $('closed-edit-custom-price').value = '';
+  if ($('closed-edit-custom-qty')) $('closed-edit-custom-qty').value = '1';
+  if ($('closed-edit-add-price')) $('closed-edit-add-price').value = '';
+  if ($('closed-edit-add-qty')) $('closed-edit-add-qty').value = '1';
+
+  switchClosedEditAddTab('menu');
+  populateClosedEditAddSelect();
   renderClosedEditItems();
 
   const modal = $('adm-closed-order-edit-modal');
@@ -6680,30 +6893,49 @@ function closeClosedOrderEditModal() {
 window.openClosedOrderEditModal = openClosedOrderEditModal;
 window.closeClosedOrderEditModal = closeClosedOrderEditModal;
 
-function renderClosedEditItems() {
+function renderClosedEditItems(filterText) {
   const tbody = $('closed-edit-items-tbody');
+  const countBadge = $('closed-edit-items-count-badge');
   if (!tbody) return;
 
+  const q = (filterText || $('closed-edit-items-search')?.value || '').toLowerCase().trim();
+  const totalCount = closedEditingCart.length;
+  if (countBadge) countBadge.textContent = `${totalCount} Item${totalCount === 1 ? '' : 's'}`;
+
   if (!closedEditingCart.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--adm-muted);">No items in this order. Use the form above to add dishes.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--adm-muted);">No dishes in this order. Use the form above to add items.</td></tr>';
   } else {
-    tbody.innerHTML = closedEditingCart.map((item, idx) => `
-      <tr>
-        <td><strong style="color:#111827;">${escapeHtml(item.name)}</strong></td>
-        <td style="text-align:center;">₹${item.price.toFixed(2)}</td>
-        <td style="text-align:center;">
-          <div style="display:inline-flex;align-items:center;gap:.25rem;">
-            <button type="button" onclick="closedEditChangeQty(${idx},-1)" style="width:24px;height:24px;border:1px solid var(--adm-border);border-radius:4px;background:#f9fafb;cursor:pointer;font-weight:bold;">−</button>
-            <span style="min-width:24px;text-align:center;font-weight:800;">${item.qty}</span>
-            <button type="button" onclick="closedEditChangeQty(${idx},1)" style="width:24px;height:24px;border:1px solid var(--adm-border);border-radius:4px;background:#f9fafb;cursor:pointer;font-weight:bold;">+</button>
-          </div>
-        </td>
-        <td style="text-align:right;font-weight:800;color:#111827;">₹${(item.price * item.qty).toFixed(2)}</td>
-        <td style="text-align:center;">
-          <button type="button" onclick="closedEditRemoveItem(${idx})" style="width:24px;height:24px;border:1px solid #fca5a5;border-radius:4px;background:#fef2f2;cursor:pointer;color:#ef4444;font-weight:bold;" title="Delete item">✕</button>
-        </td>
-      </tr>
-    `).join('');
+    const filtered = closedEditingCart.map((item, idx) => ({ ...item, originalIndex: idx })).filter(item => {
+      if (!q) return true;
+      return (item.name || '').toLowerCase().includes(q);
+    });
+
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--adm-muted);font-size:.85rem;">No items match "${escapeHtml(q)}"</td></tr>`;
+    } else {
+      tbody.innerHTML = filtered.map(item => {
+        const idx = item.originalIndex;
+        return `
+          <tr>
+            <td>
+              <strong style="color:#111827;font-size:.88rem;">${escapeHtml(item.name)}</strong>
+            </td>
+            <td style="text-align:center;color:#475569;font-weight:600;">₹${item.price.toFixed(2)}</td>
+            <td style="text-align:center;">
+              <div style="display:inline-flex;align-items:center;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;overflow:hidden;">
+                <button type="button" onclick="closedEditChangeQty(${idx},-1)" style="width:26px;height:26px;border:none;background:transparent;cursor:pointer;font-weight:900;font-size:.85rem;color:#334155;display:flex;align-items:center;justify-content:center;">−</button>
+                <span style="min-width:24px;text-align:center;font-weight:800;font-size:.82rem;color:#0f172a;">${item.qty}</span>
+                <button type="button" onclick="closedEditChangeQty(${idx},1)" style="width:26px;height:26px;border:none;background:transparent;cursor:pointer;font-weight:900;font-size:.85rem;color:#334155;display:flex;align-items:center;justify-content:center;">+</button>
+              </div>
+            </td>
+            <td style="text-align:right;font-weight:800;color:#111827;font-size:.88rem;">₹${(item.price * item.qty).toFixed(2)}</td>
+            <td style="text-align:center;">
+              <button type="button" onclick="closedEditRemoveItem(${idx})" style="width:26px;height:26px;border:1px solid #fca5a5;border-radius:6px;background:#fef2f2;cursor:pointer;color:#ef4444;font-weight:bold;font-size:.8rem;display:inline-flex;align-items:center;justify-content:center;" title="Delete item">✕</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
   }
 
   // Recalculate Totals
@@ -6750,23 +6982,27 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
 
     // 2. Upsert / Insert items
     for (const item of closedEditingCart) {
+      const sanitizedMenuItemId = (item.id && !isNaN(Number(item.id)) && Number(item.id) < 9000) ? Number(item.id) : null;
       if (item.order_item_id && !String(item.order_item_id).startsWith('temp-')) {
         // Update existing item
         await insforge.database.from('order_items').update({
+          item_name: item.name,
           quantity: item.qty,
           unit_price: item.price,
-          line_total: item.price * item.qty
+          line_total: item.price * item.qty,
+          menu_item_id: sanitizedMenuItemId
         }).eq('id', item.order_item_id);
       } else {
         // Insert newly added item
-        const { data: newRow } = await insforge.database.from('order_items').insert([{
+        const { data: newRow, error: insErr } = await insforge.database.from('order_items').insert([{
           order_id: orderId,
           item_name: item.name,
           quantity: item.qty,
           unit_price: item.price,
           line_total: item.price * item.qty,
-          menu_item_id: item.id || null
+          menu_item_id: sanitizedMenuItemId
         }]).select();
+        if (insErr) throw insErr;
         if (newRow && newRow[0]) {
           item.order_item_id = newRow[0].id;
         }
@@ -6785,7 +7021,6 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
 
     // 4. Update in-memory arrays
     order.total_amount = newGrandTotal;
-    // Replace items in orderItems
     const otherItems = orderItems.filter(i => String(i.order_id) !== String(orderId));
     const freshOrderItems = closedEditingCart.map(i => ({
       id: i.order_item_id || `temp-edit-${Date.now()}`,
@@ -6794,7 +7029,7 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
       quantity: i.qty,
       unit_price: i.price,
       line_total: i.price * i.qty,
-      menu_item_id: i.id || null
+      menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null
     }));
     orderItems.length = 0;
     orderItems.push(...otherItems, ...freshOrderItems);
@@ -6802,7 +7037,7 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
     showAdminToast(`Order #${formatDailyOrderNumber(order)} corrected and updated successfully! ✅`, 'success');
 
     if (shouldReprint) {
-      await printOrderReceiptWithTax(order);
+      await printOrderReceiptWithTax(order, freshOrderItems);
     }
 
     closeClosedOrderEditModal();
@@ -6813,9 +7048,77 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
     renderOverview();
     if (selectedOrderId) renderOrderDetail(selectedOrderId);
   } catch(err) {
+    console.error('[Closed Order Save Error]', err);
     showAdminToast('Failed to save order corrections: ' + err.message, 'error');
   }
 }
+
+async function deleteUniversalOrder(orderId) {
+  const order = orders.find(o => String(o.id) === String(orderId));
+  if (!order) {
+    showAdminToast('Order not found or already deleted.', 'error');
+    return;
+  }
+
+  const orderNum = formatDailyOrderNumber(order);
+  const amountStr = Number(order.total_amount || 0).toFixed(2);
+  const confirmed = confirm(`Are you sure you want to permanently delete Order #${orderNum} (₹${amountStr})?\n\nThis will permanently remove the order and all associated items from the database. This action cannot be undone.`);
+  if (!confirmed) return;
+
+  try {
+    // 1. Delete associated items from order_items
+    const { error: itemsErr } = await insforge.database.from('order_items').delete().eq('order_id', orderId);
+    if (itemsErr) console.warn('[Delete Order] Items delete warning:', itemsErr.message);
+
+    // 2. Delete associated notifications
+    try {
+      await insforge.database.from('notifications').delete().eq('order_id', orderId);
+    } catch (ne) {}
+
+    // 3. Delete order row from orders
+    const { error: orderErr } = await insforge.database.from('orders').delete().eq('id', orderId);
+    if (orderErr) throw orderErr;
+
+    // 4. Update in-memory collections
+    const oIdx = orders.findIndex(o => String(o.id) === String(orderId));
+    if (oIdx !== -1) orders.splice(oIdx, 1);
+
+    const remainingItems = orderItems.filter(i => String(i.order_id) !== String(orderId));
+    orderItems.length = 0;
+    orderItems.push(...remainingItems);
+
+    const remainingNotifs = notifications.filter(n => String(n.order_id) !== String(orderId));
+    notifications.length = 0;
+    notifications.push(...remainingNotifs);
+
+    // 5. Close modal if currently editing this order
+    if (String(closedEditingOrderId) === String(orderId)) {
+      closeClosedOrderEditModal();
+    }
+
+    showAdminToast(`Order #${orderNum} permanently deleted 🗑️`, 'success');
+
+    // 6. Refresh all views & summaries
+    renderClosedOrdersPanel();
+    renderOrdersTable();
+    renderBillingQuickCards();
+    renderBillingTotalBills();
+    renderOverview();
+    if (selectedOrderId === orderId) {
+      selectedOrderId = null;
+      renderOrderDetail(null);
+      switchPanel('orders');
+    }
+  } catch (err) {
+    console.error('[Delete Order Error]', err);
+    showAdminToast('Failed to delete order: ' + err.message, 'error');
+  }
+}
+
+const deleteClosedOrder = deleteUniversalOrder;
+window.deleteUniversalOrder = deleteUniversalOrder;
+window.deleteClosedOrder = deleteClosedOrder;
+window.deleteOrder = deleteUniversalOrder;
 
 window.saveClosedOrderCorrections = saveClosedOrderCorrections;
 
@@ -7055,18 +7358,38 @@ function initClosedOrdersListeners() {
     });
   }
   $('closed-edit-close-btn')?.addEventListener('click', closeClosedOrderEditModal);
+  $('closed-edit-discard-btn')?.addEventListener('click', closeClosedOrderEditModal);
 
-  // Add Item to Closed Order
+  // Tab Switching (Menu & Combos vs Custom Item)
+  $('closed-edit-tab-menu-btn')?.addEventListener('click', () => switchClosedEditAddTab('menu'));
+  $('closed-edit-tab-custom-btn')?.addEventListener('click', () => switchClosedEditAddTab('custom'));
+
+  // Search in Menu & Combos selector
+  $('closed-edit-dish-search')?.addEventListener('input', function() {
+    populateClosedEditAddSelect(this.value);
+  });
+
+  // Search filter within currently ordered items
+  $('closed-edit-items-search')?.addEventListener('input', function() {
+    renderClosedEditItems(this.value);
+  });
+
+  // Add Item from Menu & Combos
   $('closed-edit-add-btn')?.addEventListener('click', () => {
     const sel = $('closed-edit-add-select');
     const dishId = sel?.value;
-    const dish = menuItems.find(m => String(m.id) === String(dishId));
+    if (!dishId) {
+      showAdminToast('Please select a dish or combo to add.', 'error');
+      return;
+    }
+    const allDishes = getCombinedFoodItems();
+    const dish = allDishes.find(m => String(m.id) === String(dishId));
     if (!dish) {
-      showAdminToast('Please select a dish to add.', 'error');
+      showAdminToast('Selected dish not found in menu.', 'error');
       return;
     }
     const price = parseFloat($('closed-edit-add-price')?.value) || Number(dish.price || 0);
-    const qty = parseInt($('closed-edit-add-qty')?.value) || 1;
+    const qty = Math.max(1, parseInt($('closed-edit-add-qty')?.value, 10) || 1);
 
     const existing = closedEditingCart.find(i => (dishId && String(i.id) === String(dishId)) || i.name.toLowerCase() === dish.name.toLowerCase());
     if (existing) {
@@ -7088,10 +7411,50 @@ function initClosedOrdersListeners() {
     if ($('closed-edit-add-qty')) $('closed-edit-add-qty').value = '1';
 
     renderClosedEditItems();
-    showAdminToast(`Added "${dish.name}" to correction cart.`, 'success');
+    showAdminToast(`Added "${dish.name}" to order ✅`, 'success');
   });
 
-  // Save Buttons
+  // Add Custom / Manual Dish
+  $('closed-edit-custom-add-btn')?.addEventListener('click', () => {
+    const name = $('closed-edit-custom-name')?.value?.trim();
+    const price = parseFloat($('closed-edit-custom-price')?.value);
+    const qty = Math.max(1, parseInt($('closed-edit-custom-qty')?.value, 10) || 1);
+
+    if (!name) {
+      showAdminToast('Please enter a valid custom dish name.', 'error');
+      $('closed-edit-custom-name')?.focus();
+      return;
+    }
+    if (isNaN(price) || price < 0) {
+      showAdminToast('Please enter a valid price for the custom dish.', 'error');
+      $('closed-edit-custom-price')?.focus();
+      return;
+    }
+
+    const existing = closedEditingCart.find(i => i.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      existing.qty += qty;
+      existing.line_total = existing.price * existing.qty;
+    } else {
+      closedEditingCart.push({
+        order_item_id: null,
+        id: null,
+        name,
+        price,
+        qty,
+        line_total: price * qty
+      });
+    }
+
+    if ($('closed-edit-custom-name')) $('closed-edit-custom-name').value = '';
+    if ($('closed-edit-custom-price')) $('closed-edit-custom-price').value = '';
+    if ($('closed-edit-custom-qty')) $('closed-edit-custom-qty').value = '1';
+
+    renderClosedEditItems();
+    showAdminToast(`Added custom dish "${name}" ✅`, 'success');
+  });
+
+  // Save & Delete Buttons
   $('closed-edit-save-btn')?.addEventListener('click', async () => {
     if (!closedEditingOrderId) return;
     await saveClosedOrderCorrections(closedEditingOrderId, false);
@@ -7100,6 +7463,11 @@ function initClosedOrdersListeners() {
   $('closed-edit-reprint-btn')?.addEventListener('click', async () => {
     if (!closedEditingOrderId) return;
     await saveClosedOrderCorrections(closedEditingOrderId, true);
+  });
+
+  $('closed-edit-delete-btn')?.addEventListener('click', async () => {
+    if (!closedEditingOrderId) return;
+    await deleteClosedOrder(closedEditingOrderId);
   });
 }
 
@@ -7159,12 +7527,13 @@ async function refreshDashboard(isManual = false) {
 function cleanAuthParams() {
   try {
     const url = new URL(window.location.href);
-    if (url.searchParams.has('insforge_code') || url.searchParams.has('insforge_status')) {
-      url.searchParams.delete('insforge_code');
-      url.searchParams.delete('insforge_status');
-      url.searchParams.delete('insforge_type');
-      url.searchParams.delete('insforge_error');
-      window.history.replaceState({}, '', url.pathname + url.search);
+    const paramsToRemove = ['code', 'error', 'error_code', 'error_description', 'insforge_code', 'insforge_status', 'insforge_type', 'insforge_error'];
+    paramsToRemove.forEach(p => url.searchParams.delete(p));
+    
+    if (window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('error'))) {
+      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+    } else {
+      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
     }
   } catch (e) {
     console.warn('Failed to clean auth URL params:', e);
@@ -7492,7 +7861,13 @@ async function initQZTray() {
     let printerName = localStorage.getItem('qz-printer-name');
     if (!printerName) {
       try {
-        printerName = await qz.printers.getDefault();
+        const printers = await qz.printers.find();
+        const tvsPrinter = printers?.find(p => /tvs/i.test(p) || /rp\s*3200/i.test(p) || /rp\s*3160/i.test(p) || /rp\s*3220/i.test(p));
+        if (tvsPrinter) {
+          printerName = tvsPrinter;
+        } else {
+          printerName = await qz.printers.getDefault();
+        }
         if (printerName) {
           localStorage.setItem('qz-printer-name', printerName);
         }
@@ -7505,7 +7880,7 @@ async function initQZTray() {
       activePrinter = printerName;
       updatePrinterStatusBadge('connected', printerName);
     } else {
-      updatePrinterStatusBadge('connected', 'None Selected');
+      updatePrinterStatusBadge('connected', 'TVS RP3200 Plus');
     }
   } catch (err) {
     console.warn('[QZ] Connection to QZ Tray failed:', err);
@@ -9095,19 +9470,29 @@ let printerSettings = {
   bill_bottom_feed: parseInt(localStorage.getItem('qz-bill-bottom-feed') || '4'),
   bill_auto_cut: 'full',
   
+  // High-Density Bill Typography & Darkness Defaults
+  bill_font_size: parseFloat(localStorage.getItem('qz-bill-font-size') || '11.5'),
+  bill_font_weight: localStorage.getItem('qz-bill-font-weight') || '800',
+  bill_density: localStorage.getItem('qz-bill-density') || 'compact',
+  bill_bold_items: localStorage.getItem('qz-bill-bold-items') !== 'false',
+  bill_bold_headers: localStorage.getItem('qz-bill-bold-headers') !== 'false',
+  bill_bold_totals: localStorage.getItem('qz-bill-bold-totals') !== 'false',
+  bill_compact_header: localStorage.getItem('qz-bill-compact-header') === 'true',
+  bill_qr_size: localStorage.getItem('qz-bill-qr-size') || 'medium',
+
   // Branding & Taxes
   bill_show_logo: localStorage.getItem('qz-bill-show-logo') !== 'false',
   bill_logo_url: localStorage.getItem('qz-bill-logo-url') || '/images/logo.png',
   bill_show_place: localStorage.getItem('qz-bill-show-place') !== 'false',
   bill_show_table: localStorage.getItem('qz-bill-show-table') !== 'false',
   restaurant_name: localStorage.getItem('qz-bill-restaurant-name') || 'LIMRA RESTAURANT',
-  restaurant_address: localStorage.getItem('qz-bill-address') || 'Main Road, Near Bus Stand, Egra',
-  restaurant_phone: localStorage.getItem('qz-bill-phone') || '+91 99999 88888',
-  restaurant_gstin: localStorage.getItem('qz-bill-gstin') || '',
+  restaurant_address: localStorage.getItem('qz-bill-address') || 'Nimtala, Alanggiri, Egra, West Bengal 721429',
+  restaurant_phone: localStorage.getItem('qz-bill-phone') || '9635545808',
+  restaurant_gstin: localStorage.getItem('qz-bill-gstin') || '19BWHPA4482J1ZA',
   restaurant_fssai: localStorage.getItem('qz-bill-fssai') || '',
   cgst_rate: parseFloat(localStorage.getItem('qz-bill-cgst-rate') || '2.5'),
   sgst_rate: parseFloat(localStorage.getItem('qz-bill-sgst-rate') || '2.5'),
-  bill_upi_id: localStorage.getItem('qz-bill-upi-id') || '',
+  bill_upi_id: localStorage.getItem('qz-bill-upi-id') || '7501299357@YBL',
   bill_upi_payee_name: localStorage.getItem('qz-bill-upi-payee-name') || 'LIMRA RESTAURANT',
   bill_footer_message: localStorage.getItem('qz-bill-footer-msg') || 'Thank you for dining with us! Please visit again.',
   
@@ -9166,7 +9551,8 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
     if (!frame) {
       frame = document.createElement('iframe');
       frame.id = 'thermal-native-print-frame';
-      frame.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none;';
+      frame.name = 'thermal-native-print-frame';
+      frame.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;visibility:hidden;';
       document.body.appendChild(frame);
     }
 
@@ -9188,8 +9574,11 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
           }
           * {
             box-sizing: border-box;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color: #000 !important;
+            border-color: #000 !important;
+            text-shadow: none !important;
           }
           html, body {
             margin: 0;
@@ -9197,14 +9586,18 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
             width: ${paperWidthCss};
             background: #fff;
             color: #000;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 12px;
-            line-height: 1.35;
+            font-family: 'Courier New', Courier, monospace, sans-serif;
+            font-size: 11.5px;
+            font-weight: 800;
+            line-height: 1.25;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: geometricPrecision;
           }
           .thermal-print-wrapper {
             width: ${printableWidthCss};
             margin: 0 auto;
             padding: 2mm ${gap}mm;
+            color: #000;
           }
         </style>
       </head>
@@ -9216,22 +9609,43 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
       </html>
     `;
 
-    const doc = frame.contentWindow.document;
-    doc.open();
-    doc.write(docHtml);
-    doc.close();
+    try {
+      const doc = frame.contentDocument || frame.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(docHtml);
+        doc.close();
 
-    setTimeout(() => {
-      try {
-        frame.contentWindow.focus();
-        frame.contentWindow.print();
-        resolve(true);
-      } catch (err) {
-        console.error('[Native Driver Print] Error:', err);
-        window.print();
-        resolve(true);
+        setTimeout(() => {
+          try {
+            frame.contentWindow?.focus();
+            frame.contentWindow?.print();
+            resolve(true);
+          } catch (err) {
+            console.warn('[Native Driver Print] Frame print error:', err);
+            resolve(false);
+          }
+        }, 200);
+      } else {
+        const printWin = window.open('', '_blank', 'width=400,height=600');
+        if (printWin) {
+          printWin.document.open();
+          printWin.document.write(docHtml);
+          printWin.document.close();
+          setTimeout(() => {
+            printWin.focus();
+            printWin.print();
+            printWin.close();
+            resolve(true);
+          }, 200);
+        } else {
+          resolve(false);
+        }
       }
-    }, 150);
+    } catch (e) {
+      console.error('[Native Driver Print] Error:', e);
+      resolve(false);
+    }
   });
 }
 
@@ -9245,11 +9659,11 @@ function updatePrinterPanelStatus() {
   if (qzWrap) qzWrap.style.display = mode === 'qz_tray' ? 'inline-flex' : 'none';
 
   if (mode === 'driver') {
-    badge.textContent = '🟢 Native Driver Active';
+    badge.textContent = `🟢 Native Driver Active (${printerSettings.printer_model || 'TVS RP3200 Plus'})`;
     badge.style.background = '#ecfdf5';
     badge.style.color = '#059669';
     badge.style.borderColor = '#a7f3d0';
-    if (msgEl) msgEl.textContent = 'Direct Windows Driver Spooler · Mini/Standard Roll · Maximum Sharpness & Silent Kiosk Mode';
+    if (msgEl) msgEl.textContent = `Direct Windows Driver Spooler · ${printerSettings.printer_model || 'TVS RP3200 Plus'} (80mm Thermal Roll) · Vector Sharp Output`;
   } else {
     const isConn = (typeof qz !== 'undefined') && qz.websocket.isActive() && qzConnected;
     if (isConn) {
@@ -9275,6 +9689,7 @@ const PRINTER_SETTINGS_DB_COLUMNS = [
   'connection_mode',
   'kot_paper_width',
   'kot_printable_width',
+  'kot_side_gap',
   'kot_top_margin',
   'kot_bottom_feed',
   'kot_font_size',
@@ -9282,11 +9697,14 @@ const PRINTER_SETTINGS_DB_COLUMNS = [
   'kot_item_separator',
   'bill_paper_width',
   'bill_printable_width',
+  'bill_side_gap',
   'bill_top_margin',
   'bill_bottom_feed',
   'bill_auto_cut',
   'bill_show_logo',
   'bill_logo_url',
+  'bill_show_place',
+  'bill_show_table',
   'bill_show_header',
   'bill_show_tax_summary',
   'bill_show_payment_mode',
@@ -9338,6 +9756,7 @@ async function loadPrinterSettingsFromDB() {
       printerSettings = { ...printerSettings, ...data };
       
       // Sync to localStorage as offline cache
+      localStorage.setItem('printer-model', printerSettings.printer_model || 'TVS RP3200 Plus');
       localStorage.setItem('printer-connection-mode', printerSettings.connection_mode || 'driver');
       localStorage.setItem('qz-printer-name', printerSettings.active_printer_name || '');
       localStorage.setItem('qz-paper-size-kot', String(printerSettings.kot_paper_width || '80'));
@@ -9348,6 +9767,8 @@ async function loadPrinterSettingsFromDB() {
       localStorage.setItem('qz-bill-bottom-feed', String(printerSettings.bill_bottom_feed || 2));
       localStorage.setItem('qz-bill-show-logo', String(printerSettings.bill_show_logo));
       localStorage.setItem('qz-bill-logo-url', printerSettings.bill_logo_url || '/images/logo.png');
+      localStorage.setItem('qz-bill-show-place', String(printerSettings.bill_show_place !== false));
+      localStorage.setItem('qz-bill-show-table', String(printerSettings.bill_show_table !== false));
       localStorage.setItem('qz-bill-restaurant-name', printerSettings.restaurant_name || 'LIMRA RESTAURANT');
       localStorage.setItem('qz-bill-address', printerSettings.restaurant_address || 'Main Road, Near Bus Stand, Egra');
       localStorage.setItem('qz-bill-phone', printerSettings.restaurant_phone || '+91 99999 88888');
@@ -9378,6 +9799,10 @@ async function loadPrinterSettingsFromDB() {
 }
 
 function syncPrinterSettingsToUI() {
+  // Printer Model
+  const modelSel = document.getElementById('printer-model-select');
+  if (modelSel) modelSel.value = printerSettings.printer_model || 'TVS RP3200 Plus';
+
   // Connection Mode
   const modeSel = document.getElementById('printer-connection-mode');
   if (modeSel) modeSel.value = printerSettings.connection_mode || 'driver';
@@ -9529,6 +9954,7 @@ function syncPrinterSettingsToUI() {
 }
 
 function readPrinterSettingsFromUI() {
+  printerSettings.printer_model = document.getElementById('printer-model-select')?.value || 'TVS RP3200 Plus';
   printerSettings.connection_mode = document.getElementById('printer-connection-mode')?.value || 'driver';
   printerSettings.kot_paper_width = parseFloat(document.getElementById('kot-custom-width')?.value || '80');
   printerSettings.kot_auto_cut = document.getElementById('kot-auto-cut')?.value || 'partial';
@@ -9594,6 +10020,7 @@ async function savePrinterSettingsToDB() {
   readPrinterSettingsFromUI();
 
   // Save to localStorage as offline fallback
+  localStorage.setItem('printer-model', printerSettings.printer_model || 'TVS RP3200 Plus');
   localStorage.setItem('printer-connection-mode', printerSettings.connection_mode || 'driver');
   localStorage.setItem('qz-printer-name', printerSettings.active_printer_name || '');
   localStorage.setItem('qz-paper-size-kot', String(printerSettings.kot_paper_width || '80'));
@@ -9604,6 +10031,8 @@ async function savePrinterSettingsToDB() {
   localStorage.setItem('qz-bill-bottom-feed', String(printerSettings.bill_bottom_feed || 2));
   localStorage.setItem('qz-bill-show-logo', String(printerSettings.bill_show_logo));
   localStorage.setItem('qz-bill-logo-url', printerSettings.bill_logo_url || '/images/logo.png');
+  localStorage.setItem('qz-bill-show-place', String(printerSettings.bill_show_place !== false));
+  localStorage.setItem('qz-bill-show-table', String(printerSettings.bill_show_table !== false));
   localStorage.setItem('qz-bill-restaurant-name', printerSettings.restaurant_name || 'LIMRA RESTAURANT');
   localStorage.setItem('qz-bill-address', printerSettings.restaurant_address || 'Main Road, Near Bus Stand, Egra');
   localStorage.setItem('qz-bill-phone', printerSettings.restaurant_phone || '+91 99999 88888');
@@ -9779,13 +10208,13 @@ function generateKOTPreviewHtml(order, items) {
 
 async function generateBillPreviewHtml(order, items) {
   const p = printerSettings;
-  const fontSizeNum = parseFloat(p.bill_font_size ?? 10) || 10;
+  const fontSizeNum = parseFloat(p.bill_font_size ?? 11.5) || 11.5;
   const fontSizePx = `${fontSizeNum}px`;
-  const headerFontSize = `${Math.max(11, fontSizeNum + 3)}px`;
-  const subFontSize = `${Math.max(7.5, fontSizeNum - 1.5)}px`;
-  const totalFontSize = `${Math.max(11, fontSizeNum + 2)}px`;
+  const headerFontSize = `${Math.max(13, fontSizeNum + 3.5)}px`;
+  const subFontSize = `${Math.max(9.5, fontSizeNum - 1)}px`;
+  const totalFontSize = `${Math.max(13, fontSizeNum + 2.5)}px`;
 
-  const fontWeight = p.bill_font_weight || '700';
+  const fontWeight = p.bill_font_weight || '800';
   const boldItems = p.bill_bold_items !== false;
   const boldHeaders = p.bill_bold_headers !== false;
   const boldTotals = p.bill_bold_totals !== false;
@@ -9794,9 +10223,9 @@ async function generateBillPreviewHtml(order, items) {
   const density = p.bill_density || 'compact';
   const isUltraCompact = density === 'ultra-compact';
   const isCompact = density === 'compact' || isUltraCompact;
-  const lineSpacing = isUltraCompact ? '1.1' : (isCompact ? '1.2' : '1.35');
+  const lineSpacing = isUltraCompact ? '1.15' : (isCompact ? '1.25' : '1.35');
   const rowPadding = isUltraCompact ? '1px 1px' : (isCompact ? '2px 1px' : '3px 2px');
-  const sepMargin = isUltraCompact ? '2px 0' : (isCompact ? '3px 0' : '5px 0');
+  const sepMargin = isUltraCompact ? '2px 0' : (isCompact ? '3px 0' : '4px 0');
 
   const sep = `<div style="border-top:1px dashed #000;margin:${sepMargin};"></div>`;
   
@@ -9814,11 +10243,11 @@ async function generateBillPreviewHtml(order, items) {
   const timeStr = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
 
   const rows = foodItems.map(i => `
-    <tr style="border-bottom:1px dotted #ccc;">
-      <td style="padding:${rowPadding};font-size:${fontSizePx};font-weight:${boldItems ? '700' : '400'};">${escapeHtml(i.name || i.item_name)}</td>
-      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:center;font-weight:${boldItems ? '700' : '400'};">${i.qty || i.quantity}</td>
-      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;">₹${Number(i.price || i.unit_price).toFixed(0)}</td>
-      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:700;">₹${Number((i.price || i.unit_price)*(i.qty || i.quantity)).toFixed(2)}</td>
+    <tr style="border-bottom:1px dashed #000;">
+      <td style="padding:${rowPadding};font-size:${fontSizePx};font-weight:${boldItems ? '800' : '700'};color:#000;">${escapeHtml(i.name || i.item_name)}</td>
+      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:center;font-weight:900;color:#000;">${i.qty || i.quantity}</td>
+      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:700;color:#000;">₹${Number(i.price || i.unit_price).toFixed(0)}</td>
+      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:900;color:#000;">₹${Number((i.price || i.unit_price)*(i.qty || i.quantity)).toFixed(2)}</td>
     </tr>
   `).join('');
 
@@ -9831,74 +10260,74 @@ async function generateBillPreviewHtml(order, items) {
   const qrDataUrl = showQr ? await generateUpiQrDataUrl(p.bill_upi_id, p.bill_upi_payee_name || p.restaurant_name, grandTotal, formatDailyOrderNumber(order)) : '';
 
   return `
-    <div style="text-align:center;font-size:${fontSizePx};font-weight:${fontWeight};line-height:${lineSpacing};">
+    <div style="text-align:center;font-family:'Courier New',Courier,monospace,sans-serif;font-size:${fontSizePx};font-weight:${fontWeight};color:#000;line-height:${lineSpacing};">
       ${p.bill_show_logo && p.bill_logo_url ? `
         <div style="margin-bottom:2px;text-align:center;">
-          <img src="${p.bill_logo_url}" alt="Logo" style="max-height:36px;max-width:120px;margin:0 auto;display:block;filter:grayscale(100%) contrast(180%);" />
+          <img src="${p.bill_logo_url}" alt="Logo" style="max-height:38px;max-width:120px;margin:0 auto;display:block;filter:grayscale(100%) contrast(200%);" />
         </div>
       ` : ''}
-      <div style="font-size:${headerFontSize};font-weight:900;letter-spacing:.5px;">${escapeHtml(p.restaurant_name)}</div>
-      ${!compactHeader && p.restaurant_address ? `<div style="font-size:${subFontSize};color:#222;">${escapeHtml(p.restaurant_address)}</div>` : ''}
-      <div style="font-size:${subFontSize};color:#222;">
+      <div style="font-size:${headerFontSize};font-weight:900;letter-spacing:.5px;text-transform:uppercase;color:#000;">${escapeHtml(p.restaurant_name)}</div>
+      ${!compactHeader && p.restaurant_address ? `<div style="font-size:${subFontSize};font-weight:700;color:#000;">${escapeHtml(p.restaurant_address)}</div>` : ''}
+      <div style="font-size:${subFontSize};font-weight:700;color:#000;">
         ${p.restaurant_phone ? `Tel: ${escapeHtml(p.restaurant_phone)} ` : ''}
         ${!compactHeader && p.restaurant_gstin ? `| GSTIN: ${escapeHtml(p.restaurant_gstin)} ` : ''}
         ${!compactHeader && p.restaurant_fssai ? `| FSSAI: ${escapeHtml(p.restaurant_fssai)}` : ''}
       </div>
       
       <!-- Table / Delivery Invoice Title -->
-      <div style="font-size:${subFontSize};font-weight:900;margin-top:2px;padding:2px 0;border-top:1px solid #000;border-bottom:1px solid #000;letter-spacing:.3px;">
+      <div style="font-size:${subFontSize};font-weight:900;margin-top:2px;padding:2px 0;border-top:1.5px solid #000;border-bottom:1.5px solid #000;letter-spacing:.3px;color:#000;">
         TAX INVOICE — HOME DELIVERY
       </div>
-      <div style="font-size:${subFontSize};line-height:1.3;margin-top:3px;">
+      <div style="font-size:${subFontSize};font-weight:700;line-height:1.3;margin-top:3px;color:#000;">
         <div><strong>Bill #:</strong> ${formatDailyOrderNumber(order)} | <strong>Date:</strong> ${timeStr}</div>
         <div><strong>Customer:</strong> ${escapeHtml(order.customer_name)} (${order.customer_phone})</div>
       </div>
 
       ${sep}
-      <table style="width:100%;border-collapse:collapse;">
+      <table style="width:100%;border-collapse:collapse;color:#000;">
         <thead>
-          <tr style="border-bottom:1px solid #000;">
-            <th style="text-align:left;font-size:${subFontSize};font-weight:${boldHeaders ? '800' : '500'};padding:${rowPadding};">Item</th>
-            <th style="text-align:center;font-size:${subFontSize};font-weight:${boldHeaders ? '800' : '500'};padding:${rowPadding};width:25px;">Qty</th>
-            <th style="text-align:right;font-size:${subFontSize};font-weight:${boldHeaders ? '800' : '500'};padding:${rowPadding};width:40px;">Rate</th>
-            <th style="text-align:right;font-size:${subFontSize};font-weight:${boldHeaders ? '800' : '500'};padding:${rowPadding};width:48px;">Amt</th>
+          <tr style="border-top:1.5px solid #000;border-bottom:1.5px solid #000;">
+            <th style="text-align:left;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};color:#000;">Item</th>
+            <th style="text-align:center;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};width:25px;color:#000;">Qty</th>
+            <th style="text-align:right;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};width:40px;color:#000;">Rate</th>
+            <th style="text-align:right;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};width:48px;color:#000;">Amt</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
       ${sep}
 
-      <div style="font-size:${fontSizePx};line-height:${lineSpacing};">
-        <div style="display:flex;justify-content:space-between;"><span>Items Subtotal:</span><span>₹${subtotal.toFixed(2)}</span></div>
+      <div style="font-size:${fontSizePx};line-height:${lineSpacing};color:#000;">
+        <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Items Subtotal:</span><span>₹${subtotal.toFixed(2)}</span></div>
         ${discountAmt > 0 ? `
-          <div style="display:flex;justify-content:space-between;color:#000;"><span>Discount (${discountPct}%):</span><span>-₹${discountAmt.toFixed(2)}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span>Net Taxable:</span><span>₹${taxable.toFixed(2)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:700;color:#000;"><span>Discount (${discountPct}%):</span><span>-₹${discountAmt.toFixed(2)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Net Taxable:</span><span>₹${taxable.toFixed(2)}</span></div>
         ` : ''}
-        <div style="display:flex;justify-content:space-between;"><span>CGST @${p.cgst_rate}%:</span><span>₹${cgst.toFixed(2)}</span></div>
-        <div style="display:flex;justify-content:space-between;"><span>SGST @${p.sgst_rate}%:</span><span>₹${sgst.toFixed(2)}</span></div>
-        <div style="display:flex;justify-content:space-between;font-weight:${boldTotals ? '900' : '700'};font-size:${totalFontSize};border-top:1px solid #000;margin-top:2px;padding-top:2px;">
+        <div style="display:flex;justify-content:space-between;font-weight:700;"><span>CGST @${p.cgst_rate}%:</span><span>₹${cgst.toFixed(2)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;"><span>SGST @${p.sgst_rate}%:</span><span>₹${sgst.toFixed(2)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:${boldTotals ? '900' : '800'};font-size:${totalFontSize};border-top:1.5px solid #000;border-bottom:1.5px solid #000;margin-top:2px;padding:3px 0;color:#000;">
           <span>GRAND TOTAL:</span><span>₹${grandTotal.toFixed(2)}</span>
         </div>
       </div>
 
       ${showQr && qrDataUrl ? `
         ${sep}
-        <div style="text-align:center;padding:2px 0;">
+        <div style="text-align:center;padding:2px 0;color:#000;">
           <div style="font-size:${subFontSize};font-weight:900;letter-spacing:.5px;">📱 SCAN &amp; PAY VIA UPI</div>
-          <div style="font-size:${subFontSize};margin:1px 0 2px 0;">Amount: <strong>₹${grandTotal.toFixed(2)}</strong></div>
+          <div style="font-size:${subFontSize};font-weight:700;margin:1px 0 2px 0;">Amount: <strong>₹${grandTotal.toFixed(2)}</strong></div>
           <img src="${qrDataUrl}" alt="UPI QR" style="width:${qrDimension};height:${qrDimension};margin:2px auto;display:block;image-rendering:pixelated;" />
-          <div style="font-size:${subFontSize};color:#333;margin-top:1px;">UPI: <strong>${escapeHtml(p.bill_upi_id)}</strong></div>
+          <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">UPI: <strong>${escapeHtml(p.bill_upi_id)}</strong></div>
         </div>
       ` : ''}
 
       ${sep}
-      <div style="text-align:center;font-size:${subFontSize};line-height:1.3;">
-        <div style="font-weight:bold;">${escapeHtml(p.bill_footer_message)}</div>
-        <div style="color:#444;margin-top:1px;">${escapeHtml(p.restaurant_name)}</div>
+      <div style="text-align:center;font-size:${subFontSize};line-height:1.3;color:#000;">
+        <div style="font-weight:900;">${escapeHtml(p.bill_footer_message)}</div>
+        <div style="font-weight:700;margin-top:1px;">${escapeHtml(p.restaurant_name)}</div>
       </div>
 
       ${feedSpaces}
-      <div style="border-top:1px dashed #94a3b8;margin-top:4px;padding-top:2px;font-size:8.5px;color:#64748b;text-align:center;">
+      <div style="border-top:1px dashed #000;margin-top:4px;padding-top:2px;font-size:8.5px;color:#000;font-weight:700;text-align:center;">
         ✂ - - - - ${p.bill_auto_cut === 'full' ? 'Full Cut' : 'Partial Cut'} - - - - ✂
       </div>
     </div>
@@ -9944,6 +10373,19 @@ async function initPrinterPanel() {
 
   if (printerPanelMounted) return;
   printerPanelMounted = true;
+
+  // TVS Printer Model Selector
+  document.getElementById('printer-model-select')?.addEventListener('change', (e) => {
+    printerSettings.printer_model = e.target.value;
+    if (printerSettings.connection_mode === 'driver' || !printerSettings.active_printer_name) {
+      printerSettings.active_printer_name = e.target.value;
+    }
+    localStorage.setItem('printer-model', printerSettings.printer_model);
+    localStorage.setItem('qz-printer-name', printerSettings.active_printer_name);
+    updatePrinterPanelStatus();
+    renderThermalLivePreview();
+    showAdminToast(`Default printer model set to: ${printerSettings.printer_model} 🖨️`, 'info');
+  });
 
   // Print Mode Switcher (Driver vs QZ Tray)
   document.getElementById('printer-connection-mode')?.addEventListener('change', (e) => {
@@ -10979,27 +11421,26 @@ async function buildOrderFromPos(action) {
     return null;
   }
 
-  // 1. Mandatory Customer Name Validation
+  // 1. Customer Name Validation & Friendly Fallback
   const nameInp = $('pos-customer-name');
-  const name = nameInp?.value?.trim() || '';
+  let name = nameInp?.value?.trim() || '';
   if (!name) {
-    nameInp?.classList.add('pos-input-invalid');
-    nameInp?.focus();
-    showAdminToast('Customer Name is mandatory. Please enter customer name.', 'error');
-    return null;
-  } else {
-    nameInp?.classList.remove('pos-input-invalid');
+    name = posOrderType === 'table' ? `Table ${$('pos-table-number')?.value?.trim() || 'Dine-in'}` : 'Walk-in';
   }
 
-  // 2. Mandatory Mobile Number Validation (min 10 digits)
+  // 2. Mobile Number Validation & Friendly Fallback (strict for delivery, fallback for counter/table)
   const phoneInp = $('pos-customer-phone');
-  const phone = phoneInp?.value?.trim() || '';
+  let phone = phoneInp?.value?.trim() || '';
   const digitsOnly = phone.replace(/[^0-9]/g, '');
   if (!phone || digitsOnly.length < 10) {
-    phoneInp?.classList.add('pos-input-invalid');
-    phoneInp?.focus();
-    showAdminToast('A valid 10-digit mobile number is mandatory.', 'error');
-    return null;
+    if (posOrderType === 'delivery') {
+      phoneInp?.classList.add('pos-input-invalid');
+      phoneInp?.focus();
+      showAdminToast('A valid 10-digit mobile number is mandatory for Delivery orders.', 'error');
+      return null;
+    } else {
+      phone = '9999999999';
+    }
   } else {
     phoneInp?.classList.remove('pos-input-invalid');
   }
@@ -11074,7 +11515,7 @@ async function buildOrderFromPos(action) {
       quantity: i.qty,
       unit_price: i.price,
       line_total: i.price * i.qty,
-      menu_item_id: i.id || null,
+      menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null,
     }));
     const { error: itemsErr } = await insforge.database.from('order_items').insert(itemRows);
     if (itemsErr) throw itemsErr;
@@ -11107,7 +11548,8 @@ async function buildOrderFromPos(action) {
   }
 }
 
-async function generateKOTHtml(order, items, isNewItemsOnly = false) {
+async function generateKOTHtml(order = {}, items = [], isNewItemsOnly = false) {
+  if (!order) order = {};
   const p = printerSettings;
   const kotWidth = p.kot_paper_width || 80;
   const wPx = kotWidth === 'A4' ? 595 : Math.round(parseFloat(kotWidth || 80) * 2.835);
@@ -11118,7 +11560,8 @@ async function generateKOTHtml(order, items, isNewItemsOnly = false) {
   const fontSize = p.kot_font_size === 'xlarge' ? '16px' : (p.kot_font_size === 'medium' ? '12px' : '14px');
   const sep = getSeparatorLineHtml(p.kot_item_separator);
 
-  const displayItems = isNewItemsOnly ? items : consolidateOrderItems(items);
+  const rawItemList = (items && items.length > 0) ? items : (order.id ? getItemsForOrder(order.id) : []);
+  const displayItems = isNewItemsOnly ? rawItemList : consolidateOrderItems(rawItemList);
   const itemsHtml = displayItems.map(i => {
     const rawName = i.item_name || i.name;
     const parsed = parseItemNameAndNotes(rawName);
@@ -11160,7 +11603,27 @@ async function generateKOTHtml(order, items, isNewItemsOnly = false) {
   </div>`;
 }
 
-async function printKOT(order, items, isNewOnly = false) {
+async function printKOT(order, itemsList, isNewOnly = false) {
+  if (!order) {
+    showAdminToast('No order found to print KOT.', 'error');
+    return;
+  }
+  let items = itemsList;
+  if (!items || items.length === 0) {
+    items = getItemsForOrder(order.id);
+  }
+  if ((!items || items.length === 0) && order.id) {
+    try {
+      const { data: dbItems } = await insforge.database.from('order_items').select('*').eq('order_id', order.id);
+      if (dbItems && dbItems.length > 0) {
+        items = dbItems;
+        orderItems.push(...dbItems);
+      }
+    } catch (e) {
+      console.warn('Could not fetch items from DB for KOT:', e);
+    }
+  }
+
   const p = printerSettings;
   const html = await generateKOTHtml(order, items, isNewOnly);
 
@@ -11180,15 +11643,16 @@ async function printKOT(order, items, isNewOnly = false) {
   showAdminToast('KOT sent to TVS RP3200 Plus Driver! 🖨️', 'success');
 }
 
-async function generateBillWithTaxHtml(order, itemsList) {
+async function generateBillWithTaxHtml(order = {}, itemsList = []) {
+  if (!order) order = {};
   const p = printerSettings;
-  const fontSizeNum = parseFloat(p.bill_font_size ?? 10) || 10;
+  const fontSizeNum = parseFloat(p.bill_font_size ?? 11.5) || 11.5;
   const fontSizePx = `${fontSizeNum}px`;
-  const headerFontSize = `${Math.max(11, fontSizeNum + 3)}px`;
-  const subFontSize = `${Math.max(7.5, fontSizeNum - 1.5)}px`;
-  const totalFontSize = `${Math.max(11, fontSizeNum + 2)}px`;
+  const headerFontSize = `${Math.max(13, fontSizeNum + 3.5)}px`;
+  const subFontSize = `${Math.max(9.5, fontSizeNum - 1)}px`;
+  const totalFontSize = `${Math.max(13, fontSizeNum + 2.5)}px`;
 
-  const fontWeight = p.bill_font_weight || '700';
+  const fontWeight = p.bill_font_weight || '800';
   const boldItems = p.bill_bold_items !== false;
   const boldHeaders = p.bill_bold_headers !== false;
   const boldTotals = p.bill_bold_totals !== false;
@@ -11197,17 +11661,17 @@ async function generateBillWithTaxHtml(order, itemsList) {
   const density = p.bill_density || 'compact';
   const isUltraCompact = density === 'ultra-compact';
   const isCompact = density === 'compact' || isUltraCompact;
-  const lineSpacing = isUltraCompact ? '1.1' : (isCompact ? '1.2' : '1.35');
+  const lineSpacing = isUltraCompact ? '1.15' : (isCompact ? '1.25' : '1.35');
   const rowPadding = isUltraCompact ? '1px 1px' : (isCompact ? '2px 1px' : '3px 2px');
-  const sepMargin = isUltraCompact ? '2px 0' : (isCompact ? '3px 0' : '5px 0');
+  const sepMargin = isUltraCompact ? '2px 0' : (isCompact ? '3px 0' : '4px 0');
 
   const wPx = p.bill_paper_width === 'A4' ? 595 : Math.round(parseFloat(p.bill_paper_width || 80) * 2.835);
   const sideGapPx = Math.round((p.bill_side_gap ?? 2) * 2.835);
   const parsedMeta = parseNotesMetadata(order.notes, order);
-  const allItems = itemsList || getItemsForOrder(order.id);
+  const allItems = (itemsList && itemsList.length > 0) ? itemsList : (order.id ? getItemsForOrder(order.id) : []);
   
   // Strictly filter items to food & drinks only, then consolidate duplicate rounds
-  const rawItems = allItems.filter(i => !/delivery|discount|tax|fee/i.test(i.item_name || i.name || ''));
+  const rawItems = (allItems || []).filter(i => i && !/delivery|discount|tax|fee/i.test(i.item_name || i.name || ''));
   const items = consolidateOrderItems(rawItems);
   const subtotal = items.reduce((sum, i) => sum + Number(i.line_total || (i.price * i.qty) || 0), 0);
   
@@ -11230,14 +11694,14 @@ async function generateBillWithTaxHtml(order, itemsList) {
   const itemRowsHtml = items.map(i => {
     const itemNote = (i.notes || (parsedMeta.itemsNotes && parsedMeta.itemsNotes[i.item_name || i.name]) || '').trim();
     return `
-      <tr style="border-bottom:1px dotted #ccc;">
-        <td style="padding:${rowPadding};font-size:${fontSizePx};font-weight:${boldItems ? '700' : '400'};line-height:1.2;">
+      <tr style="border-bottom:1px dashed #000;">
+        <td style="padding:${rowPadding};font-size:${fontSizePx};font-weight:${boldItems ? '800' : '700'};line-height:1.2;color:#000;">
           ${escapeHtml(i.item_name || i.name)}
-          ${itemNote ? `<div style="font-size:${subFontSize};font-style:italic;font-weight:normal;color:#222;margin-top:1px;">↳ Note: ${escapeHtml(itemNote)}</div>` : ''}
+          ${itemNote ? `<div style="font-size:${subFontSize};font-style:italic;font-weight:700;color:#000;margin-top:1px;">↳ Note: ${escapeHtml(itemNote)}</div>` : ''}
         </td>
-        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:center;font-weight:${boldItems ? '700' : '400'};">${i.quantity || i.qty}</td>
-        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;">₹${Number(i.unit_price || i.price || 0).toFixed(0)}</td>
-        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:800;">₹${Number(i.line_total || ((i.price || i.unit_price) * (i.qty || i.quantity)) || 0).toFixed(2)}</td>
+        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:center;font-weight:900;color:#000;">${i.quantity || i.qty}</td>
+        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:700;color:#000;">₹${Number(i.unit_price || i.price || 0).toFixed(0)}</td>
+        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:900;color:#000;">₹${Number(i.line_total || ((i.price || i.unit_price) * (i.qty || i.quantity)) || 0).toFixed(2)}</td>
       </tr>
     `;
   }).join('');
@@ -11251,37 +11715,37 @@ async function generateBillWithTaxHtml(order, itemsList) {
   const qrDataUrl = showQr ? await generateUpiQrDataUrl(p.bill_upi_id, p.bill_upi_payee_name || p.restaurant_name, grandTotal, formatDailyOrderNumber(order)) : '';
 
   return `
-    <div style="width:${wPx}px;font-family:monospace,sans-serif;font-size:${fontSizePx};font-weight:${fontWeight};color:#000;padding:0 ${sideGapPx}px;margin:0 auto;line-height:${lineSpacing};">
+    <div style="width:${wPx}px;font-family:'Courier New',Courier,monospace,sans-serif;font-size:${fontSizePx};font-weight:${fontWeight};color:#000;padding:0 ${sideGapPx}px;margin:0 auto;line-height:${lineSpacing};-webkit-print-color-adjust:exact;print-color-adjust:exact;">
       <!-- RESTAURANT HEADER -->
-      <div style="text-align:center;margin-bottom:3px;">
+      <div style="text-align:center;margin-bottom:3px;color:#000;">
         ${p.bill_show_logo && p.bill_logo_url ? `
           <div style="margin-bottom:2px;text-align:center;">
-            <img src="${p.bill_logo_url}" alt="Logo" style="max-height:36px;max-width:120px;margin:0 auto;display:block;filter:grayscale(100%) contrast(180%);" />
+            <img src="${p.bill_logo_url}" alt="Logo" style="max-height:38px;max-width:120px;margin:0 auto;display:block;filter:grayscale(100%) contrast(200%);" />
           </div>
         ` : ''}
-        <div style="font-size:${headerFontSize};font-weight:900;letter-spacing:0.5px;">${escapeHtml(p.restaurant_name)}</div>
-        ${!compactHeader && p.restaurant_address ? `<div style="font-size:${subFontSize};color:#222;">${escapeHtml(p.restaurant_address)}</div>` : ''}
-        <div style="font-size:${subFontSize};color:#222;">
+        <div style="font-size:${headerFontSize};font-weight:900;letter-spacing:0.5px;text-transform:uppercase;color:#000;">${escapeHtml(p.restaurant_name)}</div>
+        ${!compactHeader && p.restaurant_address ? `<div style="font-size:${subFontSize};font-weight:700;color:#000;">${escapeHtml(p.restaurant_address)}</div>` : ''}
+        <div style="font-size:${subFontSize};font-weight:700;color:#000;">
           ${p.restaurant_phone ? `Tel: ${escapeHtml(p.restaurant_phone)} ` : ''}
           ${!compactHeader && p.restaurant_gstin ? `| GSTIN: ${escapeHtml(p.restaurant_gstin)} ` : ''}
           ${!compactHeader && p.restaurant_fssai ? `| FSSAI: ${escapeHtml(p.restaurant_fssai)}` : ''}
         </div>
         
         <!-- Table / Delivery Invoice Title -->
-        <div style="font-size:${subFontSize};font-weight:900;border-top:1px dashed #000;border-bottom:1px dashed #000;padding:2px 0;margin-top:2px;letter-spacing:.3px;">
+        <div style="font-size:${subFontSize};font-weight:900;border-top:1.5px solid #000;border-bottom:1.5px solid #000;padding:2px 0;margin-top:3px;letter-spacing:.3px;color:#000;">
           ${parsedMeta.type === 'delivery' ? 'TAX INVOICE — HOME DELIVERY' : (tableInfo && p.bill_show_table ? `TAX INVOICE — TABLE ${tableInfo}` : 'TAX INVOICE — DINE-IN / PICKUP')}
         </div>
       </div>
 
       <!-- Place & Delivery Area Makeup Block -->
       ${p.bill_show_place && (parsedMeta.type === 'delivery' || parsedMeta.area || parsedMeta.address) ? `
-        <div style="margin:2px 0;padding:2px 4px;background:#f8fafc;border:1px solid #000;border-radius:3px;font-size:${subFontSize};text-align:left;line-height:1.2;">
+        <div style="margin:2px 0;padding:2px 4px;border:1px solid #000;border-radius:2px;font-size:${subFontSize};font-weight:700;text-align:left;line-height:1.2;color:#000;">
           <div><strong>📍 Area:</strong> ${escapeHtml(parsedMeta.area || 'Standard Area')}${parsedMeta.address ? ` · ${escapeHtml(parsedMeta.address)}` : ''}</div>
         </div>
       ` : ''}
       
       <!-- COMPACT ORDER METADATA -->
-      <div style="font-size:${subFontSize};line-height:1.3;margin-bottom:3px;border-bottom:1px dashed #000;padding-bottom:2px;">
+      <div style="font-size:${subFontSize};font-weight:700;line-height:1.3;margin-bottom:3px;border-bottom:1px dashed #000;padding-bottom:2px;color:#000;">
         <div style="display:flex;justify-content:space-between;">
           <span><strong>Bill #:</strong> ${formatDailyOrderNumber(order)}</span>
           <span><strong>Date:</strong> ${formattedDate}</span>
@@ -11293,53 +11757,53 @@ async function generateBillWithTaxHtml(order, itemsList) {
       </div>
       
       <!-- ITEMS TABLE -->
-      <table style="width:100%;border-collapse:collapse;border-bottom:1px dashed #000;margin-bottom:3px;">
+      <table style="width:100%;border-collapse:collapse;border-bottom:1.5px solid #000;margin-bottom:3px;color:#000;">
         <thead>
-          <tr style="border-bottom:1px dashed #000;">
-            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '800' : '500'};padding:${rowPadding};text-align:left;">Item</th>
-            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '800' : '500'};padding:${rowPadding};text-align:center;width:22px;">Qty</th>
-            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '800' : '500'};padding:${rowPadding};text-align:right;width:40px;">Rate</th>
-            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '800' : '500'};padding:${rowPadding};text-align:right;width:48px;">Amt</th>
+          <tr style="border-top:1.5px solid #000;border-bottom:1.5px solid #000;">
+            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:left;color:#000;">Item</th>
+            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:center;width:24px;color:#000;">Qty</th>
+            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:right;width:42px;color:#000;">Rate</th>
+            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:right;width:50px;color:#000;">Amt</th>
           </tr>
         </thead>
         <tbody>${itemRowsHtml}</tbody>
       </table>
       
       <!-- COMPACT TOTALS & TAX BREAKDOWN -->
-      <div style="font-size:${fontSizePx};line-height:${lineSpacing};">
-        <div style="display:flex;justify-content:space-between;"><span>Subtotal:</span><span>₹${subtotal.toFixed(2)}</span></div>
+      <div style="font-size:${fontSizePx};line-height:${lineSpacing};color:#000;">
+        <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Subtotal:</span><span>₹${subtotal.toFixed(2)}</span></div>
         ${discountAmt > 0 ? `
-          <div style="display:flex;justify-content:space-between;"><span>Discount (${discountPct}%):</span><span>-₹${discountAmt.toFixed(2)}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span>Net Taxable:</span><span>₹${taxable.toFixed(2)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Discount (${discountPct}%):</span><span>-₹${discountAmt.toFixed(2)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Net Taxable:</span><span>₹${taxable.toFixed(2)}</span></div>
         ` : ''}
-        <div style="display:flex;justify-content:space-between;"><span>CGST @${cgstRate}%:</span><span>₹${cgst.toFixed(2)}</span></div>
-        <div style="display:flex;justify-content:space-between;"><span>SGST @${sgstRate}%:</span><span>₹${sgst.toFixed(2)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;"><span>CGST @${cgstRate}%:</span><span>₹${cgst.toFixed(2)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;"><span>SGST @${sgstRate}%:</span><span>₹${sgst.toFixed(2)}</span></div>
         ${deliveryFee > 0 ? `
-          <div style="display:flex;justify-content:space-between;"><span>Delivery Fee:</span><span>₹${deliveryFee.toFixed(2)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Delivery Fee:</span><span>₹${deliveryFee.toFixed(2)}</span></div>
         ` : ''}
-        <div style="display:flex;justify-content:space-between;font-weight:${boldTotals ? '900' : '700'};font-size:${totalFontSize};border-top:1px dashed #000;margin-top:2px;padding-top:2px;">
+        <div style="display:flex;justify-content:space-between;font-weight:${boldTotals ? '900' : '800'};font-size:${totalFontSize};border-top:1.5px solid #000;border-bottom:1.5px solid #000;margin-top:2px;padding:3px 0;color:#000;">
           <span>GRAND TOTAL:</span><span>₹${grandTotal.toFixed(2)}</span>
         </div>
       </div>
       
-      <div style="border-top:1px dashed #000;margin-top:3px;padding-top:2px;font-size:${subFontSize};display:flex;justify-content:space-between;">
+      <div style="border-bottom:1px dashed #000;margin-bottom:3px;padding-bottom:2px;font-size:${subFontSize};font-weight:800;display:flex;justify-content:space-between;color:#000;">
         <span><strong>Pay:</strong> ${payMode}</span>
         <span><strong>Status:</strong> ${(order.payment_status || 'unpaid').toUpperCase()}</span>
       </div>
       
       <!-- DYNAMIC UPI QR (Auto-Scaled or Hidden to save paper) -->
       ${showQr && qrDataUrl ? `
-        <div style="border-top:1px dashed #000;margin-top:3px;padding-top:3px;text-align:center;">
+        <div style="margin-top:3px;padding-top:2px;text-align:center;color:#000;">
           <div style="font-size:${subFontSize};font-weight:900;">📱 SCAN &amp; PAY VIA UPI</div>
           <img src="${qrDataUrl}" alt="UPI QR" style="width:${qrDimension};height:${qrDimension};margin:2px auto;display:block;image-rendering:pixelated;" />
-          <div style="font-size:${subFontSize};color:#333;margin-top:1px;">UPI: <strong>${escapeHtml(p.bill_upi_id)}</strong> (₹${grandTotal.toFixed(2)})</div>
+          <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">UPI: <strong>${escapeHtml(p.bill_upi_id)}</strong> (₹${grandTotal.toFixed(2)})</div>
         </div>
       ` : ''}
       
       <!-- COMPACT FOOTER -->
-      <div style="text-align:center;border-top:1px dashed #000;padding-top:2px;margin-top:3px;font-size:${subFontSize};">
-        <div style="font-weight:bold;">${escapeHtml(p.bill_footer_message || 'Thank You! Visit Again.')}</div>
-        <div style="margin-top:1px;">${escapeHtml(p.restaurant_name)}</div>
+      <div style="text-align:center;border-top:1px dashed #000;padding-top:3px;margin-top:3px;font-size:${subFontSize};color:#000;">
+        <div style="font-weight:900;">${escapeHtml(p.bill_footer_message || 'Thank You! Visit Again.')}</div>
+        <div style="margin-top:1px;font-weight:700;">${escapeHtml(p.restaurant_name)}</div>
       </div>
       ${feedSpaces}
     </div>
@@ -11347,15 +11811,35 @@ async function generateBillWithTaxHtml(order, itemsList) {
 }
 
 async function printOrderReceiptWithTax(order, itemsList) {
+  if (!order) {
+    showAdminToast('No order found to print Bill.', 'error');
+    return;
+  }
+  let items = itemsList;
+  if (!items || items.length === 0) {
+    items = getItemsForOrder(order.id);
+  }
+  if ((!items || items.length === 0) && order.id) {
+    try {
+      const { data: dbItems } = await insforge.database.from('order_items').select('*').eq('order_id', order.id);
+      if (dbItems && dbItems.length > 0) {
+        items = dbItems;
+        orderItems.push(...dbItems);
+      }
+    } catch (e) {
+      console.warn('Could not fetch items from DB for Bill:', e);
+    }
+  }
+
   const p = printerSettings;
-  const html = await generateBillWithTaxHtml(order, itemsList);
+  const html = await generateBillWithTaxHtml(order, items);
 
   if (p.connection_mode === 'qz_tray') {
     if (typeof qz !== 'undefined' && qzConnected && activePrinter) {
       try {
         const config = qz.configs.create(activePrinter);
         await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }]);
-        showAdminToast(`Bill for #${order.order_number} sent via QZ Tray! ✅`, 'success');
+        showAdminToast(`Bill for #${order.order_number || 'Order'} sent via QZ Tray! ✅`, 'success');
         return;
       } catch(e) { console.warn('QZ Tray print failed, falling back to Native Driver:', e); }
     }
@@ -11363,41 +11847,104 @@ async function printOrderReceiptWithTax(order, itemsList) {
 
   // Default: Native Driver (Direct Windows Spooler / Silent Kiosk)
   await printViaNativeDriver(html, p.bill_paper_width || 80, p.bill_side_gap ?? 2);
-  showAdminToast(`Bill for #${order.order_number} sent to TVS RP3200 Plus Driver! ✅`, 'success');
+  showAdminToast(`Bill for #${order.order_number || 'Order'} sent to TVS RP3200 Plus Driver! ✅`, 'success');
 }
 
 
 // ════════════════════════════════════════════════════════
-// HOLD ORDERS VISUAL ADD-ITEMS MODAL
+// HOLD ORDERS & TABLE SESSIONS VISUAL ITEM EDIT & ADD ENGINE
 // ════════════════════════════════════════════════════════
 
-let holdModalCart = []; // [{ id, name, price, qty }]
-let holdModalActiveOrderId = null;
-let holdModalActiveCat = 'all';
+let holdModalContext = {
+  mode: 'order', // 'order' or 'table'
+  orderId: null,
+  tableNumber: null,
+  activeTab: 'edit', // 'edit' or 'add'
+  ordersInSession: [],
+  existingItems: [], // [{ id, order_id, name, price, qty, originalQty, isCancelled, notes }]
+  newItemsCart: [],  // [{ id, name, price, qty, notes }]
+  activeCat: 'all'
+};
 
-function openHoldAddItemsModal(orderId) {
-  const order = orders.find(o => o.id === orderId);
-  if (!order) return;
-  holdModalActiveOrderId = orderId;
-  holdModalCart = [];
-  holdModalActiveCat = 'all';
+async function openHoldEditModal(idOrTableNum, initialTab = 'edit') {
+  const tableSessions = getActiveTableSessions();
+  const foundSession = typeof idOrTableNum === 'number' || (!isNaN(parseInt(idOrTableNum, 10)) && tableSessions.some(s => s.tableNumber === parseInt(idOrTableNum, 10)))
+    ? tableSessions.find(s => s.tableNumber === parseInt(idOrTableNum, 10))
+    : null;
 
-  const parsedMeta = parseNotesMetadata(order.notes, order);
-  const tableNum = parsedMeta.tableNumber || order.table_number || '';
+  holdModalContext = {
+    mode: foundSession ? 'table' : 'order',
+    orderId: foundSession ? (foundSession.orders[0]?.id || null) : String(idOrTableNum),
+    tableNumber: foundSession ? foundSession.tableNumber : null,
+    activeTab: initialTab || 'edit',
+    ordersInSession: foundSession ? foundSession.orders : (orders.filter(o => String(o.id) === String(idOrTableNum))),
+    existingItems: [],
+    newItemsCart: [],
+    activeCat: 'all'
+  };
+
+  const primaryOrder = holdModalContext.ordersInSession[0];
+  if (!primaryOrder && !foundSession) {
+    showAdminToast('Could not find order/table session.', 'error');
+    return;
+  }
+
+  // Load existing items from cache or fetch from DB if empty
+  const sessionOrderIds = holdModalContext.ordersInSession.map(o => o.id);
+  let rawItems = [];
+  for (const ord of holdModalContext.ordersInSession) {
+    const itms = getItemsForOrder(ord.id);
+    if (itms && itms.length > 0) {
+      rawItems.push(...itms);
+    }
+  }
+
+  if (rawItems.length === 0 && sessionOrderIds.length > 0) {
+    try {
+      const { data: dbItems } = await insforge.database.from('order_items').select('*').in('order_id', sessionOrderIds);
+      if (dbItems && dbItems.length > 0) {
+        rawItems = dbItems;
+        // Merge into orderItems memory cache
+        for (const dbi of dbItems) {
+          if (!orderItems.some(x => x.id === dbi.id)) orderItems.push(dbi);
+        }
+      }
+    } catch(err) { console.warn('[Hold Modal] Error fetching items:', err); }
+  }
+
+  // Filter food items and map to editable existing items
+  const cleanItems = (rawItems || []).filter(i => i && !/delivery|discount|tax|fee/i.test(i.item_name || i.name || ''));
+  holdModalContext.existingItems = cleanItems.map(it => ({
+    id: it.id,
+    order_id: it.order_id,
+    name: it.item_name || it.name,
+    price: Number(it.unit_price || it.price || 0),
+    qty: Number(it.quantity || it.qty || 1),
+    originalQty: Number(it.quantity || it.qty || 1),
+    isCancelled: false,
+    notes: it.notes || ''
+  }));
+
+  // Update Modal Title & Subtitle
   const titleEl = $('hold-modal-title');
   const subEl = $('hold-modal-sub');
+  const tNum = holdModalContext.tableNumber;
+  const ordNo = primaryOrder ? formatDailyOrderNumber(primaryOrder) : '—';
+  const custName = primaryOrder?.customer_name || 'Walk-in Guest';
+  const custPhone = primaryOrder?.customer_phone || '';
+
   if (titleEl) {
-    titleEl.innerHTML = `<span>🍽️ Add Dishes to ${tableNum ? `Table ${tableNum}` : `Order #${order.order_number}`}</span>`;
+    titleEl.innerHTML = `<span>🍽️ Manage &amp; Edit Dishes — ${tNum ? `Table ${tNum}` : `Order #${ordNo}`}</span>`;
   }
   if (subEl) {
-    subEl.textContent = `Customer: ${order.customer_name || 'Walk-in'} (${order.customer_phone || '—'}) · Running Total: ₹${Number(order.total_amount || 0).toFixed(2)}`;
+    subEl.textContent = `Customer: ${custName} ${custPhone ? `(${custPhone})` : ''} · ${holdModalContext.existingItems.length} Dishes Currently Ordered`;
   }
 
-  if ($('hold-modal-curr-total')) {
-    $('hold-modal-curr-total').textContent = `₹${Number(order.total_amount || 0).toFixed(2)}`;
-  }
+  if ($('hold-modal-edit-search')) $('hold-modal-edit-search').value = '';
   if ($('hold-modal-search')) $('hold-modal-search').value = '';
 
+  switchHoldModalTab(holdModalContext.activeTab);
+  renderHoldModalExistingItems();
   renderHoldModalCategories();
   renderHoldModalFoodGrid();
   updateHoldModalCartUI();
@@ -11406,10 +11953,10 @@ function openHoldAddItemsModal(orderId) {
   if (modal) {
     modal.classList.add('open');
     modal.style.display = 'flex';
-    setTimeout(() => $('hold-modal-search')?.focus(), 150);
   }
 }
-window.openHoldAddItemsModal = openHoldAddItemsModal;
+window.openHoldEditModal = openHoldEditModal;
+window.openHoldAddItemsModal = (orderId) => openHoldEditModal(orderId, 'add');
 
 function closeHoldAddItemsModal() {
   const modal = $('adm-hold-add-modal');
@@ -11417,10 +11964,169 @@ function closeHoldAddItemsModal() {
     modal.classList.remove('open');
     modal.style.display = 'none';
   }
-  holdModalActiveOrderId = null;
-  holdModalCart = [];
+  holdModalContext = {
+    mode: 'order',
+    orderId: null,
+    tableNumber: null,
+    activeTab: 'edit',
+    ordersInSession: [],
+    existingItems: [],
+    newItemsCart: [],
+    activeCat: 'all'
+  };
 }
 window.closeHoldAddItemsModal = closeHoldAddItemsModal;
+
+function switchHoldModalTab(tab) {
+  holdModalContext.activeTab = tab;
+  const editView = $('hold-modal-view-edit');
+  const addView = $('hold-modal-view-add');
+  const editBtn = $('hold-modal-tab-btn-edit');
+  const addBtn = $('hold-modal-tab-btn-add');
+
+  if (tab === 'edit') {
+    if (editView) editView.style.display = 'flex';
+    if (addView) addView.style.display = 'none';
+    if (editBtn) {
+      editBtn.style.background = '#6366f1';
+      editBtn.style.color = '#fff';
+    }
+    if (addBtn) {
+      addBtn.style.background = 'transparent';
+      addBtn.style.color = '#cbd5e1';
+    }
+  } else {
+    if (editView) editView.style.display = 'none';
+    if (addView) addView.style.display = 'flex';
+    if (editBtn) {
+      editBtn.style.background = 'transparent';
+      editBtn.style.color = '#cbd5e1';
+    }
+    if (addBtn) {
+      addBtn.style.background = '#6366f1';
+      addBtn.style.color = '#fff';
+    }
+  }
+}
+
+function renderHoldModalExistingItems(filterText) {
+  const container = $('hold-modal-existing-items-list');
+  const countBadge = $('hold-modal-edit-badge');
+  const tab1Count = $('hold-modal-tab1-count');
+  if (!container) return;
+
+  const q = (filterText || '').toLowerCase().trim();
+  const items = holdModalContext.existingItems;
+  const activeCount = items.filter(i => !i.isCancelled).length;
+
+  if (countBadge) countBadge.textContent = `${activeCount} Dishes Active`;
+  if (tab1Count) tab1Count.textContent = activeCount;
+
+  if (items.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:2rem;background:#fff;border:1px dashed var(--adm-border);border-radius:10px;color:var(--adm-muted);">
+        <p style="margin:0 0 .5rem 0;font-weight:700;">No existing items found for this order.</p>
+        <button type="button" class="adm-btn adm-btn-primary adm-btn-sm" onclick="switchHoldModalTab('add')">➕ Add New Dishes Now</button>
+      </div>
+    `;
+    return;
+  }
+
+  const filtered = items.map((item, idx) => ({ ...item, originalIndex: idx })).filter(item => {
+    if (!q) return true;
+    return item.name.toLowerCase().includes(q);
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:1.5rem;color:var(--adm-muted);font-size:.85rem;">No dishes match "${escapeHtml(q)}"</div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(item => {
+    const idx = item.originalIndex;
+    const isCancelled = item.isCancelled;
+    const isQtyModified = !isCancelled && item.qty !== item.originalQty;
+    const lineTotal = isCancelled ? 0 : (item.price * item.qty);
+
+    if (isCancelled) {
+      return `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem .85rem;background:#fef2f2;border:1px dashed #f87171;border-radius:10px;gap:.5rem;">
+          <div style="flex:1;">
+            <div style="font-size:.88rem;font-weight:800;color:#991b1b;text-decoration:line-through;">
+              ${escapeHtml(item.name)}
+            </div>
+            <div style="font-size:.72rem;color:#dc2626;font-weight:700;margin-top:2px;">
+              ❌ Marked for Kitchen Cancellation (${item.originalQty}× ₹${item.price.toFixed(0)})
+            </div>
+          </div>
+          <button type="button" onclick="holdModalExistingToggleCancel(${idx})" class="adm-btn adm-btn-sm" style="background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;font-weight:800;font-size:.75rem;padding:.25rem .6rem;border-radius:6px;" title="Undo cancellation">
+            ↩️ Restore Item
+          </button>
+        </div>
+      `;
+    }
+
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:.65rem .85rem;background:#fff;border:1px solid var(--adm-border);border-radius:10px;gap:.5rem;box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+        <div style="flex:1;">
+          <div style="font-size:.88rem;font-weight:800;color:#111827;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;">
+            <span>${escapeHtml(item.name)}</span>
+            ${isQtyModified ? `<span style="font-size:.68rem;padding:1px 5px;border-radius:4px;background:#fef3c7;color:#b45309;font-weight:700;">was ${item.originalQty}</span>` : ''}
+          </div>
+          <div style="font-size:.74rem;color:var(--adm-muted);margin-top:2px;">
+            ₹${item.price.toFixed(2)} each · <strong style="color:#111827;">Line: ₹${lineTotal.toFixed(2)}</strong>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:.4rem;">
+          <!-- Quantity Stepper -->
+          <div style="display:flex;align-items:center;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;overflow:hidden;">
+            <button type="button" onclick="holdModalExistingChangeQty(${idx}, -1)" style="width:28px;height:28px;border:none;background:transparent;cursor:pointer;font-weight:900;font-size:.9rem;display:flex;align-items:center;justify-content:center;color:#334155;" title="Decrease quantity">
+              −
+            </button>
+            <span style="min-width:26px;text-align:center;font-weight:900;font-size:.85rem;color:#0f172a;">
+              ${item.qty}
+            </span>
+            <button type="button" onclick="holdModalExistingChangeQty(${idx}, 1)" style="width:28px;height:28px;border:none;background:transparent;cursor:pointer;font-weight:900;font-size:.9rem;display:flex;align-items:center;justify-content:center;color:#334155;" title="Increase quantity">
+              +
+            </button>
+          </div>
+
+          <!-- Cancel Dish Button -->
+          <button type="button" onclick="holdModalExistingToggleCancel(${idx})" class="adm-btn adm-btn-sm" style="background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:.74rem;padding:.3rem .55rem;border-radius:6px;" title="Cancel this dish from order">
+            🗑️ Cancel
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.holdModalExistingChangeQty = function(idx, delta) {
+  const item = holdModalContext.existingItems[idx];
+  if (!item || item.isCancelled) return;
+  const nextQty = item.qty + delta;
+  if (nextQty <= 0) {
+    if (confirm(`Cancel "${item.name}" completely from this order?`)) {
+      item.isCancelled = true;
+    }
+  } else {
+    item.qty = nextQty;
+  }
+  renderHoldModalExistingItems($('hold-modal-edit-search')?.value);
+  updateHoldModalCartUI();
+};
+
+window.holdModalExistingToggleCancel = function(idx) {
+  const item = holdModalContext.existingItems[idx];
+  if (!item) return;
+  item.isCancelled = !item.isCancelled;
+  if (!item.isCancelled && item.qty <= 0) {
+    item.qty = item.originalQty || 1;
+  }
+  renderHoldModalExistingItems($('hold-modal-edit-search')?.value);
+  updateHoldModalCartUI();
+};
 
 function renderHoldModalCategories() {
   const pillBar = $('hold-modal-categories');
@@ -11431,13 +12137,13 @@ function renderHoldModalCategories() {
   const cats = ['all', ...orderedCats];
   pillBar.innerHTML = cats.map(cat => {
     const lbl = cat === 'all' ? '🍽️ All Items' : ((categoryEmojis[cat] || '') + ' ' + (categoryLabels[cat] || cat));
-    const cls = cat === holdModalActiveCat ? 'pos-cat-pill active' : 'pos-cat-pill';
+    const cls = cat === holdModalContext.activeCat ? 'pos-cat-pill active' : 'pos-cat-pill';
     return `<button type="button" class="${cls}" data-cat="${cat}">${lbl}</button>`;
   }).join('');
 
   pillBar.querySelectorAll('.pos-cat-pill').forEach(pill => {
     pill.addEventListener('click', () => {
-      holdModalActiveCat = pill.dataset.cat;
+      holdModalContext.activeCat = pill.dataset.cat;
       renderHoldModalCategories();
       renderHoldModalFoodGrid($('hold-modal-search')?.value);
     });
@@ -11450,7 +12156,7 @@ function renderHoldModalFoodGrid(filterText) {
   const q = (filterText || '').toLowerCase().trim();
   const source = getCombinedFoodItems();
   const filtered = source.filter(f =>
-    (holdModalActiveCat === 'all' || f.category === holdModalActiveCat) &&
+    (holdModalContext.activeCat === 'all' || f.category === holdModalContext.activeCat) &&
     (!q || (f.name && f.name.toLowerCase().includes(q)) || (f.category && f.category.toLowerCase().includes(q)))
   );
 
@@ -11464,7 +12170,7 @@ function renderHoldModalFoodGrid(filterText) {
 
   grid.innerHTML = filtered.map(f => {
     const imgUrl = f.image || categoryImages[f.category] || '/images/food_starters.png';
-    const cartItem = holdModalCart.find(i => (f.id && String(i.id) === String(f.id)) || (i.name && f.name && i.name.toLowerCase() === f.name.toLowerCase()));
+    const cartItem = holdModalContext.newItemsCart.find(i => (f.id && String(i.id) === String(f.id)) || (i.name && f.name && i.name.toLowerCase() === f.name.toLowerCase()));
     const cartQty = cartItem ? cartItem.qty : 0;
 
     return `
@@ -11489,99 +12195,264 @@ function renderHoldModalFoodGrid(filterText) {
       const id = tile.dataset.id;
       const name = tile.dataset.name;
       const price = parseFloat(tile.dataset.price);
-      const existing = holdModalCart.find(i => (id && String(i.id) === String(id)) || (i.name && name && i.name.toLowerCase() === name.toLowerCase()));
+      const existing = holdModalContext.newItemsCart.find(i => (id && String(i.id) === String(id)) || (i.name && name && i.name.toLowerCase() === name.toLowerCase()));
       if (existing) {
         existing.qty++;
       } else {
-        holdModalCart.push({ id: id || null, name, price, qty: 1 });
+        holdModalContext.newItemsCart.push({ id: id || null, name, price, qty: 1 });
       }
       updateHoldModalCartUI();
-      showAdminToast(`Added "${name}" 🛒`, 'success');
+      showAdminToast(`Added "${name}" to new dishes 🛒`, 'success');
     });
   });
 }
 
 function updateHoldModalCartUI() {
   const cartEl = $('hold-modal-cart-items');
-  if (!cartEl) return;
+  const newBadge = $('hold-modal-new-badge');
+  const cancSummary = $('hold-modal-cancellations-summary');
+  const cancList = $('hold-modal-cancellations-list');
+  const rowCancelled = $('hold-modal-row-cancelled');
+  const rowAdded = $('hold-modal-row-added');
 
-  if (holdModalCart.length === 0) {
-    cartEl.innerHTML = '<p style="color:var(--adm-muted);font-size:.82rem;text-align:center;padding:1.5rem 0;">No dishes selected yet.<br/><span style="font-size:.75rem;">Click dishes on the left to add.</span></p>';
-  } else {
-    cartEl.innerHTML = holdModalCart.map((item, idx) => `
-      <div style="display:flex;align-items:center;gap:.4rem;padding:.4rem 0;border-bottom:1px solid var(--adm-border);">
-        <div style="flex:1;">
-          <div style="font-size:.82rem;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(item.name)}</div>
-          <div style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">₹${item.price.toFixed(2)} each</div>
+  const newItems = holdModalContext.newItemsCart;
+  const existing = holdModalContext.existingItems;
+
+  if (newBadge) newBadge.textContent = newItems.reduce((s, i) => s + i.qty, 0);
+
+  if (cartEl) {
+    if (newItems.length === 0) {
+      cartEl.innerHTML = '<p style="color:var(--adm-muted);font-size:.8rem;text-align:center;padding:1rem 0;">No extra dishes added yet.<br/><span style="font-size:.72rem;">Switch to "Add New Dishes" tab to pick items.</span></p>';
+    } else {
+      cartEl.innerHTML = newItems.map((item, idx) => `
+        <div style="display:flex;align-items:center;gap:.4rem;padding:.35rem 0;border-bottom:1px solid var(--adm-border);">
+          <div style="flex:1;">
+            <div style="font-size:.82rem;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(item.name)}</div>
+            <div style="font-size:.72rem;color:var(--adm-muted);margin-top:1px;">₹${item.price.toFixed(2)} each</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:.2rem;">
+            <button type="button" onclick="holdModalNewChangeQty(${idx},-1)" style="width:22px;height:22px;border:1px solid var(--adm-border);border-radius:4px;background:#f9fafb;cursor:pointer;font-size:.8rem;display:flex;align-items:center;justify-content:center;font-weight:bold;">−</button>
+            <span style="min-width:18px;text-align:center;font-weight:800;font-size:.82rem;">${item.qty}</span>
+            <button type="button" onclick="holdModalNewChangeQty(${idx},1)" style="width:22px;height:22px;border:1px solid var(--adm-border);border-radius:4px;background:#f9fafb;cursor:pointer;font-size:.8rem;display:flex;align-items:center;justify-content:center;font-weight:bold;">+</button>
+            <button type="button" onclick="holdModalNewRemoveItem(${idx})" style="width:22px;height:22px;border:1px solid #fca5a5;border-radius:4px;background:#fef2f2;cursor:pointer;color:#ef4444;font-size:.75rem;display:flex;align-items:center;justify-content:center;" title="Remove">✕</button>
+          </div>
+          <span style="min-width:48px;text-align:right;font-weight:800;font-size:.82rem;color:#111827;">₹${(item.price*item.qty).toFixed(2)}</span>
         </div>
-        <div style="display:flex;align-items:center;gap:.2rem;">
-          <button type="button" onclick="holdModalChangeQty(${idx},-1)" style="width:22px;height:22px;border:1px solid var(--adm-border);border-radius:4px;background:#f9fafb;cursor:pointer;font-size:.8rem;display:flex;align-items:center;justify-content:center;font-weight:bold;">−</button>
-          <span style="min-width:18px;text-align:center;font-weight:800;font-size:.82rem;">${item.qty}</span>
-          <button type="button" onclick="holdModalChangeQty(${idx},1)" style="width:22px;height:22px;border:1px solid var(--adm-border);border-radius:4px;background:#f9fafb;cursor:pointer;font-size:.8rem;display:flex;align-items:center;justify-content:center;font-weight:bold;">+</button>
-          <button type="button" onclick="holdModalRemoveItem(${idx})" style="width:22px;height:22px;border:1px solid #fca5a5;border-radius:4px;background:#fef2f2;cursor:pointer;color:#ef4444;font-size:.75rem;display:flex;align-items:center;justify-content:center;" title="Remove">✕</button>
-        </div>
-        <span style="min-width:50px;text-align:right;font-weight:800;font-size:.82rem;color:#111827;">₹${(item.price*item.qty).toFixed(2)}</span>
-      </div>
-    `).join('');
+      `).join('');
+    }
   }
 
-  const s = getBillSettings();
-  const newSubtotal = holdModalCart.reduce((sum, i) => sum + i.price * i.qty, 0);
-  const newTax = newSubtotal * (s.cgstRate + s.sgstRate) / 100;
-  const order = orders.find(o => o.id === holdModalActiveOrderId);
-  const currentTotal = Number(order?.total_amount || 0);
-  const updatedTotal = currentTotal + newSubtotal + newTax;
+  // Calculate numbers
+  const origSubtotal = existing.reduce((s, i) => s + (i.price * i.originalQty), 0);
+  const activeExistingSubtotal = existing.filter(i => !i.isCancelled).reduce((s, i) => s + (i.price * i.qty), 0);
+  const cancelledDeductions = origSubtotal - activeExistingSubtotal;
+  const addedSubtotal = newItems.reduce((s, i) => s + (i.price * i.qty), 0);
+  const netSubtotal = activeExistingSubtotal + addedSubtotal;
 
-  if ($('hold-modal-new-subtotal')) $('hold-modal-new-subtotal').textContent = `₹${newSubtotal.toFixed(2)}`;
-  if ($('hold-modal-new-tax')) $('hold-modal-new-tax').textContent = `₹${newTax.toFixed(2)}`;
-  if ($('hold-modal-updated-total')) $('hold-modal-updated-total').textContent = `₹${updatedTotal.toFixed(2)}`;
+  const s = getBillSettings();
+  const tax = netSubtotal * (s.cgstRate + s.sgstRate) / 100;
+  const grandTotal = netSubtotal + tax;
+
+  if ($('hold-modal-orig-subtotal')) $('hold-modal-orig-subtotal').textContent = `₹${origSubtotal.toFixed(2)}`;
+  if ($('hold-modal-tax-amt')) $('hold-modal-tax-amt').textContent = `₹${tax.toFixed(2)}`;
+  if ($('hold-modal-updated-total')) $('hold-modal-updated-total').textContent = `₹${grandTotal.toFixed(2)}`;
+
+  if (rowCancelled) {
+    rowCancelled.style.display = cancelledDeductions > 0 ? 'flex' : 'none';
+    if ($('hold-modal-cancelled-amt')) $('hold-modal-cancelled-amt').textContent = `-₹${cancelledDeductions.toFixed(2)}`;
+  }
+  if (rowAdded) {
+    rowAdded.style.display = addedSubtotal > 0 ? 'flex' : 'none';
+    if ($('hold-modal-new-subtotal')) $('hold-modal-new-subtotal').textContent = `+₹${addedSubtotal.toFixed(2)}`;
+  }
+
+  const cancelledItems = existing.filter(i => i.isCancelled);
+  if (cancSummary && cancList) {
+    if (cancelledItems.length > 0) {
+      cancSummary.style.display = 'block';
+      cancList.innerHTML = cancelledItems.map(i => `<div>• ${escapeHtml(i.name)} (${i.originalQty}×)</div>`).join('');
+    } else {
+      cancSummary.style.display = 'none';
+    }
+  }
 
   renderHoldModalFoodGrid($('hold-modal-search')?.value);
 }
 
-window.holdModalChangeQty = function(idx, delta) {
-  holdModalCart[idx].qty = Math.max(1, holdModalCart[idx].qty + delta);
+window.holdModalNewChangeQty = function(idx, delta) {
+  holdModalContext.newItemsCart[idx].qty = Math.max(1, holdModalContext.newItemsCart[idx].qty + delta);
   updateHoldModalCartUI();
 };
-window.holdModalRemoveItem = function(idx) {
-  holdModalCart.splice(idx, 1);
+window.holdModalNewRemoveItem = function(idx) {
+  holdModalContext.newItemsCart.splice(idx, 1);
   updateHoldModalCartUI();
 };
 
-async function saveHoldOrderNewItems(orderId, newItems) {
-  const order = orders.find(o => o.id === orderId);
-  if (!order || !newItems.length) return;
+function generateKitchenCancellationSlipHtml(order, cancelledItems = [], modifiedItems = [], tableNum = '') {
+  const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const p = printerSettings;
+  const wPx = p.kot_paper_width === 'A4' ? 595 : Math.round(parseFloat(p.kot_paper_width || 80) * 2.835);
+  const sideGapPx = Math.round((p.kot_side_gap ?? 2) * 2.835);
+
+  const cancelledRowsHtml = cancelledItems.map(i => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1.5px dashed #000;font-size:13px;font-weight:900;color:#000;">
+      <span>❌ CANCEL: ${escapeHtml(i.name)}</span>
+      <span style="background:#000;color:#fff;padding:1px 6px;border-radius:3px;font-size:14px;">-${i.originalQty || i.qty}</span>
+    </div>
+  `).join('');
+
+  const modifiedRowsHtml = modifiedItems.map(i => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed #000;font-size:12px;font-weight:800;color:#000;">
+      <span>⚠️ QTY CHANGED: ${escapeHtml(i.name)}</span>
+      <span>${i.originalQty} ➔ ${i.qty}</span>
+    </div>
+  `).join('');
+
+  return `
+    <div style="width:${wPx}px;font-family:'Courier New',Courier,monospace;font-size:12px;font-weight:800;color:#000;padding:0 ${sideGapPx}px;margin:0 auto;line-height:1.3;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+      <div style="text-align:center;padding-bottom:4px;border-bottom:2px solid #000;">
+        <div style="font-size:15px;font-weight:900;letter-spacing:1px;background:#000;color:#fff;padding:2px 4px;">*** KITCHEN CANCELLATION ***</div>
+        <div style="font-size:11px;font-weight:900;margin-top:2px;">DO NOT PREPARE CANCELLED ITEMS</div>
+      </div>
+      
+      <div style="font-size:12px;font-weight:900;padding:4px 0;border-bottom:1.5px solid #000;">
+        <div style="display:flex;justify-content:space-between;">
+          <span><strong>Order #:</strong> ${formatDailyOrderNumber(order)}</span>
+          <span><strong>Time:</strong> ${timeStr}</span>
+        </div>
+        ${tableNum ? `<div style="font-size:14px;font-weight:900;border:1.5px solid #000;padding:2px 4px;margin-top:3px;text-align:center;">🪑 TABLE: ${tableNum}</div>` : ''}
+      </div>
+
+      <div style="padding:4px 0;">
+        ${cancelledRowsHtml}
+        ${modifiedRowsHtml}
+      </div>
+
+      <div style="text-align:center;border-top:2px solid #000;margin-top:6px;padding-top:4px;font-size:11px;font-weight:900;">
+        — CHEF / KITCHEN ALERT —
+      </div>
+      <br/><br/>
+      <div style="border-top:1px dashed #000;text-align:center;font-size:9px;color:#000;font-weight:700;">✂ - - - - Tear Here - - - - ✂</div>
+    </div>
+  `;
+}
+
+async function saveHoldOrderCorrections(shouldPrintKitchenSlip = false) {
+  const { mode, tableNumber, ordersInSession, existingItems, newItemsCart } = holdModalContext;
+  if (!ordersInSession.length) return;
+
+  const cancelledItems = existingItems.filter(i => i.isCancelled);
+  const modifiedItems = existingItems.filter(i => !i.isCancelled && i.qty !== i.originalQty);
+  const activeExistingItems = existingItems.filter(i => !i.isCancelled);
+  const newItems = [...newItemsCart];
+
+  if (activeExistingItems.length === 0 && newItems.length === 0) {
+    if (!confirm('All items in this order are cancelled. Do you want to cancel the entire order / table session?')) {
+      return;
+    }
+    // Cancel the orders in this session
+    try {
+      for (const ord of ordersInSession) {
+        await insforge.database.from('orders').update({ status: 'cancelled' }).eq('id', ord.id);
+        ord.status = 'cancelled';
+        await markOrderNotificationsRead(ord.id);
+      }
+      showAdminToast('All orders cancelled. ✅', 'success');
+      closeHoldAddItemsModal();
+      renderOverview();
+      renderHoldOrdersPanel();
+      renderOrdersTable();
+      renderClosedOrdersPanel();
+      renderBillingQuickCards();
+      renderBillingTotalBills();
+      return;
+    } catch(err) {
+      showAdminToast('Failed to cancel order: ' + err.message, 'error');
+      return;
+    }
+  }
+
+  const primaryOrder = ordersInSession[0];
+
   try {
-    const rows = newItems.map(i => {
-      const name = i.item_name || i.name;
-      const notes = (i.notes || '').trim();
-      return {
-        order_id: orderId,
-        item_name: notes ? `${name} [Note: ${notes}]` : name,
+    // 1. Delete cancelled items from DB & local cache
+    for (const item of cancelledItems) {
+      if (item.id && !String(item.id).startsWith('temp-')) {
+        await insforge.database.from('order_items').delete().eq('id', item.id);
+      }
+      const memIdx = orderItems.findIndex(x => String(x.id) === String(item.id));
+      if (memIdx !== -1) orderItems.splice(memIdx, 1);
+    }
+
+    // 2. Update modified items in DB & local cache
+    for (const item of modifiedItems) {
+      if (item.id && !String(item.id).startsWith('temp-')) {
+        await insforge.database.from('order_items').update({
+          quantity: item.qty,
+          line_total: item.price * item.qty
+        }).eq('id', item.id);
+      }
+      const memItem = orderItems.find(x => String(x.id) === String(item.id));
+      if (memItem) {
+        memItem.quantity = item.qty;
+        memItem.line_total = item.price * item.qty;
+      }
+    }
+
+    // 3. Insert newly added items to primaryOrder
+    if (newItems.length > 0) {
+      const rows = newItems.map(i => ({
+        order_id: primaryOrder.id,
+        item_name: i.name,
         quantity: i.qty,
         unit_price: i.price,
         line_total: i.price * i.qty,
-        menu_item_id: i.id || null
-      };
-    });
-    const { error } = await insforge.database.from('order_items').insert(rows);
-    if (error) throw error;
+        menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null
+      }));
+      const { data: inserted, error: insErr } = await insforge.database.from('order_items').insert(rows).select();
+      if (insErr) throw insErr;
+      if (inserted && inserted.length > 0) {
+        orderItems.push(...inserted);
+      } else {
+        orderItems.push(...rows.map((r, idx) => ({ ...r, id: `temp-hold-${Date.now()}-${idx}` })));
+      }
+    }
 
-    const addedSubtotal = newItems.reduce((s, i) => s + i.price * i.qty, 0);
+    // 4. Recalculate order totals for each order in session
     const s = getBillSettings();
-    const extraTax = addedSubtotal * (s.cgstRate + s.sgstRate) / 100;
-    const newTotal = Number(order.total_amount) + addedSubtotal + extraTax;
-    const { error: updateErr } = await insforge.database.from('orders').update({ total_amount: newTotal }).eq('id', orderId);
-    if (updateErr) throw updateErr;
+    for (const ord of ordersInSession) {
+      const curOrdItems = orderItems.filter(i => String(i.order_id) === String(ord.id) && !/delivery|discount|tax|fee/i.test(i.item_name || i.name || ''));
+      const sub = curOrdItems.reduce((sum, i) => sum + Number(i.line_total || ((i.price || i.unit_price) * (i.qty || i.quantity)) || 0), 0);
+      const taxAmt = sub * (s.cgstRate + s.sgstRate) / 100;
+      const newTotal = sub + taxAmt;
 
-    orderItems.push(...rows.map((r, i) => ({ ...r, id: `temp-hold-${Date.now()}-${i}`, order_id: orderId })));
-    order.total_amount = newTotal;
+      await insforge.database.from('orders').update({ total_amount: newTotal }).eq('id', ord.id);
+      ord.total_amount = newTotal;
+    }
 
-    showAdminToast(`Added ${newItems.length} dish(es) to Order #${order.order_number} ✅`, 'success');
+    // 5. Kitchen Print handling if requested
+    if (shouldPrintKitchenSlip) {
+      if (cancelledItems.length > 0 || modifiedItems.length > 0) {
+        const cancelHtml = generateKitchenCancellationSlipHtml(primaryOrder, cancelledItems, modifiedItems, tableNumber);
+        await printViaNativeDriver(cancelHtml, printerSettings.kot_paper_width || 80, printerSettings.kot_side_gap ?? 2);
+      }
+      if (newItems.length > 0) {
+        await printKOT(primaryOrder, newItems, true);
+      }
+    }
+
+    showAdminToast('Hold order & items updated successfully! ✅', 'success');
+    closeHoldAddItemsModal();
+    renderOverview();
     renderHoldOrdersPanel();
+    renderOrdersTable();
+    renderClosedOrdersPanel();
     renderBillingQuickCards();
     renderBillingTotalBills();
-  } catch(e) { showAdminToast('Failed to save items: ' + e.message, 'error'); }
+  } catch(err) {
+    console.error('[Hold Modal Save Error]', err);
+    showAdminToast('Failed to save changes: ' + err.message, 'error');
+  }
 }
 
 function initHoldModalListeners() {
@@ -11593,42 +12464,34 @@ function initHoldModalListeners() {
   }
 
   $('hold-modal-close-btn')?.addEventListener('click', closeHoldAddItemsModal);
+  $('hold-modal-discard-btn')?.addEventListener('click', closeHoldAddItemsModal);
+
+  // Tab Switchers
+  $('hold-modal-tab-btn-edit')?.addEventListener('click', () => switchHoldModalTab('edit'));
+  $('hold-modal-tab-btn-add')?.addEventListener('click', () => switchHoldModalTab('add'));
+
   $('hold-modal-clear-cart-btn')?.addEventListener('click', () => {
-    if (!holdModalCart.length) return;
-    holdModalCart = [];
+    if (!holdModalContext.newItemsCart.length) return;
+    holdModalContext.newItemsCart = [];
     updateHoldModalCartUI();
   });
+
+  $('hold-modal-edit-search')?.addEventListener('input', function() {
+    renderHoldModalExistingItems(this.value);
+  });
+
   $('hold-modal-search')?.addEventListener('input', function() {
     renderHoldModalFoodGrid(this.value);
   });
 
-  // KOT & Save New Dishes
-  $('hold-modal-kot-btn')?.addEventListener('click', async () => {
-    if (!holdModalActiveOrderId) return;
-    if (!holdModalCart.length) {
-      showAdminToast('Please select at least one dish to add.', 'error');
-      return;
-    }
-    const order = orders.find(o => o.id === holdModalActiveOrderId);
-    if (!order) return;
-    const itemsToSave = [...holdModalCart];
-    // 1. Print incremental KOT for ONLY new dishes
-    await printKOT(order, itemsToSave, true);
-    // 2. Persist to DB and update running order total
-    await saveHoldOrderNewItems(order.id, itemsToSave);
-    closeHoldAddItemsModal();
+  // Save changes without kitchen slip
+  $('hold-modal-save-btn')?.addEventListener('click', () => {
+    saveHoldOrderCorrections(false);
   });
 
-  // Save Only (No Kitchen Ticket)
-  $('hold-modal-save-btn')?.addEventListener('click', async () => {
-    if (!holdModalActiveOrderId) return;
-    if (!holdModalCart.length) {
-      showAdminToast('Please select at least one dish to add.', 'error');
-      return;
-    }
-    const itemsToSave = [...holdModalCart];
-    await saveHoldOrderNewItems(holdModalActiveOrderId, itemsToSave);
-    closeHoldAddItemsModal();
+  // Save and print kitchen slip (KOT / Cancellation Slip)
+  $('hold-modal-kot-btn')?.addEventListener('click', () => {
+    saveHoldOrderCorrections(true);
   });
 }
 

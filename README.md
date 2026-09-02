@@ -62,31 +62,48 @@ LIMRA Restaurant is a **production-grade, multi-page restaurant e-commerce and P
 
 ---
 
-## 🗄️ Database Architecture (InsForge PostgreSQL)
+## 🗄️ Database Architecture (Supabase PostgreSQL)
 
-The database runs on **InsForge BaaS (PostgreSQL)** with 23 synchronized operational and security tables (3,081 records):
+The database runs on **Supabase (PostgreSQL + PostgREST + Auth + Realtime)** with 22 synchronized operational and security tables:
 
-| Table Name | Records | Purpose |
-| :--- | :--- | :--- |
-| `orders` | **11** | Customer orders (delivery, takeaway, dine-in) |
-| `order_items` | **21** | Relational items linked to orders |
-| `stock_items` | **138** | Tracked inventory and raw materials |
-| `stock_in` / `stock_in_entries` | **226** | Inventory receipt transactions |
-| `stock_out` / `stock_out_entries` | **544** | Inventory consumption records |
-| `stock_logs` | **883** | Full stock audit trail and balance changes |
-| `notifications` | **161** | In-app alerts for kitchen, admin, and customers |
-| `menu_overrides` | **83** | Dynamic pricing and stock availability |
-| `delivery_areas` | **21** | Delivery zone charges and radius boundaries |
-| `coupons` / `coupon_usage` | **3** | Active coupon codes and redemption history |
-| `combos` | **1** | Food combo bundle configurations |
-| `bookings` | **1** | Table, party, and wedding reservations |
-| `printer_settings` | **1** | Thermal printer configurations and GSTIN data |
-| `customer_profiles` | **5** | Customer address and profile metadata |
-| `admin_users` | **3** | Authenticated admin user accounts |
-| `security_audit_logs` | **208** | Security authentication and access logs |
-| `verified_payments` | **0** | Verified Razorpay transactions |
-| `payment_history` | **0** | Payment status change audit records |
-| `reviews` | **1** | Customer ratings and feedback |
+| Table Name | Purpose |
+| :--- | :--- |
+| `orders` | Customer orders (delivery, takeaway, dine-in) |
+| `order_items` | Relational items linked to orders |
+| `stock_items` | Tracked inventory and raw materials (138 items) |
+| `stock_in` / `stock_in_entries` | Inventory receipt transactions |
+| `stock_out` / `stock_out_entries` | Inventory consumption records |
+| `stock_logs` | Full stock audit trail and balance changes |
+| `notifications` | In-app alerts for kitchen, admin, and customers |
+| `menu_overrides` | Dynamic pricing and stock availability |
+| `delivery_areas` | Delivery zone charges and radius boundaries |
+| `coupons` / `coupon_usage` | Active coupon codes and redemption history |
+| `combos` | Food combo bundle configurations |
+| `bookings` | Table, party, and wedding reservations |
+| `printer_settings` | Thermal printer configurations and GSTIN data |
+| `customer_profiles` | Customer address and profile metadata |
+| `admin_users` | Authenticated admin user accounts |
+| `security_audit_logs` | Security authentication and access logs |
+| `verified_payments` | Verified Razorpay / UPI transactions |
+| `payment_history` | Payment status change audit records |
+| `reviews` | Customer ratings and feedback |
+
+### 🚀 How to Set Up Supabase:
+1. Create a free project at [supabase.com](https://supabase.com).
+2. Open your Supabase project's **SQL Editor** (`/sql`).
+3. Copy the entire contents of [`supabase_schema.sql`](./supabase_schema.sql) and click **Run**.
+4. Add your Supabase project keys to `.env`:
+   ```env
+   SUPABASE_URL=https://<your-project-ref>.supabase.co
+   SUPABASE_ANON_KEY=eyJhbGci...
+   SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
+   VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
+   VITE_SUPABASE_ANON_KEY=eyJhbGci...
+   ```
+5. Migrate all existing restaurant data (menu, stock, combos, coupons, orders) by running:
+   ```bash
+   npm run migrate:supabase
+   ```
 
 ---
 

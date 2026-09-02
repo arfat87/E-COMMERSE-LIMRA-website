@@ -1,5 +1,6 @@
 import { insforge, saveOrder, getMenuOverrides, validateCouponCode, redeemCoupon, getCombos } from '../lib/insforge.js';
 import { menuItems, categoryTabOrder, categoryLabels, categoryEmojis } from '../data/menu.js';
+import { initLanguageSystem, applyTranslations, t, getLanguage, setLanguage } from '../lib/i18n.js';
 
 const GOOGLE_REVIEW_URL = 'https://g.page/r/CcrqEfWap5zfEBE/review';
 
@@ -42,6 +43,15 @@ let appliedCoupon = null;
 // INITIALIZATION
 // ====================================================
 async function init() {
+  initLanguageSystem();
+  window.addEventListener('limra_language_changed', () => {
+    if (currentTable) {
+      initCustomerView();
+    } else {
+      applyTranslations();
+    }
+  });
+
   const params = new URLSearchParams(window.location.search);
   const tParam = params.get('t') || params.get('table');
 
@@ -145,9 +155,11 @@ async function loadMenuOverridesAndApply() {
 }
 
 async function initCustomerView() {
+  const isBn = getLanguage() === 'bn';
   const zone = currentTable <= 9 ? 'indoor' : 'outdoor';
-  const zoneLabel = zone === 'indoor' ? '🪑 Indoor' : '🌿 Outdoor';
-  $('#customer-table-number-label').textContent = `Serving Table ${currentTable} (${zoneLabel})`;
+  const zoneLabel = zone === 'indoor' ? (isBn ? '🪑 ইনডোর' : '🪑 Indoor') : (isBn ? '🌿 আউটডোর' : '🌿 Outdoor');
+  const tableLabel = isBn ? `সার্ভিং টেবিল ${currentTable} (${zoneLabel})` : `Serving Table ${currentTable} (${zoneLabel})`;
+  $('#customer-table-number-label').textContent = tableLabel;
   $('#checkout-table-display').textContent = currentTable;
   if ($('checkout-zone-display')) $('checkout-zone-display').textContent = zoneLabel;
   
@@ -180,15 +192,18 @@ function renderCategoryChips() {
   const container = $('#categories-scroll-container');
   if (!container) return;
 
+  const specialsLabel = t('tbl_specials');
+  const allLabel = t('tbl_all');
+
   const specialsChipHtml = `
     <button class="category-chip px-5 py-2.5 rounded-full text-xs font-semibold border border-white/5 bg-slate-900/60 text-slate-300 hover:border-white/10 ${selectedCategory === 'featured' ? 'active' : ''}" data-category="featured">
-      ⭐ Today's Specials
+      ${specialsLabel}
     </button>
   `;
 
   const allChipHtml = `
     <button class="category-chip px-5 py-2.5 rounded-full text-xs font-semibold border border-white/5 bg-slate-900/60 text-slate-300 hover:border-white/10 ${selectedCategory === 'all' ? 'active' : ''}" data-category="all">
-      🍽️ All Items
+      ${allLabel}
     </button>
   `;
 
@@ -241,7 +256,8 @@ function renderMenu() {
   });
 
   const totalCount = filtered.length + filteredCombos.length;
-  $('#menu-count-badge').textContent = `${totalCount} item${totalCount === 1 ? '' : 's'}`;
+  const countText = getLanguage() === 'bn' ? `${totalCount}টি পদ` : `${totalCount} item${totalCount === 1 ? '' : 's'}`;
+  $('#menu-count-badge').textContent = countText;
 
   if (totalCount === 0) {
     if (selectedCategory === 'featured') {
@@ -552,18 +568,25 @@ function renderCartListings(totalAmt) {
   });
 }
 
+let cartUIInitialized = false;
+let isSubmittingTableOrder = false;
+let lastSubmittedTableOrderTime = 0;
+
 function setupCartUI() {
+  if (cartUIInitialized) return;
+  cartUIInitialized = true;
+
   setupTableDetailDrawer();
   // Mobile drawer controls
-  $('#cart-fab-btn').addEventListener('click', () => {
+  $('#cart-fab-btn')?.addEventListener('click', () => {
     show($('#cart-drawer-overlay'));
   });
 
-  $('#cart-drawer-close').addEventListener('click', () => {
+  $('#cart-drawer-close')?.addEventListener('click', () => {
     hide($('#cart-drawer-overlay'));
   });
 
-  $('#cart-drawer-overlay').addEventListener('click', e => {
+  $('#cart-drawer-overlay')?.addEventListener('click', e => {
     if (e.target === $('#cart-drawer-overlay')) hide($('#cart-drawer-overlay'));
   });
 
@@ -576,14 +599,14 @@ function setupCartUI() {
     hide($('#checkout-modal'));
   };
 
-  $('#btn-checkout-desktop').addEventListener('click', openModal);
-  $('#btn-checkout-mobile').addEventListener('click', () => {
+  $('#btn-checkout-desktop')?.addEventListener('click', openModal);
+  $('#btn-checkout-mobile')?.addEventListener('click', () => {
     hide($('#cart-drawer-overlay'));
     openModal();
   });
 
-  $('#checkout-modal-close').addEventListener('click', closeModal);
-  $('#checkout-modal').addEventListener('click', e => {
+  $('#checkout-modal-close')?.addEventListener('click', closeModal);
+  $('#checkout-modal')?.addEventListener('click', e => {
     if (e.target === $('#checkout-modal')) closeModal();
   });
 
@@ -622,8 +645,15 @@ function setupCartUI() {
     }
   });
 
-  $('#checkout-form').addEventListener('submit', async e => {
+  $('#checkout-form')?.addEventListener('submit', async e => {
     e.preventDefault();
+    if (isSubmittingTableOrder) return;
+    const now = Date.now();
+    if (now - lastSubmittedTableOrderTime < 4000) {
+      console.warn('[TableOrder] Duplicate submission blocked by debounce lock');
+      return;
+    }
+
     const fd = new FormData(e.target);
     const name = fd.get('name').toString().trim() || 'Guest';
     const phone = fd.get('phone').toString().trim() || 'Dine-In';
@@ -633,9 +663,21 @@ function setupCartUI() {
   });
 
   async function placeOrderAndShowSuccess(name, phone, instruction, payment, txnRef) {
+    if (isSubmittingTableOrder) return;
+    if (!cart || cart.length === 0) {
+      alert('Your cart is empty');
+      return;
+    }
+
+    isSubmittingTableOrder = true;
+    lastSubmittedTableOrderTime = Date.now();
+
+    const isBn = getLanguage() === 'bn';
     const submitBtn = $('#btn-submit-order');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Sending to Kitchen...';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = isBn ? 'রান্নাঘরে পাঠানো হচ্ছে...' : 'Sending to Kitchen...';
+    }
 
     try {
       const zone = currentTable <= 9 ? 'indoor' : 'outdoor';
@@ -718,16 +760,19 @@ function setupCartUI() {
       
       updateCartState();
       
+      const isBnLang = getLanguage() === 'bn';
       const rawNum = parseInt(orderData.order_number, 10);
       const formattedNum = !isNaN(rawNum) && rawNum > 0 ? (rawNum < 10 ? `0${rawNum}` : `${rawNum}`) : String(orderData.order_number || '01');
       $('#success-order-number').textContent = `#${formattedNum}`;
-      $('#success-table-number').textContent = `Table ${currentTable}`;
+      $('#success-table-number').textContent = isBnLang ? `টেবিল ${currentTable}` : `Table ${currentTable}`;
       $('#success-diner-name').textContent = name;
 
       const appendBadge = $('#success-append-badge');
       if (appendBadge) {
         if (orderData.is_subsequent_round || orderData.is_appended) {
-          const roundText = orderData.round_number ? `Round ${orderData.round_number} Sent to Kitchen! 🍽️` : 'Additional Round Sent to Kitchen! 🍽️';
+          const roundText = orderData.round_number
+            ? (isBnLang ? `রাউন্ড ${orderData.round_number} রান্নাঘরে পাঠানো হয়েছে! 🍽️` : `Round ${orderData.round_number} Sent to Kitchen! 🍽️`)
+            : (isBnLang ? 'নতুন খাবার রান্নাঘরে পাঠানো হয়েছে! 🍽️' : 'Additional Round Sent to Kitchen! 🍽️');
           appendBadge.textContent = roundText;
           show(appendBadge);
         } else {
@@ -741,8 +786,12 @@ function setupCartUI() {
     } catch (err) {
       alert('Failed to place order: ' + err.message);
     } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Confirm & Send to Kitchen';
+      isSubmittingTableOrder = false;
+      const isBnLang = getLanguage() === 'bn';
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = isBnLang ? 'নিশ্চিত করে রান্নাঘরে পাঠান' : 'Confirm & Send to Kitchen';
+      }
     }
   }
 

@@ -187,10 +187,10 @@ server.listen(PORT, async () => {
   console.log(`==================================================\n`);
 
   try {
-    const { pingDatabase } = await import("./api/lib/insforge.js");
+    const { pingDatabase } = await import("./api/lib/supabase.js");
     const ping = await pingDatabase();
-    console.log(`✅ InsForge PostgreSQL Connection Verified:`, ping);
+    console.log(`✅ Supabase PostgreSQL Connection Status:`, ping);
   } catch (err) {
-    console.error(`❌ InsForge Connection Notice:`, err.message);
+    console.error(`❌ Supabase Connection Notice:`, err.message);
   }
 });

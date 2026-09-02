@@ -1,20 +1,13 @@
 {
-  "version": 2,
-  "buildCommand": "vite build",
-  "outputDirectory": "dist",
-  "functions": {
-    "api/*.js": {
-      "runtime": "@vercel/node"
-    }
-  },
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/admin-login", "dest": "/admin-login.html" },
-    { "src": "/admin", "dest": "/admin.html" },
-    { "src": "/table/qr-admin", "dest": "/table/qr-admin.html" },
-    { "src": "/table", "dest": "/table/index.html" },
-    { "src": "/stock-manager", "dest": "/stock-manager/index.html" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
+    { "source": "/admin-login", "destination": "/admin-login.html" },
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/table/qr-admin", "destination": "/table/qr-admin.html" },
+    { "source": "/table", "destination": "/table/index.html" },
+    { "source": "/stock-manager", "destination": "/stock-manager/index.html" }
   ]
 }

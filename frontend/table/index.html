@@ -267,8 +267,13 @@
 
       <!-- Social & Review Header Quick Access Actions -->
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <!-- Language Switcher Button -->
+        <button type="button" class="limra-lang-toggle-btn px-2.5 sm:px-3 py-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-200 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-sm cursor-pointer" title="Switch Language / ভাষা পরিবর্তন">
+          🌐 বাংলা
+        </button>
+
         <!-- Review Pill / Button -->
-        <button id="btn-header-review" type="button" aria-label="Rate Us on Google" title="Leave a Google Review" class="px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-sm cursor-pointer">
+        <button id="btn-header-review" type="button" aria-label="Rate Us on Google" title="Leave a Google Review" class="px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-sm cursor-pointer" data-i18n="tbl_success_review">
           <span>⭐</span>
           <span class="text-[11px] sm:text-xs">Review</span>
         </button>
@@ -821,6 +826,59 @@
           <!-- Recommendations will render here -->
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       LANGUAGE SELECTION POPUP MODAL
+  ══════════════════════════════════════════════ -->
+  <div id="language-selection-modal" class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md transition-all duration-300 hidden opacity-0 pointer-events-none">
+    <div class="relative w-full max-w-md rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl scale-95 transition-all duration-300 text-center animate-scale-up glass-card" style="background:#1e293b;">
+      
+      <!-- Close Corner Button -->
+      <button id="lang-modal-close-btn" aria-label="Close" class="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+
+      <!-- Icon & Title -->
+      <div class="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-3xl shadow-sm bg-amber-500/15 border border-amber-500/30 text-amber-400">
+        🌐
+      </div>
+      
+      <h3 class="font-display text-xl sm:text-2xl font-bold mb-1 text-white font-outfit" style="font-family:'Outfit', sans-serif;" data-i18n="lang_modal_title">
+        Choose Your Language / ভাষা বেছে নিন
+      </h3>
+      <p class="text-xs sm:text-sm text-slate-400 mb-6" data-i18n="lang_modal_sub">
+        Select your preferred language to continue / চালিয়ে যেতে আপনার পছন্দের ভাষা নির্বাচন করুন
+      </p>
+
+      <!-- Language Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-2">
+        <!-- Bengali Option -->
+        <button id="lang-card-bn" type="button" class="group p-4 rounded-2xl border-2 text-left transition-all hover:scale-[1.02] active:scale-95 flex flex-col justify-between focus:outline-none cursor-pointer border-amber-500/40 bg-amber-500/10">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-2xl">🇧🇩</span>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-slate-950">বাংলা</span>
+          </div>
+          <div>
+            <h4 class="font-bold text-base text-white leading-tight">বাংলা</h4>
+            <p class="text-[11px] text-amber-200/80 mt-0.5">সহজে বাংলায় অর্ডার করুন</p>
+          </div>
+        </button>
+
+        <!-- English Option -->
+        <button id="lang-card-en" type="button" class="group p-4 rounded-2xl border-2 text-left transition-all hover:scale-[1.02] active:scale-95 flex flex-col justify-between focus:outline-none cursor-pointer border-white/10 bg-slate-900/60">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-2xl">🇬🇧</span>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">EN</span>
+          </div>
+          <div>
+            <h4 class="font-bold text-base text-white leading-tight">English</h4>
+            <p class="text-[11px] text-slate-400 mt-0.5">Order food in English</p>
+          </div>
+        </button>
+      </div>
+
     </div>
   </div>
 

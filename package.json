@@ -13,6 +13,7 @@
     "dev:backend": "npm run dev --prefix backend",
     "build": "npm run build --prefix frontend",
     "deploy:insforge": "npm run build && node scripts/deploy.mjs",
+    "migrate:supabase": "node scripts/migrate-to-supabase.mjs",
     "start": "npm run start --prefix backend",
     "server": "npm run start --prefix backend"
   },
@@ -21,6 +22,7 @@
   },
   "dependencies": {
     "@insforge/sdk": "^1.5.2",
+    "@supabase/supabase-js": "^2.112.4",
     "@tailwindcss/vite": "^4.3.0",
     "chart.js": "^4.5.1",
     "dotenv": "^17.4.2",

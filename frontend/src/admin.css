@@ -1623,3 +1623,35 @@
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ── Closed Order Edit Modal Scrolling & Table Styles ── */
+.closed-edit-scroll-body {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(92vh - 140px);
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.closed-edit-scroll-body::-webkit-scrollbar { width: 6px; }
+.closed-edit-scroll-body::-webkit-scrollbar-track { background: transparent; }
+.closed-edit-scroll-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+
+.closed-edit-items-scroll-table {
+  max-height: 280px;
+  overflow-y: auto;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+  border-radius: 8px;
+}
+.closed-edit-items-scroll-table::-webkit-scrollbar { width: 5px; height: 5px; }
+.closed-edit-items-scroll-table::-webkit-scrollbar-track { background: transparent; }
+.closed-edit-items-scroll-table::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.closed-edit-items-scroll-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  z-index: 2;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}

@@ -44,13 +44,30 @@ async function collectFiles(rootDirectory) {
   return files;
 }
 
+async function fetchWithRetry(url, options = {}, maxRetries = 4, delayMs = 2000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 45000);
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      return res;
+    } catch (err) {
+      console.warn(`[Attempt ${attempt}/${maxRetries}] Fetch failed: ${err.message}. Retrying in ${delayMs}ms...`);
+      if (attempt === maxRetries) throw err;
+      await new Promise(r => setTimeout(r, delayMs));
+      delayMs *= 1.5;
+    }
+  }
+}
+
 async function run() {
   console.log(`Scanning directory: ${SOURCE_DIR}`);
   const localFiles = await collectFiles(SOURCE_DIR);
   console.log(`Found ${localFiles.length} files to deploy.`);
 
   console.log("Creating deployment session...");
-  const res = await fetch(`${API_BASE_URL}/api/deployments/direct`, {
+  const res = await fetchWithRetry(`${API_BASE_URL}/api/deployments/direct`, {
     method: 'POST',
     headers: {
       'x-api-key': API_KEY,
@@ -75,8 +92,8 @@ async function run() {
 
   const localFileByPath = new Map(localFiles.map(f => [f.path, f]));
 
-  // Upload with concurrency of 8
-  const concurrency = 8;
+  // Upload with concurrency of 6
+  const concurrency = 6;
   let index = 0;
 
   async function worker() {
@@ -87,16 +104,17 @@ async function run() {
       const localFile = localFileByPath.get(file.path);
       if (!localFile) throw new Error(`Unknown file in response: ${file.path}`);
 
-      // Upload file content
-      const uploadRes = await fetch(`${API_BASE_URL}/api/deployments/${encodeURIComponent(deploymentId)}/files/${encodeURIComponent(file.fileId)}/content`, {
+      // Read full buffer for stable upload
+      const fileBuffer = await fs.readFile(localFile.absolutePath);
+
+      const uploadRes = await fetchWithRetry(`${API_BASE_URL}/api/deployments/${encodeURIComponent(deploymentId)}/files/${encodeURIComponent(file.fileId)}/content`, {
         method: 'PUT',
         headers: {
           'x-api-key': API_KEY,
           'Content-Type': 'application/octet-stream',
-          'Content-Length': String(localFile.size)
+          'Content-Length': String(fileBuffer.length)
         },
-        body: createReadStream(localFile.absolutePath),
-        duplex: 'half'
+        body: fileBuffer
       });
 
       if (!uploadRes.ok) {
@@ -111,7 +129,7 @@ async function run() {
   await Promise.all(workers);
   console.log("All files uploaded. Triggering build...");
 
-  const startRes = await fetch(`${API_BASE_URL}/api/deployments/${encodeURIComponent(deploymentId)}/start`, {
+  const startRes = await fetchWithRetry(`${API_BASE_URL}/api/deployments/${encodeURIComponent(deploymentId)}/start`, {
     method: 'POST',
     headers: {
       'x-api-key': API_KEY,
@@ -131,7 +149,7 @@ async function run() {
   // Poll for deployment completion and URL
   console.log("Polling deployment status...");
   while (true) {
-    const statusRes = await fetch(`${API_BASE_URL}/api/deployments/${encodeURIComponent(deploymentId)}`, {
+    const statusRes = await fetchWithRetry(`${API_BASE_URL}/api/deployments/${encodeURIComponent(deploymentId)}`, {
       headers: { 'x-api-key': API_KEY }
     });
     if (!statusRes.ok) {
@@ -142,8 +160,8 @@ async function run() {
       const status = String(statusResult.status || statusResult.state || '').toLowerCase();
       console.log(`Status: ${statusResult.status || statusResult.state} (normalized: ${status})`);
       if (status === 'ready' || status === 'success' || status === 'ready_for_promotion') {
-        console.log(`Deployment SUCCESSFUL!`);
-        console.log(`Live URL: ${statusResult.deploymentUrl || statusResult.url}`);
+        console.log(`\n🎉 Deployment SUCCESSFUL!`);
+        console.log(`🌐 Live URL: ${statusResult.deploymentUrl || statusResult.url}`);
         break;
       }
       if (status === 'failed' || status === 'canceled') {

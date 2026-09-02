@@ -1,6 +1,6 @@
 import './style.css';
 import './admin.css';
-import { insforge } from './lib/insforge.js';
+import { supabase, insforge } from './lib/supabase.js';
 import {
   ADMIN_DASHBOARD_PATH,
   getAuthRedirectUrl,
@@ -285,11 +285,14 @@ function initAuthUI() {
   $('google-signin-btn')?.addEventListener('click', async () => {
     hide($('login-error'));
     hide($('signup-error'));
+    const btn = $('google-signin-btn');
+    if (btn) btn.disabled = true;
     const redirectTo = window.location.origin + '/admin-login.html';
-    const { error } = await insforge.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       redirectTo
     });
+    if (btn) btn.disabled = false;
     if (error) {
       $('login-error').textContent = error.message;
       show($('login-error'));
@@ -299,17 +302,20 @@ function initAuthUI() {
 
 function handleOAuthCallback() {
   try {
-    const params = new URLSearchParams(window.location.search);
-    const status = params.get('insforge_status');
-    const errorMsg = params.get('insforge_error');
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash);
 
-    if (status === 'error' && errorMsg) {
-      $('login-error').textContent = `Google Sign-in failed: ${errorMsg}`;
+    const error = searchParams.get('error') || hashParams.get('error');
+    const errorDesc = searchParams.get('error_description') || hashParams.get('error_description') || searchParams.get('insforge_error');
+
+    if (error || errorDesc) {
+      let friendlyMsg = errorDesc || error || 'Google Sign-in failed.';
+      if (friendlyMsg.toLowerCase().includes('not enabled') || friendlyMsg.toLowerCase().includes('unsupported_provider')) {
+        friendlyMsg = 'Google authentication is not enabled in your Supabase project. Please enable it under Supabase Dashboard > Authentication > Providers > Google.';
+      }
+      $('login-error').textContent = friendlyMsg;
       show($('login-error'));
-      const url = new URL(window.location.href);
-      url.searchParams.delete('insforge_status');
-      url.searchParams.delete('insforge_error');
-      window.history.replaceState({}, '', url.pathname + url.search);
+      cleanAuthParams();
       return true;
     }
   } catch (e) {
@@ -321,12 +327,14 @@ function handleOAuthCallback() {
 function cleanAuthParams() {
   try {
     const url = new URL(window.location.href);
-    if (url.searchParams.has('insforge_code') || url.searchParams.has('insforge_status')) {
-      url.searchParams.delete('insforge_code');
-      url.searchParams.delete('insforge_status');
-      url.searchParams.delete('insforge_type');
-      url.searchParams.delete('insforge_error');
-      window.history.replaceState({}, '', url.pathname + url.search);
+    const paramsToRemove = ['code', 'error', 'error_code', 'error_description', 'insforge_code', 'insforge_status', 'insforge_type', 'insforge_error'];
+    paramsToRemove.forEach(p => url.searchParams.delete(p));
+    
+    // Clear hash fragment if it contains auth tokens
+    if (window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('error'))) {
+      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+    } else {
+      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
     }
   } catch (e) {
     console.warn('Failed to clean auth URL params:', e);
@@ -337,7 +345,17 @@ async function init() {
   handleEmailVerifyCallback();
   handleOAuthCallback();
 
-  const { data } = await insforge.auth.getCurrentUser();
+  // Listen for Supabase OAuth sign-in events
+  if (supabase?.auth?.onAuthStateChange) {
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        cleanAuthParams();
+        await afterAuthSuccess(session.user);
+      }
+    });
+  }
+
+  const { data } = await supabase.auth.getCurrentUser();
   cleanAuthParams();
 
   if (data?.user) {
@@ -346,7 +364,7 @@ async function init() {
       goToDashboard();
       return;
     } else {
-      await insforge.auth.signOut();
+      await supabase.auth.signOut();
       $('login-error').textContent = 'Your account is authenticated, but admin access has not been granted. Contact the owner.';
       show($('login-error'));
     }

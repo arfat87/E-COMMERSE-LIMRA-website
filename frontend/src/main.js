@@ -3,6 +3,7 @@ import { insforge, saveOrder, saveBooking, getCustomerBookings, getCustomerOrder
 import { menuItems, categoryImages, categoryLabels, categoryEmojis, categoryTabOrder } from './data/menu.js';
 import { sendEmailNotification, generateOrderPlacedHtml } from './lib/email-service.js';
 import { NotificationService } from './lib/notifications.js';
+import { initLanguageSystem, applyTranslations, t, getLanguage, setLanguage } from './lib/i18n.js';
 
 let activeCombos = [];
 
@@ -908,36 +909,32 @@ function submitToWhatsApp(message) {
 // ═══════════════════════════════════════
 // SUCCESS CONFIRMATION MODAL LOGIC
 // ═══════════════════════════════════════
-function showSuccessModal({ title, message, waUrl, emailUrl }) {
+function showSuccessModal({ title, message, emailUrl }) {
   const modal = document.getElementById('success-notification-modal');
   const content = document.getElementById('success-modal-content');
   const titleEl = document.getElementById('success-modal-title');
   const msgEl = document.getElementById('success-modal-msg');
-  const waBtn = document.getElementById('success-modal-wa-btn');
   const emailBtn = document.getElementById('success-modal-email-btn');
   const closeBtn = document.getElementById('success-modal-close-btn');
 
   if (!modal || !content) return;
 
-  titleEl.textContent = title;
-  msgEl.textContent = message;
+  if (titleEl) titleEl.textContent = title;
+  if (msgEl) msgEl.textContent = message;
 
-  // Clone buttons to clear old event listeners
-  const newWaBtn = waBtn.cloneNode(true);
-  const newEmailBtn = emailBtn.cloneNode(true);
-  const newCloseBtn = closeBtn.cloneNode(true);
+  if (emailBtn) {
+    const newEmailBtn = emailBtn.cloneNode(true);
+    emailBtn.parentNode.replaceChild(newEmailBtn, emailBtn);
+    newEmailBtn.addEventListener('click', () => {
+      if (emailUrl) window.open(emailUrl, '_blank');
+    });
+  }
 
-  waBtn.parentNode.replaceChild(newWaBtn, waBtn);
-  emailBtn.parentNode.replaceChild(newEmailBtn, emailBtn);
-  closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-
-  newWaBtn.addEventListener('click', () => {
-    window.open(waUrl, '_blank');
-  });
-
-  newEmailBtn.addEventListener('click', () => {
-    window.open(emailUrl, '_blank');
-  });
+  if (closeBtn) {
+    const newCloseBtn = closeBtn.cloneNode(true);
+    closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+    newCloseBtn.addEventListener('click', () => closeModal());
+  }
 
   const closeModal = () => {
     modal.classList.add('opacity-0', 'pointer-events-none');
@@ -945,10 +942,9 @@ function showSuccessModal({ title, message, waUrl, emailUrl }) {
     content.classList.add('scale-95');
   };
 
-  newCloseBtn.addEventListener('click', closeModal);
-  modal.addEventListener('click', (e) => {
+  modal.onclick = (e) => {
     if (e.target === modal) closeModal();
-  });
+  };
 
   // Show modal
   modal.classList.remove('opacity-0', 'pointer-events-none');
@@ -1024,10 +1020,6 @@ async function handleBookingSubmit(form, type, getExtra = () => ({})) {
     const date = data.date || '';
     const time = data.time || '';
 
-    // WA Confirmation Link
-    const waMsg = `Hello! My booking enquiry is placed successfully at SK Arif (Limra Restaurant).\n\n*Booking Details:*\n• Name: ${data.name}\n• Phone: ${data.phone}\n• Email: ${email}\n• Type: ${BOOKING_TYPE_LABELS[type] || type}\n• Date: ${date || '—'}\n• Time: ${time || '—'}\n• Guests: ${guests || '—'}${extra.seat ? `\n• Selected Table: ${extra.seat}` : ''}\n\nMy reservation is booked. Please confirm my booking and contact me as soon as possible! Thank you! 🙏`;
-    const waUrl = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(waMsg)}`;
-
     // Email (mailto) Link
     const emailSubject = `Booking Confirmed successfully! - SK Arif (${ref})`;
     const emailBody = `Dear Restaurant Management,\n\nI have successfully submitted a booking enquiry on your website.\n\nBooking Details:\n---------------------------------------------\nReference: ${ref}\nName: ${data.name}\nPhone: ${data.phone}\nEmail: ${email}\nType: ${BOOKING_TYPE_LABELS[type] || type}\nDate: ${date || '—'}\nTime: ${time || '—'}\nGuests: ${guests || '—'}${extra.seat ? `\nSelected Table: ${extra.seat}` : ''}\n---------------------------------------------\n\nMy reservation is booked. Please contact me as soon as possible to confirm.\n\nBest regards,\n${data.name}`;
@@ -1036,8 +1028,7 @@ async function handleBookingSubmit(form, type, getExtra = () => ({})) {
     // Show Success Modal
     showSuccessModal({
       title: `${ref} Booked Successfully!`,
-      message: `Your booking has been successfully recorded. Please click below to send yourself confirmation on WhatsApp or Email!`,
-      waUrl,
+      message: `Your booking has been successfully recorded in our system. We look forward to welcoming you to LIMRA Restaurant!`,
       emailUrl
     });
 
@@ -3309,8 +3300,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Show Success Modal
         showSuccessModal({
           title: `${orderLabel} Placed Successfully!`,
-          message: `Your order has been successfully recorded in our system. Please click below to send yourself confirmation on WhatsApp or Email!`,
-          waUrl,
+          message: `Your order has been successfully recorded in our system. You can get an email receipt or view your order status below.`,
           emailUrl
         });
 
@@ -3332,7 +3322,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => statusEl.classList.add('hidden'), 5000);
       } catch (err) {
         console.error('Order error:', err);
-        const detail = err?.message || 'Please try again or use WhatsApp.';
+        const detail = err?.message || 'Please try again.';
         statusEl.textContent = `Order failed: ${detail}`;
         statusEl.style.color = 'var(--color-red-badge)';
         statusEl.classList.remove('hidden');
@@ -3342,7 +3332,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     };
 
-    if (payment === 'Pay Online (Razorpay / UPI / Card)') {
+    function ensureRazorpayLoaded() {
+      return new Promise((resolve, reject) => {
+        if (typeof window !== 'undefined' && window.Razorpay) {
+          return resolve(window.Razorpay);
+        }
+        const existingScript = document.querySelector('script[src*="checkout.razorpay.com"]');
+        if (existingScript) {
+          existingScript.addEventListener('load', () => resolve(window.Razorpay));
+          existingScript.addEventListener('error', () => reject(new Error('Razorpay SDK failed to load')));
+          // If script tag already exists and loaded
+          if (window.Razorpay) return resolve(window.Razorpay);
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        script.onload = () => resolve(window.Razorpay);
+        script.onerror = () => reject(new Error('Failed to load Razorpay payment SDK'));
+        document.head.appendChild(script);
+      });
+    }
+
+    if (payment === 'Online Payment (Razorpay)' || payment === 'online' || payment.toLowerCase().includes('razorpay') || payment.toLowerCase().includes('online')) {
       try {
         const grandTotal = getCartTotal();
         const amountInPaise = Math.round(grandTotal * 100);
@@ -3371,10 +3383,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const rzpOrder = await orderRes.json();
+        const RazorpaySDK = await ensureRazorpayLoaded();
 
         // 2. Open Razorpay Checkout Modal
         const options = {
-          key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TBmsInWXVkKowt',
+          key: rzpOrder.key_id || import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TBmsInWXVkKowt',
           amount: rzpOrder.amount,
           currency: rzpOrder.currency,
           name: 'LIMRA Restaurant',
@@ -3440,7 +3453,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         };
 
-        const rzp = new window.Razorpay(options);
+        const rzp = new RazorpaySDK(options);
         rzp.on('payment.failed', function (resp) {
           showToast('Payment failed: ' + resp.error.description, 'error');
           btn.disabled = false;
@@ -3460,18 +3473,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     await saveAndCompleteOrder();
   });
 
-  // Optional WhatsApp copy
-  document.getElementById('order-whatsapp-btn').addEventListener('click', () => {
-    if (cart.length === 0) { alert('Your cart is empty! Add some items first.'); return; }
-    const name  = document.getElementById('order-customer-name').value.trim();
-    const phone = document.getElementById('order-customer-phone').value.trim();
-    let msg = decodeURIComponent(buildOrderMessage());
-    if (name) msg = `Name: ${name}\nPhone: ${phone}\n\n` + msg;
-    const url = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(msg)}`;
-    window.open(url, '_blank');
-  });
-
   // Init all modules
+  initLanguageSystem();
   initMenuTabs();
   initBookingTabs();
   initBookingForms();
