@@ -10067,12 +10067,26 @@ async function savePrinterSettingsToDB() {
 
   try {
     const payload = sanitizePrinterSettingsForDB(printerSettings);
-    const { error } = await insforge.database.from('printer_settings').upsert([payload]);
-    if (error) throw error;
-    showAdminToast('Printer & Bill size settings saved to database! 💾', 'success');
+    let res = await insforge.database.from('printer_settings').upsert([payload]);
+    
+    // Self-healing: if older schema is missing any column, strip it and save the rest
+    let attempts = 0;
+    while (res.error && res.error.message && res.error.message.includes('Could not find the') && attempts < 20) {
+      const match = res.error.message.match(/Could not find the '([^']+)' column/);
+      if (match && match[1]) {
+        delete payload[match[1]];
+        res = await insforge.database.from('printer_settings').upsert([payload]);
+      } else {
+        break;
+      }
+      attempts++;
+    }
+
+    if (res.error) throw res.error;
+    showAdminToast('Printer settings saved to database! 💾', 'success');
   } catch (err) {
     console.error('[Printer] Save to DB error:', err);
-    showAdminToast('Settings saved locally! 💾', 'success');
+    showAdminToast('Settings saved locally! 💾', 'warning');
   }
 }
 
