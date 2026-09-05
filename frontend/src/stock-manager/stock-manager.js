@@ -2039,6 +2039,35 @@ function exportToExcel() {
   showToast('Exported Stock Directory to Excel (.xlsx)', 'success');
 }
 
+async function syncStockToGoogleSheet() {
+  const webhookUrl = localStorage.getItem('limra_google_sheet_webhook') || 'https://script.google.com/macros/s/AKfycbyGV5EmfydSULN6aOwj-H4XslL5rMc7U1TDHOCbWyubG5H4ykc56c6BjnkR0c1YQ0wW/exec';
+  if (!webhookUrl) {
+    showToast('Google Sheet Webhook URL not configured.', 'error');
+    return;
+  }
+
+  const items = (stockItems && stockItems.length > 0) ? stockItems : INITIAL_STOCK_ITEMS;
+  showToast(`Syncing ${items.length} stock items to "Stock Summary" in Google Sheet... ⏳`, 'info');
+
+  const payload = {
+    type: 'stock_summary',
+    action: 'stock_summary',
+    items: items
+  };
+
+  try {
+    await fetch(webhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    showToast(`Successfully synced ${items.length} items to "Stock Summary" tab! 📊✅`, 'success');
+  } catch (err) {
+    showToast('Failed to sync to Google Sheet: ' + err.message, 'error');
+  }
+}
+
 function exportToPDF() {
   if (!window.jspdf || !window.jspdf.jsPDF) {
     return alert('PDF export engine is loading. Please try again.');
@@ -2345,6 +2374,7 @@ function setupEventListeners() {
   // Exports
   document.getElementById('btn-header-excel')?.addEventListener('click', exportToExcel);
   document.getElementById('btn-header-pdf')?.addEventListener('click', exportToPDF);
+  document.getElementById('btn-header-sheets')?.addEventListener('click', syncStockToGoogleSheet);
   document.getElementById('btn-details-excel')?.addEventListener('click', exportToExcel);
 
   // Search Toggle

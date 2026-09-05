@@ -758,6 +758,9 @@
             <p class="adm-page-sub">Settled bills, delivered orders, audit log, and error correction</p>
           </div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <button type="button" id="closed-orders-sheet-sync-btn" class="adm-btn adm-btn-primary" style="background:#0284c7;border-color:#0284c7;font-weight:700;display:inline-flex;align-items:center;gap:.35rem;" title="Send closed orders to Google Sheets">
+              <span>📊</span> Sync to Google Sheet
+            </button>
             <button type="button" id="closed-orders-gst-export-btn" class="adm-btn adm-btn-primary" style="background:#10b981;border-color:#10b981;font-weight:700;display:inline-flex;align-items:center;gap:.35rem;">
               <span>🧾</span> Export Restaurant GST Report (.csv)
             </button>
@@ -2103,6 +2106,9 @@
           <button type="button" class="pos-cat-pill settings-nav-tab" data-subtab="profile">
             🌐 Google Profile &amp; Reviews
           </button>
+          <button type="button" class="pos-cat-pill settings-nav-tab" data-subtab="sheets">
+            📊 Google Sheets Sync
+          </button>
         </div>
 
         <!-- 1. STAFF MANAGER SUBTAB -->
@@ -2388,6 +2394,9 @@
 
         <!-- 4. GOOGLE PROFILE SUBTAB -->
         <div id="settings-subtab-profile" class="settings-subtab-pane" style="display:none;"></div>
+
+        <!-- 5. GOOGLE SHEETS SYNC SUBTAB -->
+        <div id="settings-subtab-sheets" class="settings-subtab-pane" style="display:none;"></div>
       </section>
     </div>
   </div>

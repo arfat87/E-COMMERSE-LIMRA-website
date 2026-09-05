@@ -1,11 +1,12 @@
 import './style.css';
-import { insforge, saveOrder, saveBooking, getCustomerBookings, getCustomerOrders, getMenuOverrides, getCoupons, getCombos } from './lib/insforge.js';
+import { insforge, saveOrder, saveBooking, getCustomerBookings, getCustomerOrders, getMenuOverrides, getCoupons, getCombos, getCustomDishes } from './lib/insforge.js';
 import { menuItems, categoryImages, categoryLabels, categoryEmojis, categoryTabOrder } from './data/menu.js';
 import { sendEmailNotification, generateOrderPlacedHtml } from './lib/email-service.js';
 import { NotificationService } from './lib/notifications.js';
 import { initLanguageSystem, applyTranslations, t, getLanguage, setLanguage } from './lib/i18n.js';
 
 let activeCombos = [];
+let activeCustomDishes = [];
 
 export function getAllCombinedMenuItems() {
   const formattedCombos = (activeCombos || []).filter(c => c.available !== false).map(c => ({
@@ -23,7 +24,7 @@ export function getAllCombinedMenuItems() {
     combo_id: c.id,
     items: c.items || []
   }));
-  return [...formattedCombos, ...menuItems];
+  return [...formattedCombos, ...menuItems, ...(activeCustomDishes || [])];
 }
 
 // ═══════════════════════════════════════
@@ -1832,6 +1833,15 @@ async function loadCombos() {
   }
 }
 
+async function loadCustomDishes() {
+  try {
+    const dishes = await getCustomDishes();
+    activeCustomDishes = dishes || [];
+  } catch (err) {
+    console.warn('[Website] Failed to load custom dishes from database:', err);
+  }
+}
+
 async function loadMenuOverridesAndApply() {
   try {
     activeMenuOverrides = await getMenuOverrides();
@@ -1858,9 +1868,10 @@ async function loadMenuOverridesAndApply() {
 document.addEventListener('DOMContentLoaded', async () => {
   initScrollAnimations();
 
-  // Load database delivery areas, combos, and menu overrides before rendering grids
+  // Load database delivery areas, combos, custom dishes, and menu overrides before rendering grids
   await loadDeliveryAreas();
   await loadCombos();
+  await loadCustomDishes();
   await loadMenuOverridesAndApply();
 
   renderMenuGrid('menu-grid', 'all');

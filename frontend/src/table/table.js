@@ -1,4 +1,4 @@
-import { insforge, saveOrder, getMenuOverrides, validateCouponCode, redeemCoupon, getCombos } from '../lib/insforge.js';
+import { insforge, saveOrder, getMenuOverrides, validateCouponCode, redeemCoupon, getCombos, getCustomDishes } from '../lib/insforge.js';
 import { menuItems, categoryTabOrder, categoryLabels, categoryEmojis } from '../data/menu.js';
 import { initLanguageSystem, applyTranslations, t, getLanguage, setLanguage } from '../lib/i18n.js';
 
@@ -23,11 +23,11 @@ function loadTableCart() {
     if (!Array.isArray(parsed)) return [];
     return parsed.map(c => {
       if (!c || !c.item) return null;
-      if (c.item.isCombo || (typeof c.item.id === 'string' && c.item.id.startsWith('combo-'))) {
+      if (c.item.isCombo || (typeof c.item.id === 'string' && (c.item.id.startsWith('combo-') || c.item.id.startsWith('custom_')))) {
         return c;
       }
       const item = menuItems.find(i => i.id === c.item.id);
-      return item ? { item, quantity: c.quantity } : null;
+      return item ? { item, quantity: c.quantity } : c;
     }).filter(Boolean);
   } catch (e) {
     console.warn('[TableCart] Hydration failed:', e);
@@ -132,6 +132,7 @@ async function init() {
 // ====================================================
 let selectedCategory = 'featured';
 let activeCombos = [];
+let activeCustomDishes = [];
 
 async function loadMenuOverridesAndApply() {
   try {
@@ -166,9 +167,14 @@ async function initCustomerView() {
   // Load dynamic menu overrides first
   await loadMenuOverridesAndApply();
 
-  // Load combos from database
+  // Load combos & custom dishes from database
   try {
-    activeCombos = await getCombos();
+    const [combos, dishes] = await Promise.all([
+      getCombos().catch(() => []),
+      getCustomDishes().catch(() => [])
+    ]);
+    activeCombos = combos || [];
+    activeCustomDishes = dishes || [];
   } catch (err) {
     console.error('Failed to load combos on customer view:', err);
   }
@@ -238,8 +244,10 @@ function renderMenu() {
   const grid = $('#food-cards-grid');
   const searchVal = $('#food-search-input').value.toLowerCase().trim();
 
+  const allDishes = [...menuItems, ...(activeCustomDishes || [])];
+
   // Filter items (skip normal items if combo category selected)
-  const filtered = menuItems.filter(item => {
+  const filtered = allDishes.filter(item => {
     if (selectedCategory === 'combo') return false;
     const matchesCategory = 
       selectedCategory === 'all' || 
@@ -424,9 +432,11 @@ function addToCart(itemId) {
         items: combo.items || []
       };
     }
+  } else if (String(itemId).startsWith('custom_')) {
+    item = (activeCustomDishes || []).find(i => String(i.id) === String(itemId));
   } else {
     const numId = typeof itemId === 'number' ? itemId : parseInt(itemId, 10);
-    item = menuItems.find(i => i.id === numId);
+    item = menuItems.find(i => i.id === numId) || (activeCustomDishes || []).find(i => String(i.id) === String(itemId));
   }
   
   if (!item) return;
@@ -442,7 +452,7 @@ function addToCart(itemId) {
 }
 
 function removeFromCart(itemId) {
-  const targetId = String(itemId).startsWith('combo-') ? itemId : (typeof itemId === 'number' ? itemId : parseInt(itemId, 10));
+  const targetId = String(itemId).startsWith('combo-') || String(itemId).startsWith('custom_') ? itemId : (typeof itemId === 'number' ? itemId : parseInt(itemId, 10));
   const cartItemIndex = cart.findIndex(c => c.item.id === targetId || String(c.item.id) === String(targetId));
   if (cartItemIndex === -1) return;
 

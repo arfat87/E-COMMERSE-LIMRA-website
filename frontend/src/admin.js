@@ -1,7 +1,7 @@
 import './style.css';
 import './admin.css';
 import { Chart, registerables } from 'chart.js';
-import { insforge, getMenuOverrides, saveMenuOverride, getCoupons, saveCoupon, deleteCoupon, getCombos, saveCombo, deleteCombo } from './lib/insforge.js';
+import { insforge, getMenuOverrides, saveMenuOverride, getCoupons, saveCoupon, deleteCoupon, getCombos, saveCombo, deleteCombo, getCustomDishes, saveCustomDish, deleteCustomDish } from './lib/insforge.js';
 import { PaymentService } from './lib/payments.js';
 import { menuItems, categoryImages, categoryLabels, categoryEmojis, categoryTabOrder } from './data/menu.js';
 import { getAdminLoginUrl } from './lib/admin-routes.js';
@@ -1345,13 +1345,15 @@ async function checkAdminAccess() {
 }
 
 async function loadData() {
-  const [ordersRes, itemsRes, bookingsRes, notifsRes, placesRes, combosRes] = await Promise.all([
+  const [ordersRes, itemsRes, bookingsRes, notifsRes, placesRes, combosRes, customDishesRes, overridesRes] = await Promise.all([
     insforge.database.from('orders').select('*').order('created_at', { ascending: false }),
     insforge.database.from('order_items').select('*'),
     insforge.database.from('bookings').select('*').order('created_at', { ascending: false }),
     insforge.database.from('notifications').select('*').order('created_at', { ascending: false }).limit(50),
     insforge.database.from('delivery_areas').select('*').order('name', { ascending: true }),
     getCombos().catch(() => []),
+    getCustomDishes().catch(() => []),
+    getMenuOverrides().catch(() => [])
   ]);
   
   if (ordersRes.error) throw ordersRes.error;
@@ -1361,6 +1363,12 @@ async function loadData() {
 
   if (Array.isArray(combosRes)) {
     adminCombos = combosRes;
+  }
+  if (Array.isArray(customDishesRes)) {
+    customCreatedFoods = customDishesRes;
+  }
+  if (Array.isArray(overridesRes)) {
+    activeMenuOverrides = overridesRes;
   }
 
   const newOrders = ordersRes.data || [];
@@ -3753,6 +3761,11 @@ async function updateOrderStatus(orderId, newStatus) {
   if (order) {
     order.status = newStatus;
     
+    // Auto-sync closed/delivered order to Google Sheets
+    if ((newStatus === 'delivered' || newStatus === 'completed' || newStatus === 'closed') && isGoogleSheetAutoSyncEnabled()) {
+      syncOrderToGoogleSheet(order).catch(e => console.warn('[Google Sheet] Auto-sync background error:', e));
+    }
+    
     // Send Email Notification on Confirmation or Cancellation
     const meta = parseNotesMetadata(order.notes, order);
     if (meta.email) {
@@ -4988,6 +5001,9 @@ async function createFinalBillForTableSession(tableNum) {
     }
 
     showAdminToast(`Table ${tableNum} Final Bill generated & session closed! ✅`, 'success');
+    if (isGoogleSheetAutoSyncEnabled()) {
+      syncOrderToGoogleSheet(localPrimary || finalBillOrder).catch(e => console.warn('[Google Sheet] Table bill auto-sync error:', e));
+    }
     renderOverview();
     renderHoldOrdersPanel();
     renderClosedOrdersPanel();
@@ -5286,6 +5302,9 @@ function renderHoldOrdersPanel() {
         if (o) { o.status = 'delivered'; o.payment_status = 'paid'; }
         await markOrderNotificationsRead(orderId);
         showAdminToast(`Order #${order.order_number} billed, settled & closed! ✅`, 'success');
+        if (isGoogleSheetAutoSyncEnabled()) {
+          syncOrderToGoogleSheet(o || order).catch(e => console.warn('[Google Sheet] Hold bill auto-sync error:', e));
+        }
         renderOverview();
         renderHoldOrdersPanel();
         renderClosedOrdersPanel();
@@ -5979,14 +5998,18 @@ function initFoodsFilters() {
 async function loadAndRenderFoods() {
   try {
     const grid = $('foods-grid');
-    if (grid) grid.innerHTML = '<div class="adm-empty col-span-full" style="padding:2.5rem;text-align:center;">Loading menu items & inventory...</div>';
-    activeMenuOverrides = await getMenuOverrides();
-    try {
-      const savedCustom = localStorage.getItem('limra_custom_foods');
-      if (savedCustom) customCreatedFoods = JSON.parse(savedCustom);
-    } catch {}
+    if (grid && (!customCreatedFoods || customCreatedFoods.length === 0)) {
+      grid.innerHTML = '<div class="adm-empty col-span-full" style="padding:2.5rem;text-align:center;">Loading menu items & database dishes...</div>';
+    }
+    const [overrides, dbCustomDishes] = await Promise.all([
+      getMenuOverrides().catch(err => { console.warn("Failed overrides:", err); return []; }),
+      getCustomDishes().catch(err => { console.warn("Failed custom dishes:", err); return []; })
+    ]);
+    
+    if (Array.isArray(overrides)) activeMenuOverrides = overrides;
+    if (Array.isArray(dbCustomDishes)) customCreatedFoods = dbCustomDishes;
   } catch (e) {
-    console.error("Failed to load menu overrides:", e);
+    console.error("Failed to load menu data:", e);
   }
   initFoodsFilters();
   renderFoods();
@@ -6060,10 +6083,11 @@ function renderFoods() {
   }
 
   grid.innerHTML = items.map(item => {
-    const img = item.image || categoryImages[item.category];
+    const isCustom = item.is_custom === true || String(item.id).startsWith('custom_');
+    const img = item.image || (item.category ? categoryImages[item.category] : null);
     const isAvailable = item.available !== false;
     const isFeatured = item.featured === true;
-    const catName = categoryLabels[item.category] || item.category;
+    const catName = categoryLabels[item.category] || item.category || 'General';
     const dietIcon = item.is_veg || item.diet === 'veg' ? '🟢 Veg' : '🍗 Non-Veg';
 
     return `
@@ -6080,6 +6104,7 @@ function renderFoods() {
               ${dietIcon}
             </span>
             ${isFeatured ? '<span style="background:#f59e0b;color:#fff;font-size:.7rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">⭐ Special</span>' : ''}
+            ${isCustom ? '<span style="background:#6366f1;color:#fff;font-size:.7rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">✨ Custom Dish</span>' : ''}
           </div>
 
           <div style="position:absolute;top:8px;right:8px;">
@@ -6124,9 +6149,16 @@ function renderFoods() {
               </label>
             </div>
 
-            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm adm-food-btn-edit" style="width:100%;font-size:.78rem;padding:.3rem;justify-content:center;">
-              ✏️ Edit Price &amp; Details
-            </button>
+            <div style="display:flex;gap:.4rem;width:100%;">
+              <button type="button" class="adm-btn adm-btn-outline adm-btn-sm adm-food-btn-edit" style="flex:1;font-size:.78rem;padding:.3rem;justify-content:center;">
+                ✏️ Edit Price &amp; Details
+              </button>
+              ${isCustom ? `
+                <button type="button" class="adm-btn adm-btn-outline adm-btn-sm adm-food-btn-delete" style="color:#ef4444;border-color:#fecaca;padding:.3rem .55rem;font-size:.78rem;" title="Delete custom dish permanently from database">
+                  🗑️
+                </button>
+              ` : ''}
+            </div>
           </div>
 
         </div>
@@ -6153,25 +6185,38 @@ function setupFoodControlListeners() {
       else card.classList.add('adm-food-card-disabled');
 
       try {
-        let override = activeMenuOverrides.find(o => String(o.id) === String(itemId));
-        if (!override) {
-          const all = getCombinedFoodItems();
-          const staticItem = all.find(m => String(m.id) === String(itemId));
-          override = {
-            id: itemId,
-            price: staticItem.price,
-            mrp: staticItem.mrp || null,
-            available: isChecked,
-            featured: staticItem.featured || false
-          };
-          activeMenuOverrides.push(override);
+        const isCustomDish = String(itemId).startsWith('custom_');
+        if (isCustomDish) {
+          const customDish = customCreatedFoods.find(d => String(d.id) === String(itemId));
+          if (customDish) {
+            customDish.available = isChecked;
+            await saveCustomDish(customDish);
+            try { localStorage.setItem('limra_custom_foods', JSON.stringify(customCreatedFoods)); } catch {}
+          }
         } else {
-          override.available = isChecked;
+          let override = activeMenuOverrides.find(o => String(o.id) === String(itemId));
+          if (!override) {
+            const all = getCombinedFoodItems();
+            const staticItem = all.find(m => String(m.id) === String(itemId));
+            override = {
+              id: itemId,
+              price: staticItem.price,
+              mrp: staticItem.mrp || null,
+              available: isChecked,
+              featured: staticItem.featured || false
+            };
+            activeMenuOverrides.push(override);
+          } else {
+            override.available = isChecked;
+          }
+          await saveMenuOverride(override);
         }
 
-        await saveMenuOverride(override);
         showAdminToast(`Item availability updated: ${isChecked ? 'In Stock ✅' : 'Out of Stock 🚫'}`, 'success');
         renderFoods();
+        if (typeof isGoogleSheetAutoSyncEnabled === 'function' && isGoogleSheetAutoSyncEnabled()) {
+          syncFoodMenuToGoogleSheet().catch(e => console.warn('[AutoSync] Menu sync err:', e));
+        }
       } catch (err) {
         showAdminToast('Failed to update availability: ' + err.message, 'error');
         cb.checked = !isChecked;
@@ -6187,25 +6232,38 @@ function setupFoodControlListeners() {
       const isChecked = cb.checked;
 
       try {
-        let override = activeMenuOverrides.find(o => String(o.id) === String(itemId));
-        if (!override) {
-          const all = getCombinedFoodItems();
-          const staticItem = all.find(m => String(m.id) === String(itemId));
-          override = {
-            id: itemId,
-            price: staticItem.price,
-            mrp: staticItem.mrp || null,
-            available: staticItem.available !== false,
-            featured: isChecked
-          };
-          activeMenuOverrides.push(override);
+        const isCustomDish = String(itemId).startsWith('custom_');
+        if (isCustomDish) {
+          const customDish = customCreatedFoods.find(d => String(d.id) === String(itemId));
+          if (customDish) {
+            customDish.featured = isChecked;
+            await saveCustomDish(customDish);
+            try { localStorage.setItem('limra_custom_foods', JSON.stringify(customCreatedFoods)); } catch {}
+          }
         } else {
-          override.featured = isChecked;
+          let override = activeMenuOverrides.find(o => String(o.id) === String(itemId));
+          if (!override) {
+            const all = getCombinedFoodItems();
+            const staticItem = all.find(m => String(m.id) === String(itemId));
+            override = {
+              id: itemId,
+              price: staticItem.price,
+              mrp: staticItem.mrp || null,
+              available: staticItem.available !== false,
+              featured: isChecked
+            };
+            activeMenuOverrides.push(override);
+          } else {
+            override.featured = isChecked;
+          }
+          await saveMenuOverride(override);
         }
 
-        await saveMenuOverride(override);
         showAdminToast(`Item featured status updated: ${isChecked ? '⭐ Special' : 'Standard'}`, 'success');
         renderFoods();
+        if (typeof isGoogleSheetAutoSyncEnabled === 'function' && isGoogleSheetAutoSyncEnabled()) {
+          syncFoodMenuToGoogleSheet().catch(e => console.warn('[AutoSync] Menu sync err:', e));
+        }
       } catch (err) {
         showAdminToast('Failed to update featured status: ' + err.message, 'error');
         cb.checked = !isChecked;
@@ -6233,6 +6291,38 @@ function setupFoodControlListeners() {
       $('edit-modal-featured').checked = item.featured === true;
 
       $('adm-edit-modal').classList.add('active');
+    });
+  });
+
+  // 4. Delete Custom Dish Button
+  grid.querySelectorAll('.adm-food-btn-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const card = btn.closest('.adm-food-card');
+      const itemId = card.dataset.itemId;
+      const all = getCombinedFoodItems();
+      const item = all.find(m => String(m.id) === String(itemId));
+      if (!item) return;
+
+      const confirmed = window.confirm(`Are you sure you want to permanently delete "${item.name}" from database?`);
+      if (!confirmed) return;
+
+      try {
+        btn.disabled = true;
+        btn.textContent = '...';
+        await deleteCustomDish(item.db_id || item.id);
+        customCreatedFoods = customCreatedFoods.filter(d => String(d.id) !== String(itemId) && String(d.db_id) !== String(item.db_id));
+        try { localStorage.setItem('limra_custom_foods', JSON.stringify(customCreatedFoods)); } catch {}
+        showAdminToast(`Dish "${item.name}" deleted from database permanently! 🗑️✅`, 'success');
+        initFoodsFilters();
+        renderFoods();
+        if (typeof isGoogleSheetAutoSyncEnabled === 'function' && isGoogleSheetAutoSyncEnabled()) {
+          syncFoodMenuToGoogleSheet().catch(e => console.warn('[AutoSync] Menu sync err:', e));
+        }
+      } catch (err) {
+        showAdminToast('Failed to delete dish: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = '🗑️';
+      }
     });
   });
 }
@@ -6265,13 +6355,19 @@ function setupEditModalListeners() {
 
     const saveBtn = form.querySelector('button[type="submit"]');
     saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving...';
+    saveBtn.textContent = 'Saving to Database... ⏳';
 
     try {
-      let override = activeMenuOverrides.find(o => String(o.id) === String(itemId));
-      if (!override) {
-        override = {
+      const isCustomDish = String(itemId).startsWith('custom_');
+      if (isCustomDish) {
+        const existingCustom = customCreatedFoods.find(d => String(d.id) === String(itemId));
+        const updatedCustom = {
           id: itemId,
+          db_id: existingCustom?.db_id,
+          name: existingCustom?.name || 'Custom Dish',
+          category: existingCustom?.category || 'General',
+          diet: existingCustom?.diet || (existingCustom?.is_veg ? 'veg' : 'nonveg'),
+          is_veg: existingCustom?.is_veg !== false,
           price: newPrice,
           mrp: newMrp,
           image: newImage || null,
@@ -6279,20 +6375,42 @@ function setupEditModalListeners() {
           available: newAvail,
           featured: newFeat
         };
-        activeMenuOverrides.push(override);
+        const saved = await saveCustomDish(updatedCustom);
+        const idx = customCreatedFoods.findIndex(d => String(d.id) === String(itemId));
+        if (idx >= 0) customCreatedFoods[idx] = saved;
+        else customCreatedFoods.push(saved);
+        try { localStorage.setItem('limra_custom_foods', JSON.stringify(customCreatedFoods)); } catch {}
       } else {
-        override.price = newPrice;
-        override.mrp = newMrp;
-        override.image = newImage || null;
-        override.description = newDesc;
-        override.available = newAvail;
-        override.featured = newFeat;
+        let override = activeMenuOverrides.find(o => String(o.id) === String(itemId));
+        if (!override) {
+          override = {
+            id: itemId,
+            price: newPrice,
+            mrp: newMrp,
+            image: newImage || null,
+            description: newDesc,
+            available: newAvail,
+            featured: newFeat
+          };
+          activeMenuOverrides.push(override);
+        } else {
+          override.price = newPrice;
+          override.mrp = newMrp;
+          override.image = newImage || null;
+          override.description = newDesc;
+          override.available = newAvail;
+          override.featured = newFeat;
+        }
+
+        await saveMenuOverride(override);
       }
 
-      await saveMenuOverride(override);
-      showAdminToast('Dish details updated successfully! ✅', 'success');
+      showAdminToast('Dish details updated permanently in database! ✅', 'success');
       modal.classList.remove('active');
       renderFoods();
+      if (typeof isGoogleSheetAutoSyncEnabled === 'function' && isGoogleSheetAutoSyncEnabled()) {
+        syncFoodMenuToGoogleSheet().catch(e => console.warn('[AutoSync] Menu sync err:', e));
+      }
     } catch (err) {
       showAdminToast('Failed to save changes: ' + err.message, 'error');
     } finally {
@@ -6340,29 +6458,50 @@ function setupAddDishModalListeners() {
       return;
     }
 
-    const newDish = {
-      id: `custom_${Date.now()}`,
-      name,
-      category,
-      diet,
-      is_veg: diet === 'veg',
-      price,
-      mrp,
-      image: image || null,
-      description: desc,
-      available: true,
-      featured: false
-    };
+    const saveBtn = form.querySelector('button[type="submit"]');
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving to Database... ⏳';
+    }
 
-    customCreatedFoods.push(newDish);
     try {
-      localStorage.setItem('limra_custom_foods', JSON.stringify(customCreatedFoods));
-    } catch {}
+      const newDish = {
+        name,
+        category,
+        diet,
+        is_veg: diet === 'veg',
+        price,
+        mrp,
+        image: image || null,
+        description: desc,
+        available: true,
+        featured: false
+      };
 
-    showAdminToast(`New dish "${name}" added to menu! 🍽️`, 'success');
-    closeModal();
-    initFoodsFilters();
-    renderFoods();
+      // Save permanently to Supabase Database
+      const savedDish = await saveCustomDish(newDish);
+
+      customCreatedFoods.unshift(savedDish);
+      try {
+        localStorage.setItem('limra_custom_foods', JSON.stringify(customCreatedFoods));
+      } catch {}
+
+      showAdminToast(`New dish "${name}" permanently saved in database! 🍽️🎉`, 'success');
+      closeModal();
+      initFoodsFilters();
+      renderFoods();
+      if (typeof isGoogleSheetAutoSyncEnabled === 'function' && isGoogleSheetAutoSyncEnabled()) {
+        syncFoodMenuToGoogleSheet().catch(e => console.warn('[AutoSync] Menu sync err:', e));
+      }
+    } catch (err) {
+      console.error('Failed to save dish to database:', err);
+      showAdminToast('Failed to save dish to database: ' + err.message, 'error');
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Dish to Menu';
+      }
+    }
   });
 }
 
@@ -7349,6 +7488,10 @@ function initClosedOrdersListeners() {
   $('closed-orders-search')?.addEventListener('input', renderClosedOrdersPanel);
   $('closed-orders-gst-export-btn')?.addEventListener('click', exportRestaurantGSTReportCSV);
   $('closed-orders-export-btn')?.addEventListener('click', exportClosedOrdersCSV);
+  $('closed-orders-sheet-sync-btn')?.addEventListener('click', () => {
+    const allClosed = orders.filter(o => o.status === 'delivered' || o.status === 'cancelled' || o.payment_status === 'paid');
+    bulkSyncClosedOrdersToGoogleSheet(allClosed);
+  });
 
   // Closed Order Edit Modal Listeners
   const editModal = $('adm-closed-order-edit-modal');
@@ -11551,6 +11694,11 @@ async function buildOrderFromPos(action) {
     renderHoldOrdersPanel();
     renderOverview();
 
+    // Auto-sync billed / closed POS order to Google Sheets
+    if ((newOrder.status === 'delivered' || action === 'bill') && isGoogleSheetAutoSyncEnabled()) {
+      syncOrderToGoogleSheet(newOrder).catch(e => console.warn('[Google Sheet] POS bill auto-sync error:', e));
+    }
+
     return { 
       order: newOrder, 
       items: posCart.map(i => ({ 
@@ -12651,6 +12799,9 @@ function renderBillingTotalBills() {
         const o = orders.find(x => x.id === orderId);
         if (o) { o.status = 'delivered'; o.payment_status = 'paid'; }
         showAdminToast(`Order #${formatDailyOrderNumber(order)} billed, settled & closed! ✅`, 'success');
+        if (isGoogleSheetAutoSyncEnabled()) {
+          syncOrderToGoogleSheet(o || order).catch(e => console.warn('[Google Sheet] Billing settle auto-sync error:', e));
+        }
         renderOverview();
         renderHoldOrdersPanel();
         renderClosedOrdersPanel();
@@ -13087,6 +13238,7 @@ function switchSettingsSubtab(tabName) {
   if (tabName === 'whatsapp') renderWhatsAppManagerUI();
   if (tabName === 'printer') initPrinterPanel();
   if (tabName === 'profile') initProfilePanel();
+  if (tabName === 'sheets') renderGoogleSheetsSettingsUI();
 }
 
 // ────────────────────────────────────────────────────────
@@ -13531,5 +13683,541 @@ function setupWhatsAppManagerListeners() {
     }
   });
 }
+
+// ────────────────────────────────────────────────────────
+// 📊 GOOGLE SHEETS SYNC ENGINE
+// ────────────────────────────────────────────────────────
+const DEFAULT_GOOGLE_SHEET_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyGV5EmfydSULN6aOwj-H4XslL5rMc7U1TDHOCbWyubG5H4ykc56c6BjnkR0c1YQ0wW/exec';
+
+function getGoogleSheetWebhookUrl() {
+  return (localStorage.getItem('limra_google_sheet_webhook') || DEFAULT_GOOGLE_SHEET_WEBHOOK_URL).trim();
+}
+
+function isGoogleSheetAutoSyncEnabled() {
+  const val = localStorage.getItem('limra_google_sheet_autosync');
+  return val === null ? true : val === 'true';
+}
+
+function setGoogleSheetWebhookUrl(url) {
+  localStorage.setItem('limra_google_sheet_webhook', (url || '').trim());
+}
+
+function setGoogleSheetAutoSyncEnabled(enabled) {
+  localStorage.setItem('limra_google_sheet_autosync', enabled ? 'true' : 'false');
+}
+
+function formatOrderForGoogleSheet(order) {
+  const td = computeOrderTaxDetails(order);
+  const parsed = parseNotesMetadata(order.notes, order);
+  const rawItems = (td.items && td.items.length > 0) ? td.items : getItemsForOrder(order.id);
+  const consolidated = consolidateOrderItems(rawItems);
+
+  const formattedItems = consolidated.length > 0 ? consolidated.map(i => {
+    const parsedName = parseItemNameAndNotes(i.item_name || i.name);
+    const dishName = parsedName.name || i.item_name || i.name || 'Dish Item';
+    const dishNotes = i.notes || parsedName.notes || '';
+    return {
+      name: dishNotes ? `${dishName} (${dishNotes})` : dishName,
+      quantity: Number(i.quantity || i.qty || 1),
+      price: Number(i.unit_price || i.price || 0),
+      line_total: Number(i.line_total || (Number(i.quantity || i.qty || 1) * Number(i.unit_price || i.price || 0)))
+    };
+  }) : [{
+    name: 'Consolidated Order',
+    quantity: 1,
+    price: Number(td.grandTotal || order.total_amount || 0),
+    line_total: Number(td.grandTotal || order.total_amount || 0)
+  }];
+
+  return {
+    id: order.id,
+    order_number: formatDailyOrderNumber(order),
+    created_at: order.created_at || new Date().toISOString(),
+    customer_name: order.customer_name || 'Walk-in',
+    customer_phone: order.customer_phone || '',
+    order_type: parsed.type || order.order_type || 'table',
+    table_number: parsed.tableNumber || order.table_number || '',
+    subtotal: td.taxableValue || td.subtotal || 0,
+    cgst: td.cgstAmt || 0,
+    sgst: td.sgstAmt || 0,
+    grand_total: td.grandTotal || Number(order.total_amount || 0),
+    payment_mode: parsed.paymentMode || order.payment_mode || 'Cash/UPI',
+    status: order.status || 'delivered',
+    items: formattedItems
+  };
+}
+
+async function syncOrderToGoogleSheet(order, showToast = false) {
+  const webhookUrl = getGoogleSheetWebhookUrl();
+  if (!webhookUrl) {
+    if (showToast) showAdminToast('Google Sheets Webhook URL is not configured.', 'error');
+    return false;
+  }
+
+  try {
+    const payload = formatOrderForGoogleSheet(order);
+    await fetch(webhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+
+    // Update local stats
+    const count = parseInt(localStorage.getItem('limra_sheet_sync_count') || '0', 10) + 1;
+    localStorage.setItem('limra_sheet_sync_count', String(count));
+    localStorage.setItem('limra_sheet_last_sync_time', new Date().toISOString());
+
+    console.log(`[Google Sheet] Synced order #${payload.order_number} to Google Sheets ✅`);
+    if (showToast) {
+      showAdminToast(`Order #${payload.order_number} synced to Google Sheet! 📊✅`, 'success');
+    }
+    return true;
+  } catch (err) {
+    console.error('[Google Sheet] Sync error:', err);
+    if (showToast) {
+      showAdminToast('Google Sheet sync failed: ' + err.message, 'error');
+    }
+    return false;
+  }
+}
+
+async function bulkSyncClosedOrdersToGoogleSheet(ordersList = null) {
+  const webhookUrl = getGoogleSheetWebhookUrl();
+  if (!webhookUrl) {
+    showAdminToast('Please configure your Google Sheets Webhook URL in Settings first.', 'error');
+    return;
+  }
+
+  const allClosed = (ordersList && ordersList.length > 0)
+    ? ordersList
+    : orders.filter(o => o.status === 'delivered' || o.status === 'cancelled' || o.payment_status === 'paid');
+  const consolidated = getConsolidatedClosedBills(allClosed);
+
+  if (!consolidated.length) {
+    showAdminToast('No closed orders found to sync.', 'error');
+    return;
+  }
+
+  showAdminToast(`Syncing ${consolidated.length} closed order(s) to Google Sheets... ⏳`, 'info');
+
+  const payloadList = consolidated.map(formatOrderForGoogleSheet);
+
+  try {
+    await fetch(webhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payloadList)
+    });
+
+    const totalItems = payloadList.reduce((sum, o) => sum + (o.items ? o.items.length : 0), 0);
+    const count = parseInt(localStorage.getItem('limra_sheet_sync_count') || '0', 10) + consolidated.length;
+    localStorage.setItem('limra_sheet_sync_count', String(count));
+    localStorage.setItem('limra_sheet_last_sync_time', new Date().toISOString());
+
+    showAdminToast(`Successfully synced ${consolidated.length} orders (${totalItems} items) to Google Sheets! 📊✅`, 'success');
+    if (typeof settingsSubtab !== 'undefined' && settingsSubtab === 'sheets') renderGoogleSheetsSettingsUI();
+  } catch (err) {
+    console.error('[Google Sheet] Bulk sync error:', err);
+    showAdminToast('Bulk Google Sheet sync failed: ' + err.message, 'error');
+  }
+}
+
+async function testGoogleSheetConnection() {
+  const webhookUrl = getGoogleSheetWebhookUrl();
+  if (!webhookUrl) {
+    showAdminToast('Please enter a valid Google Sheets Webhook URL.', 'error');
+    return;
+  }
+
+  showAdminToast('Sending sample test order row to Google Sheet... 🧪', 'info');
+
+  const testPayload = {
+    id: 'test-sync-' + Date.now(),
+    order_number: 'TEST-101',
+    created_at: new Date().toISOString(),
+    customer_name: 'Test Customer (Salim)',
+    customer_phone: '+91 9988776655',
+    order_type: 'dine_in',
+    table_number: 'T-01',
+    subtotal: 350.00,
+    cgst: 8.75,
+    sgst: 8.75,
+    grand_total: 367.50,
+    payment_mode: 'UPI (GPay)',
+    status: 'closed',
+    items: [
+      { name: 'Mutton Biryani (Special)', quantity: 1, price: 250.00, line_total: 250.00 },
+      { name: 'Butter Naan', quantity: 2, price: 50.00, line_total: 100.00 }
+    ]
+  };
+
+  try {
+    await fetch(webhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(testPayload)
+    });
+
+    localStorage.setItem('limra_sheet_last_sync_time', new Date().toISOString());
+    showAdminToast('Connection test sent! Please check your Google Sheet for the test row. 📊🎉', 'success');
+    if (typeof settingsSubtab !== 'undefined' && settingsSubtab === 'sheets') renderGoogleSheetsSettingsUI();
+  } catch (err) {
+    console.error('[Google Sheet] Test error:', err);
+    showAdminToast('Connection test failed: ' + err.message, 'error');
+  }
+}
+
+function renderGoogleSheetsSettingsUI() {
+  const container = document.getElementById('settings-subtab-sheets');
+  if (!container) return;
+
+  const currentUrl = getGoogleSheetWebhookUrl();
+  const isAutoSync = isGoogleSheetAutoSyncEnabled();
+  const syncCount = localStorage.getItem('limra_sheet_sync_count') || '0';
+  const lastSyncTime = localStorage.getItem('limra_sheet_last_sync_time');
+  const formattedLastSync = lastSyncTime ? new Date(lastSyncTime).toLocaleString('en-IN') : 'Never';
+
+  container.innerHTML = `
+    <!-- Top KPI Cards -->
+    <div class="adm-stats" style="grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));margin-bottom:1.25rem;">
+      <div class="adm-stat" style="border-left:4px solid #0284c7;">
+        <div>
+          <p class="adm-stat-label">Integration Status</p>
+          <p class="adm-stat-value" style="color:#0284c7;font-size:1.25rem;">🟢 Active</p>
+          <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Google Apps Script Webhook</p>
+        </div>
+        <div class="adm-stat-icon blue" style="background:#e0f2fe;color:#0284c7;">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        </div>
+      </div>
+
+      <div class="adm-stat" style="border-left:4px solid #10b981;">
+        <div>
+          <p class="adm-stat-label">Auto-Sync Mode</p>
+          <p class="adm-stat-value" style="color:#059669;font-size:1.25rem;">${isAutoSync ? '⚡ Real-Time' : '⏸️ Manual Only'}</p>
+          <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Triggered on Bill Settlement</p>
+        </div>
+        <div class="adm-stat-icon green">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        </div>
+      </div>
+
+      <div class="adm-stat" style="border-left:4px solid #6366f1;">
+        <div>
+          <p class="adm-stat-label">Total Orders Synced</p>
+          <p class="adm-stat-value" style="color:#4f46e5;font-size:1.25rem;">${syncCount} Orders</p>
+          <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Item-by-item logged</p>
+        </div>
+        <div class="adm-stat-icon indigo" style="background:#eef2ff;color:#6366f1;">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7c-2 0-3 1-3 3zm0 4h16M9 4v16"/></svg>
+        </div>
+      </div>
+
+      <div class="adm-stat" style="border-left:4px solid #f59e0b;">
+        <div>
+          <p class="adm-stat-label">Last Sync</p>
+          <p class="adm-stat-value" style="color:#d97706;font-size:1.05rem;line-height:1.4;">${formattedLastSync}</p>
+          <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Cloud timestamp</p>
+        </div>
+        <div class="adm-stat-icon orange">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Config Card -->
+    <div style="background:#fff;border:1px solid var(--adm-border);border-radius:12px;padding:1.5rem;box-shadow:0 1px 3px rgba(0,0,0,.04);margin-bottom:1.5rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.25rem;border-bottom:1px solid var(--adm-border);padding-bottom:1rem;">
+        <div>
+          <h3 style="margin:0;font-size:1.1rem;font-weight:800;color:var(--adm-text);display:flex;align-items:center;gap:.5rem;">
+            <span>📊</span> Google Sheets Real-Time Sync Configuration
+          </h3>
+          <p style="margin:4px 0 0 0;font-size:.82rem;color:var(--adm-muted);">
+            Connect your Google Sheet Web App to automatically store closed tables, settled bills, and each item sold.
+          </p>
+        </div>
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+          <button type="button" id="gsheets-test-btn" class="adm-btn adm-btn-outline" style="font-weight:700;display:inline-flex;align-items:center;gap:.35rem;">
+            🧪 Test Connection
+          </button>
+          <button type="button" id="gsheets-menu-sync-btn" class="adm-btn adm-btn-outline" style="background:#fefce8;border-color:#facc15;color:#ca8a04;font-weight:700;display:inline-flex;align-items:center;gap:.35rem;" title="Sync food menu dishes, categories and pricing">
+            🍽️ Sync Food Menu
+          </button>
+          <button type="button" id="gsheets-cust-sync-btn" class="adm-btn adm-btn-outline" style="background:#fdf2f8;border-color:#f472b6;color:#db2777;font-weight:700;display:inline-flex;align-items:center;gap:.35rem;" title="Sync customer spending habits & loyalty rankings">
+            👥 Sync Customer Analysis
+          </button>
+          <button type="button" id="gsheets-bulk-sync-btn" class="adm-btn adm-btn-primary" style="background:#0284c7;border-color:#0284c7;font-weight:700;display:inline-flex;align-items:center;gap:.35rem;">
+            📥 Sync All Closed Orders Now
+          </button>
+        </div>
+      </div>
+
+      <form id="gsheets-config-form" style="display:flex;flex-direction:column;gap:1.25rem;">
+        <div>
+          <label style="display:block;font-weight:700;font-size:.85rem;margin-bottom:.4rem;color:#1e293b;">
+            Google Apps Script Web App URL <span style="color:#ef4444;">*</span>
+          </label>
+          <div style="display:flex;gap:.5rem;">
+            <input 
+              type="url" 
+              id="gsheets-webhook-url" 
+              class="adm-input" 
+              value="${escapeHtml(currentUrl)}" 
+              placeholder="https://script.google.com/macros/s/.../exec" 
+              style="flex:1;font-family:monospace;font-size:.82rem;" 
+              required 
+            />
+            <button type="button" id="gsheets-reset-url-btn" class="adm-btn adm-btn-outline" title="Reset to default URL" style="font-size:.8rem;white-space:nowrap;">
+              ↺ Default
+            </button>
+          </div>
+          <p style="font-size:.75rem;color:var(--adm-muted);margin-top:4px;">
+            Webhook receiver deployed from Google Sheets ➔ Extensions ➔ Apps Script (Execute as: Me, Access: Anyone).
+          </p>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:.75rem;background:#f8fafc;padding:.85rem 1rem;border-radius:8px;border:1px solid #e2e8f0;">
+          <input 
+            type="checkbox" 
+            id="gsheets-autosync-toggle" 
+            style="width:18px;height:18px;accent-color:#0284c7;cursor:pointer;" 
+            ${isAutoSync ? 'checked' : ''} 
+          />
+          <div>
+            <label for="gsheets-autosync-toggle" style="font-weight:700;font-size:.85rem;color:#1e293b;cursor:pointer;display:block;">
+              ⚡ Enable Real-Time Auto-Sync on Bill Settlement
+            </label>
+            <p style="margin:2px 0 0 0;font-size:.75rem;color:var(--adm-muted);">
+              When enabled, every closed table, settled POS bill, or delivered order will immediately write its item-by-item data to Google Sheets.
+            </p>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:.75rem;">
+          <button type="submit" class="adm-btn adm-btn-primary" style="background:#10b981;border-color:#10b981;font-weight:700;">
+            💾 Save Google Sheets Settings
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Information & Column Schema Box -->
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:12px;padding:1.25rem;color:#0369a1;font-size:.85rem;">
+      <h4 style="margin:0 0 .5rem 0;font-weight:800;display:flex;align-items:center;gap:.4rem;">
+        ℹ️ 4-in-1 Google Spreadsheet Architecture
+      </h4>
+      <p style="margin:0 0 .75rem 0;font-size:.8rem;color:#0284c7;">
+        Your Google Spreadsheet contains 4 dedicated tabs automatically created and populated:
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:.65rem;font-size:.78rem;">
+        <div style="background:#fff;padding:.75rem;border-radius:8px;border:1px solid #e0f2fe;">
+          <strong style="color:#0369a1;display:block;margin-bottom:3px;">🧾 Tab 1: Closed Orders</strong>
+          Real-time log of every closed bill, tax breakdown, and dish sold.
+        </div>
+        <div style="background:#fff;padding:.75rem;border-radius:8px;border:1px solid #e0f2fe;">
+          <strong style="color:#059669;display:block;margin-bottom:3px;">📦 Tab 2: Stock Summary</strong>
+          138 warehouse items, balance stock quantities, alerts, and valuation.
+        </div>
+        <div style="background:#fff;padding:.75rem;border-radius:8px;border:1px solid #e0f2fe;">
+          <strong style="color:#db2777;display:block;margin-bottom:3px;">👥 Tab 3: Customer Analysis</strong>
+          Customer spending (LTV), order frequency, top dishes, and VIP tiers.
+        </div>
+        <div style="background:#fff;padding:.75rem;border-radius:8px;border:1px solid #e0f2fe;">
+          <strong style="color:#ca8a04;display:block;margin-bottom:3px;">🍽️ Tab 4: Food Menu & Pricing</strong>
+          202+ food dishes, combos, categories, active pricing, and diet types.
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Attach event listeners inside the sheets pane
+  $('gsheets-config-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const url = $('gsheets-webhook-url')?.value;
+    const auto = $('gsheets-autosync-toggle')?.checked;
+    setGoogleSheetWebhookUrl(url);
+    setGoogleSheetAutoSyncEnabled(auto);
+    showAdminToast('Google Sheets settings saved successfully! 💾✅', 'success');
+    renderGoogleSheetsSettingsUI();
+  });
+
+  $('gsheets-reset-url-btn')?.addEventListener('click', () => {
+    if ($('gsheets-webhook-url')) $('gsheets-webhook-url').value = DEFAULT_GOOGLE_SHEET_WEBHOOK_URL;
+  });
+
+  $('gsheets-test-btn')?.addEventListener('click', testGoogleSheetConnection);
+  $('gsheets-menu-sync-btn')?.addEventListener('click', () => syncFoodMenuToGoogleSheet());
+  $('gsheets-cust-sync-btn')?.addEventListener('click', () => syncCustomerAnalysisToGoogleSheet());
+  $('gsheets-bulk-sync-btn')?.addEventListener('click', () => bulkSyncClosedOrdersToGoogleSheet());
+}
+
+async function syncFoodMenuToGoogleSheet() {
+  const webhookUrl = getGoogleSheetWebhookUrl();
+  if (!webhookUrl) {
+    showAdminToast('Please configure your Google Sheets Webhook URL first.', 'error');
+    return;
+  }
+
+  showAdminToast('Gathering 202+ food menu dishes & pricing... ⏳', 'info');
+
+  try {
+    const allItems = (typeof getCombinedFoodItems === 'function') ? getCombinedFoodItems() : menuItems;
+
+    const formattedList = allItems.map(item => {
+      const isVeg = item.is_veg || item.diet === 'veg' || (item.category?.includes('veg') && !item.category?.includes('nonveg'));
+      const catLabel = categoryLabels[item.category] || (item.isCombo ? 'Combos & Deals' : item.category) || 'General';
+
+      return {
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        categoryName: catLabel,
+        price: Number(item.price || 0),
+        mrp: item.mrp ? Number(item.mrp) : Number(item.price || 0),
+        isVeg: Boolean(isVeg),
+        available: item.available !== false,
+        featured: item.featured === true,
+        description: item.description || ''
+      };
+    });
+
+    const payload = {
+      type: 'food_menu',
+      action: 'food_menu',
+      items: formattedList
+    };
+
+    await fetch(webhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+
+    showAdminToast(`Successfully synced ${formattedList.length} menu items to "Food Menu & Pricing" tab! 🍽️📊✅`, 'success');
+  } catch (err) {
+    console.error('[Google Sheet] Food menu sync error:', err);
+    showAdminToast('Failed to sync food menu: ' + err.message, 'error');
+  }
+}
+
+async function syncCustomerAnalysisToGoogleSheet() {
+  const webhookUrl = getGoogleSheetWebhookUrl();
+  if (!webhookUrl) {
+    showAdminToast('Please configure your Google Sheets Webhook URL first.', 'error');
+    return;
+  }
+
+  showAdminToast('Analyzing customer order histories & metrics... ⏳', 'info');
+
+  try {
+    const customerMap = new Map();
+
+    orders.forEach(o => {
+      const phone = String(o.customer_phone || '').replace(/\D/g, '').slice(-10);
+      const name = (o.customer_name || '').trim();
+      if (!phone && !name) return;
+      const key = phone || name.toLowerCase();
+
+      if (!customerMap.has(key)) {
+        customerMap.set(key, {
+          phone: phone ? '+91 ' + phone : 'N/A',
+          name: (name && name !== 'Walk-in') ? name : 'Walk-in Guest',
+          totalOrders: 0,
+          totalSpend: 0,
+          firstOrderDate: o.created_at,
+          lastOrderDate: o.created_at,
+          orderTypes: {},
+          itemCounts: {}
+        });
+      }
+
+      const c = customerMap.get(key);
+      if (name && name !== 'Walk-in' && (!c.name || c.name === 'Walk-in Guest')) {
+        c.name = name;
+      }
+      const amt = Number(o.total_amount || 0);
+      const isCompleted = o.status === 'delivered' || o.payment_status === 'paid' || o.status === 'confirmed';
+
+      c.totalOrders++;
+      if (isCompleted) {
+        c.totalSpend += amt;
+      }
+
+      const oDate = new Date(o.created_at || Date.now());
+      if (new Date(c.firstOrderDate) > oDate) c.firstOrderDate = o.created_at;
+      if (new Date(c.lastOrderDate) < oDate) c.lastOrderDate = o.created_at;
+
+      const type = o.order_type || 'table';
+      c.orderTypes[type] = (c.orderTypes[type] || 0) + 1;
+
+      const oItems = getItemsForOrder(o.id) || [];
+      oItems.forEach(it => {
+        const iName = (it.item_name || it.name || '').replace(/\[Note:.*?\]/g, '').trim();
+        if (iName) {
+          c.itemCounts[iName] = (c.itemCounts[iName] || 0) + Number(it.quantity || it.qty || 1);
+        }
+      });
+    });
+
+    const customerList = Array.from(customerMap.values()).map(c => {
+      const aov = c.totalOrders > 0 ? (c.totalSpend / c.totalOrders) : 0;
+      const topItems = Object.entries(c.itemCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([name, qty]) => `${name} (${qty})`)
+        .join(', ');
+
+      const prefChannel = Object.entries(c.orderTypes)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'dine_in';
+
+      const daysSinceLast = Math.max(0, Math.floor((Date.now() - new Date(c.lastOrderDate).getTime()) / (1000 * 60 * 60 * 24)));
+      let segment = 'New Customer 🌟';
+      if (c.totalOrders >= 5 || c.totalSpend >= 2000) segment = 'VIP Customer 👑';
+      else if (c.totalOrders >= 2) segment = 'Regular Customer 💎';
+      else if (daysSinceLast > 30) segment = 'At-Risk ⚠️';
+
+      return {
+        name: c.name,
+        phone: c.phone,
+        totalOrders: c.totalOrders,
+        totalSpend: c.totalSpend,
+        aov: aov,
+        topItems: topItems || 'Assorted Dishes',
+        prefChannel: prefChannel === 'table' ? 'Dine-In' : (prefChannel === 'delivery' ? 'Delivery' : 'Takeaway'),
+        segment,
+        firstOrderDate: c.firstOrderDate,
+        lastOrderDate: c.lastOrderDate,
+        daysSinceLast,
+        status: daysSinceLast <= 30 ? 'Active' : 'Dormant'
+      };
+    });
+
+    // Sort by highest spend first
+    customerList.sort((a, b) => Number(b.totalSpend) - Number(a.totalSpend));
+
+    const payload = {
+      type: 'customer_analysis',
+      action: 'customer_analysis',
+      customers: customerList
+    };
+
+    await fetch(webhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+
+    showAdminToast(`Successfully synced ${customerList.length} customer profiles to "Customer Analysis" tab! 👥📊✅`, 'success');
+  } catch (err) {
+    console.error('[Google Sheet] Customer analysis sync error:', err);
+    showAdminToast('Failed to sync Customer Analysis: ' + err.message, 'error');
+  }
+}
+
 
 

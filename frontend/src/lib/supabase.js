@@ -488,7 +488,9 @@ export async function getCombos() {
     .select("*")
     .order("created_at", { ascending: false });
   if (error) throw new Error(formatError(error));
-  return data || [];
+  const rows = data || [];
+  // Exclude custom dishes so combo deals only list real combo packages
+  return rows.filter(r => !(r.items && (r.items.is_custom_dish === true || r.items.is_custom_dish === 'true')));
 }
 
 export async function deleteCombo(id) {
@@ -513,6 +515,115 @@ export async function saveCombo(combo) {
   }
 
   const { data, error } = await supabase.from("combos").upsert(payload).select();
+  if (error) throw new Error(formatError(error));
+  return data;
+}
+
+// ────────────────────────────────────────────────────────
+// 🍽️ PERMANENT CUSTOM DISHES DATABASE CRUD
+// ────────────────────────────────────────────────────────
+export async function getCustomDishes() {
+  try {
+    const { data, error } = await supabase
+      .from("combos")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.warn("[Database] Supabase custom dishes fetch warning:", error);
+      const saved = (typeof localStorage !== 'undefined') ? localStorage.getItem('limra_custom_foods') : null;
+      return saved ? JSON.parse(saved) : [];
+    }
+
+    const rows = data || [];
+    const customDishes = rows
+      .filter(r => r.items && (r.items.is_custom_dish === true || r.items.is_custom_dish === 'true'))
+      .map(r => ({
+        id: `custom_${r.id}`,
+        db_id: r.id,
+        name: r.name,
+        category: r.items?.category || 'General',
+        diet: r.items?.diet || (r.items?.is_veg ? 'veg' : 'nonveg'),
+        is_veg: r.items?.is_veg !== false && r.items?.diet !== 'nonveg',
+        price: parseFloat(r.price || 0),
+        mrp: r.mrp ? parseFloat(r.mrp) : null,
+        image: r.image_url || null,
+        description: r.description || '',
+        available: r.available !== false,
+        featured: Boolean(r.items?.featured),
+        is_custom: true
+      }));
+
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('limra_custom_foods', JSON.stringify(customDishes));
+      } catch {}
+    }
+
+    return customDishes;
+  } catch (err) {
+    console.error("[Database] Failed to get custom dishes from database:", err);
+    const saved = (typeof localStorage !== 'undefined') ? localStorage.getItem('limra_custom_foods') : null;
+    return saved ? JSON.parse(saved) : [];
+  }
+}
+
+export async function saveCustomDish(dish) {
+  const isVeg = dish.is_veg === true || dish.diet === 'veg';
+  const payload = {
+    name: dish.name.trim(),
+    description: dish.description ? dish.description.trim() : "",
+    price: parseFloat(dish.price) || 0,
+    mrp: dish.mrp ? parseFloat(dish.mrp) : null,
+    available: dish.available !== false,
+    image_url: dish.image || dish.image_url || null,
+    items: {
+      is_custom_dish: true,
+      category: dish.category || 'General',
+      diet: dish.diet || (isVeg ? 'veg' : 'nonveg'),
+      is_veg: isVeg,
+      featured: Boolean(dish.featured)
+    }
+  };
+
+  const rawId = dish.db_id || dish.id;
+  if (rawId) {
+    const numId = typeof rawId === 'number' ? rawId : Number(String(rawId).replace(/^custom_/, ''));
+    if (!isNaN(numId) && numId > 0) {
+      payload.id = numId;
+    }
+  }
+
+  const { data, error } = await supabase.from("combos").upsert(payload).select();
+  if (error) throw new Error(formatError(error));
+
+  const saved = data && data[0] ? data[0] : payload;
+  const savedId = saved.id || payload.id;
+  const formattedDish = {
+    id: `custom_${savedId}`,
+    db_id: savedId,
+    name: saved.name,
+    category: saved.items?.category || dish.category || 'General',
+    diet: saved.items?.diet || dish.diet || (isVeg ? 'veg' : 'nonveg'),
+    is_veg: isVeg,
+    price: parseFloat(saved.price || 0),
+    mrp: saved.mrp ? parseFloat(saved.mrp) : null,
+    image: saved.image_url || dish.image || null,
+    description: saved.description || dish.description || '',
+    available: saved.available !== false,
+    featured: Boolean(saved.items?.featured || dish.featured),
+    is_custom: true
+  };
+
+  return formattedDish;
+}
+
+export async function deleteCustomDish(id) {
+  const rawId = id;
+  const numId = typeof rawId === 'number' ? rawId : Number(String(rawId).replace(/^custom_/, ''));
+  if (isNaN(numId)) throw new Error("Invalid custom dish ID");
+
+  const { data, error } = await supabase.from("combos").delete().eq("id", numId);
   if (error) throw new Error(formatError(error));
   return data;
 }
