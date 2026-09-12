@@ -1023,7 +1023,13 @@ function formatDailyOrderNumber(order, allOrders = orders) {
     return String(order);
   }
 
-  // 1. If this order is a child/subsequent round with a parentOrderId, find the parent's order number
+  // 1. Direct explicit order_number check (prioritize authentic order number)
+  const rawNum = parseInt(order.order_number, 10);
+  if (!isNaN(rawNum) && rawNum > 0) {
+    return rawNum < 10 ? `0${rawNum}` : `${rawNum}`;
+  }
+
+  // 2. If this order is a child/subsequent round with a parentOrderId, find the parent's order number
   if (order.notes && Array.isArray(allOrders)) {
     const meta = parseNotesMetadata(order.notes, order);
     if (meta.parentOrderId) {
@@ -1034,41 +1040,7 @@ function formatDailyOrderNumber(order, allOrders = orders) {
     }
   }
 
-  // 2. If this is a table order in a table session, resolve the primary order's order number
-  if (Array.isArray(allOrders) && allOrders.length > 0) {
-    const meta = parseNotesMetadata(order.notes, order);
-    const isTable = meta.type === 'table' || order.order_type === 'table' || Boolean(meta.tableNumber || order.table_number);
-    const tNum = parseInt(String(meta.tableNumber || order.table_number || '').replace(/\D/g, ''), 10);
-    if (isTable && tNum) {
-      const orderTime = new Date(order.created_at || Date.now()).getTime();
-      const sessionWindow = 12 * 3600 * 1000;
-      const tableSessionOrders = allOrders
-        .filter(o => {
-          const oMeta = parseNotesMetadata(o.notes, o);
-          const oTNum = parseInt(String(oMeta.tableNumber || o.table_number || '').replace(/\D/g, ''), 10);
-          if (oTNum !== tNum) return false;
-          const oTime = new Date(o.created_at || Date.now()).getTime();
-          return Math.abs(orderTime - oTime) <= sessionWindow;
-        })
-        .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
-
-      if (tableSessionOrders.length > 0 && tableSessionOrders[0].id !== order.id) {
-        const primaryOrder = tableSessionOrders[0];
-        const rawPrimNum = parseInt(primaryOrder.order_number, 10);
-        if (!isNaN(rawPrimNum) && rawPrimNum > 0) {
-          return rawPrimNum < 10 ? `0${rawPrimNum}` : `${rawPrimNum}`;
-        }
-      }
-    }
-  }
-
-  // 3. Fallback to order.order_number if explicitly set
-  const rawNum = parseInt(order.order_number, 10);
-  if (!isNaN(rawNum) && rawNum > 0) {
-    return rawNum < 10 ? `0${rawNum}` : `${rawNum}`;
-  }
-
-  // 4. Daily sequence index fallback within that specific day
+  // 3. Daily sequence index fallback within that specific day
   if (order.created_at && Array.isArray(allOrders) && allOrders.length > 0) {
     const orderDate = new Date(order.created_at).toISOString().slice(0, 10);
     const dayOrders = allOrders
@@ -1161,28 +1133,34 @@ function getItemsForOrder(orderId) {
     return [...primaryItems, ...siblingItems];
   }
 
+  // If primaryItems already has dishes and covers the order total, return primaryItems directly
+  const primarySub = primaryItems.reduce((s, i) => s + Number(i.line_total || ((i.unit_price || 0) * (i.quantity || 1))), 0);
+  const orderTot = Number(targetOrder.total_amount || 0);
+  if (primarySub > 0 && orderTot > 0 && Math.abs(primarySub * 1.05 - orderTot) < 25) {
+    return primaryItems;
+  }
+
+  // If primaryItems is empty, check if sibling KOTs explicitly listed in notes have the items
   const parsed = parseNotesMetadata(targetOrder.notes, targetOrder);
   const tableNum = parsed.tableNumber || targetOrder.table_number;
   const isTable = parsed.type === 'table' || targetOrder.order_type === 'table' || Boolean(tableNum);
 
-  // If this is a table final bill or closed table session, aggregate all sibling round items
-  if (isTable && targetOrder.notes && (targetOrder.notes.includes('[FINAL_BILL]') || targetOrder.notes.includes('[KOTS:'))) {
-    const tTime = new Date(targetOrder.created_at).getTime();
-    const siblingOrders = orders.filter(sibling => {
-      if (String(sibling.id) === String(orderId)) return false;
-      const sParsed = parseNotesMetadata(sibling.notes, sibling);
-      const sTableNum = sParsed.tableNumber || sibling.table_number;
-      if (String(sTableNum) === String(tableNum)) {
-        const sTime = new Date(sibling.created_at).getTime();
-        return Math.abs(tTime - sTime) <= 12 * 3600 * 1000;
+  if (isTable && targetOrder.notes && (targetOrder.notes.includes('[FINAL_BILL]') || targetOrder.notes.includes('[KOTS:')) && primaryItems.length === 0) {
+    const kotsMatch = targetOrder.notes.match(/\[KOTS:\s*([^\]]+)\]/i);
+    if (kotsMatch) {
+      const parts = kotsMatch[1].split(/[\s+,#]+/).filter(Boolean);
+      const kotNums = new Set(parts.map(p => parseInt(p, 10)).filter(n => !isNaN(n)));
+      const siblingOrders = orders.filter(s => {
+        if (String(s.id) === String(orderId)) return false;
+        if (s.status === 'cancelled') return false;
+        const sNum = parseInt(s.order_number, 10);
+        return kotNums.has(sNum);
+      });
+      if (siblingOrders.length > 0) {
+        const siblingIds = new Set(siblingOrders.map(s => String(s.id)));
+        const siblingItems = orderItems.filter(i => siblingIds.has(String(i.order_id)) && isFoodDishItem(i));
+        return [...primaryItems, ...siblingItems];
       }
-      return false;
-    });
-
-    if (siblingOrders.length > 0) {
-      const siblingIds = new Set(siblingOrders.map(s => String(s.id)));
-      const siblingItems = orderItems.filter(i => siblingIds.has(String(i.order_id)) && isFoodDishItem(i));
-      return [...primaryItems, ...siblingItems];
     }
   }
 
@@ -1264,26 +1242,40 @@ function computeOrderTaxDetails(order, optionalItemsList) {
   const items = consolidateOrderItems(rawItems.filter(isFoodDishItem));
   
   const parsed = parseNotesMetadata(order.notes, order);
-  const subtotal = items.reduce((sum, i) => sum + Number(i.line_total || (i.price * i.qty) || ((i.unit_price || 0) * (i.quantity || 0)) || 0), 0);
+  let subtotal = items.reduce((sum, i) => sum + Number(i.line_total || (i.price * i.qty) || ((i.unit_price || 0) * (i.quantity || 0)) || 0), 0);
   
   const discountPct = parsed.discountPct || 0;
   const discountAmt = parsed.discountAmt || (subtotal * (discountPct / 100));
-  const taxableValue = Math.max(0, subtotal - discountAmt);
+  let taxableValue = Math.max(0, subtotal - discountAmt);
   
   const cgstRate = parsed.cgstRate ?? (s.cgstRate ?? 2.5);
   const sgstRate = parsed.sgstRate ?? (s.sgstRate ?? 2.5);
   const totalGstRate = cgstRate + sgstRate;
   
-  // Standard restaurant GST calculation on consolidated total
-  const cgstAmt = Math.round((taxableValue * (cgstRate / 100)) * 100) / 100;
-  const sgstAmt = Math.round((taxableValue * (sgstRate / 100)) * 100) / 100;
-  const totalGst = Math.round((cgstAmt + sgstAmt) * 100) / 100;
+  const deliveryFee = parsed.deliveryFee || (parsed.type === 'delivery' ? (parseFloat(parsed.deliveryFee) || 10) : 0);
   
-  const deliveryFee = parsed.deliveryFee || (parsed.type === 'delivery' ? (parseFloat(parsed.deliveryFee) || 0) : 0);
+  const orderTot = getEffectiveOrderTotal(order);
+
+  // If items subtotal is 0 but order has total_amount, back-calculate taxableValue
+  if (taxableValue <= 0 && orderTot > 0) {
+    taxableValue = Math.max(0, (orderTot - deliveryFee) / (1 + totalGstRate / 100));
+    subtotal = taxableValue;
+  }
+
+  let cgstAmt = Math.round((taxableValue * (cgstRate / 100)) * 100) / 100;
+  let sgstAmt = Math.round((taxableValue * (sgstRate / 100)) * 100) / 100;
+  let totalGst = Math.round((cgstAmt + sgstAmt) * 100) / 100;
   
-  // Grand total: if order has explicit total_amount use it, else calculate sum
   const calculatedGrand = Math.round((taxableValue + totalGst + deliveryFee) * 100) / 100;
-  const grandTotal = Number(order.total_amount) > 0 ? Number(order.total_amount) : calculatedGrand;
+  let grandTotal = orderTot > 0 ? orderTot : calculatedGrand;
+
+  // Harmonize taxableValue and GST if grandTotal has discrepancy > ₹1
+  if (grandTotal > 0 && Math.abs(taxableValue + totalGst + deliveryFee - grandTotal) > 1) {
+    taxableValue = Math.round((Math.max(0, (grandTotal - deliveryFee) / (1 + totalGstRate / 100))) * 100) / 100;
+    totalGst = Math.round((grandTotal - deliveryFee - taxableValue) * 100) / 100;
+    cgstAmt = Math.round((totalGst / 2) * 100) / 100;
+    sgstAmt = Math.round((totalGst - cgstAmt) * 100) / 100;
+  }
 
   return {
     items,
@@ -2235,8 +2227,9 @@ function getConsolidatedClosedBills(ordersList) {
     }
   }
 
-  // 2. Process table orders: prioritize and display ONLY the consolidated Final Bill per session
+  // 2. Process table orders: prioritize Final Bills without swallowing independent bills
   const finalBills = tableOrders.filter(o => (o.notes || '').includes('[FINAL_BILL]'));
+  finalBills.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   
   for (const fb of finalBills) {
     if (handledOrderIds.has(fb.id)) continue;
@@ -2246,19 +2239,41 @@ function getConsolidatedClosedBills(ordersList) {
     const tableNum = parsed.tableNumber || fb.table_number;
     const fbTime = new Date(fb.created_at).getTime();
 
-    // Mark any sibling intermediate round KOTs as handled and attach sibling_order_ids
+    // Check if notes list specific KOTs, e.g. [KOTS: #35]
+    const kotsMatch = (fb.notes || '').match(/\[KOTS:\s*([^\]]+)\]/i);
+    const listedKotNums = new Set();
+    if (kotsMatch) {
+      const parts = kotsMatch[1].split(/[\s+,#]+/).filter(Boolean);
+      parts.forEach(p => {
+        const n = parseInt(p, 10);
+        if (!isNaN(n)) listedKotNums.add(n);
+      });
+    }
+
     const siblingIds = [];
     tableOrders.forEach(sibling => {
       if (sibling.id === fb.id) return;
+      if (handledOrderIds.has(sibling.id)) return;
+      if ((sibling.notes || '').includes('[FINAL_BILL]')) return; // Never swallow another Final Bill!
+      if (sibling.status === 'cancelled') return;
+
       const sParsed = parseNotesMetadata(sibling.notes, sibling);
       const sTableNum = sParsed.tableNumber || sibling.table_number;
-      if (String(sTableNum) === String(tableNum)) {
-        const sTime = new Date(sibling.created_at).getTime();
-        // If created within the same dining session (12 hrs)
-        if (Math.abs(fbTime - sTime) <= 12 * 3600 * 1000) {
-          handledOrderIds.add(sibling.id);
-          siblingIds.push(sibling.id);
-        }
+      if (String(sTableNum) !== String(tableNum)) return;
+
+      const sNum = parseInt(sibling.order_number, 10);
+      const sTot = Number(sibling.total_amount || 0);
+      const fbTot = Number(fb.total_amount || 0);
+
+      // Only swallow sibling if it has 0 total or was explicitly consolidated
+      let isSibling = false;
+      if (listedKotNums.size > 0 && listedKotNums.has(sNum) && sTot <= 0) {
+        isSibling = true;
+      }
+
+      if (isSibling) {
+        handledOrderIds.add(sibling.id);
+        siblingIds.push(sibling.id);
       }
     });
 
@@ -2266,49 +2281,17 @@ function getConsolidatedClosedBills(ordersList) {
     result.push(fb);
   }
 
-  // 3. For any remaining table orders without explicit [FINAL_BILL] tag, group by table number & day
+  // 3. For any remaining table orders: preserve each settled order with revenue
   const remainingTableOrders = tableOrders.filter(o => !handledOrderIds.has(o.id));
-  const groupedRemaining = new Map();
+  remainingTableOrders.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
   for (const ro of remainingTableOrders) {
     if (handledOrderIds.has(ro.id)) continue;
-    const parsed = parseNotesMetadata(ro.notes, ro);
-    const tableNum = parsed.tableNumber || ro.table_number || 'unknown';
-    const dayStr = new Date(ro.created_at).toDateString();
-    const groupKey = `${tableNum}_${dayStr}`;
-
-    if (!groupedRemaining.has(groupKey)) {
-      const sameSessionOrders = remainingTableOrders.filter(o => {
-        const oParsed = parseNotesMetadata(o.notes, o);
-        const oTableNum = oParsed.tableNumber || o.table_number || 'unknown';
-        const oDayStr = new Date(o.created_at).toDateString();
-        return String(oTableNum) === String(tableNum) && oDayStr === dayStr;
-      });
-
-      // Sort by created_at ascending (earliest first so original order number is preserved)
-      sameSessionOrders.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      const primaryOrder = sameSessionOrders[0];
-
-      sameSessionOrders.forEach(o => handledOrderIds.add(o.id));
-
-      if (sameSessionOrders.length > 1) {
-        // Calculate consolidated total amount across all rounds if not already consolidated
-        const sessionTotal = sameSessionOrders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
-        const consolidatedOrder = {
-          ...primaryOrder,
-          total_amount: sessionTotal,
-          sibling_order_ids: sameSessionOrders.slice(1).map(o => o.id)
-        };
-        groupedRemaining.set(groupKey, consolidatedOrder);
-        result.push(consolidatedOrder);
-      } else {
-        groupedRemaining.set(groupKey, primaryOrder);
-        result.push(primaryOrder);
-      }
-    }
+    handledOrderIds.add(ro.id);
+    result.push(ro);
   }
 
-  // 4. Non-table orders (Delivery / Pickup): if any were explicitly merged with a parent order
+  // 4. Non-table orders (Delivery / Pickup)
   for (const o of nonTableOrders) {
     if (handledOrderIds.has(o.id)) continue;
     handledOrderIds.add(o.id);
@@ -2320,32 +2303,33 @@ function getConsolidatedClosedBills(ordersList) {
 
 function computeOrdersReportData() {
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const todayStr = getLocalDateString(now);
+  const yDate = new Date(now);
+  yDate.setDate(yDate.getDate() - 1);
+  const yestStr = getLocalDateString(yDate);
 
-  // Show ONLY the final consolidated bill order (no intermediate raw KOT fragments)
+  // Show settled/closed bills with complete accuracy
   let list = getConsolidatedClosedBills(orders);
 
   // 1. Date Filtering
   if (ordersReportDateFilter === 'today') {
-    list = list.filter(o => new Date(o.created_at).getTime() >= todayStart);
+    list = list.filter(o => getLocalDateString(o.created_at) === todayStr);
   } else if (ordersReportDateFilter === 'yesterday') {
-    const yestStart = todayStart - 86400000;
-    list = list.filter(o => {
-      const t = new Date(o.created_at).getTime();
-      return t >= yestStart && t < todayStart;
-    });
+    list = list.filter(o => getLocalDateString(o.created_at) === yestStr);
   } else if (ordersReportDateFilter === 'week') {
-    const weekStart = todayStart - (6 * 86400000);
-    list = list.filter(o => new Date(o.created_at).getTime() >= weekStart);
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= weekStart);
   } else if (ordersReportDateFilter === 'month') {
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    list = list.filter(o => new Date(o.created_at).getTime() >= monthStart);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= monthStart);
   } else if (ordersReportDateFilter === 'custom' && ordersReportCustomStart) {
-    const cStart = new Date(ordersReportCustomStart).getTime();
-    const cEnd = ordersReportCustomEnd ? (new Date(ordersReportCustomEnd).getTime() + 86400000) : (cStart + 86400000);
+    const cStart = new Date(ordersReportCustomStart + 'T00:00:00');
+    const cEnd = ordersReportCustomEnd ? new Date(ordersReportCustomEnd + 'T23:59:59.999') : new Date(ordersReportCustomStart + 'T23:59:59.999');
     list = list.filter(o => {
-      const t = new Date(o.created_at).getTime();
-      return t >= cStart && t < cEnd;
+      const t = new Date(o.created_at);
+      return t >= cStart && t <= cEnd;
     });
   }
 
@@ -5339,30 +5323,31 @@ let itemCategorySplitChartInstance = null;
 
 function computeItemSalesReport() {
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const todayStr = getLocalDateString(now);
+  const yDate = new Date(now);
+  yDate.setDate(yDate.getDate() - 1);
+  const yestStr = getLocalDateString(yDate);
 
   let eligibleOrders = orders.filter(o => o.status !== 'cancelled');
 
   if (itemReportDateFilter === 'today') {
-    eligibleOrders = eligibleOrders.filter(o => new Date(o.created_at).getTime() >= todayStart);
+    eligibleOrders = eligibleOrders.filter(o => getLocalDateString(o.created_at) === todayStr);
   } else if (itemReportDateFilter === 'yesterday') {
-    const yestStart = todayStart - 86400000;
-    eligibleOrders = eligibleOrders.filter(o => {
-      const t = new Date(o.created_at).getTime();
-      return t >= yestStart && t < todayStart;
-    });
+    eligibleOrders = eligibleOrders.filter(o => getLocalDateString(o.created_at) === yestStr);
   } else if (itemReportDateFilter === 'week') {
-    const weekStart = todayStart - (6 * 86400000);
-    eligibleOrders = eligibleOrders.filter(o => new Date(o.created_at).getTime() >= weekStart);
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+    eligibleOrders = eligibleOrders.filter(o => new Date(o.created_at) >= weekStart);
   } else if (itemReportDateFilter === 'month') {
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    eligibleOrders = eligibleOrders.filter(o => new Date(o.created_at).getTime() >= monthStart);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    eligibleOrders = eligibleOrders.filter(o => new Date(o.created_at) >= monthStart);
   } else if (itemReportDateFilter === 'custom' && itemReportCustomStart) {
-    const cStart = new Date(itemReportCustomStart).getTime();
-    const cEnd = itemReportCustomEnd ? (new Date(itemReportCustomEnd).getTime() + 86400000) : (cStart + 86400000);
+    const cStart = new Date(itemReportCustomStart + 'T00:00:00');
+    const cEnd = itemReportCustomEnd ? new Date(itemReportCustomEnd + 'T23:59:59.999') : new Date(itemReportCustomStart + 'T23:59:59.999');
     eligibleOrders = eligibleOrders.filter(o => {
-      const t = new Date(o.created_at).getTime();
-      return t >= cStart && t < cEnd;
+      const t = new Date(o.created_at);
+      return t >= cStart && t <= cEnd;
     });
   }
 
@@ -5396,6 +5381,7 @@ function computeItemSalesReport() {
   // Aggregate items from eligible orders
   orderItems.forEach(oi => {
     if (!eligibleOrderIds.has(String(oi.order_id))) return;
+    if (!isFoodDishItem(oi)) return;
     const key = (oi.item_name || '').toLowerCase().trim();
     if (!key) return;
 
@@ -6611,16 +6597,20 @@ function renderClosedOrdersPanel() {
   const deliveredOrders = consolidatedClosed.filter(o => o.status === 'delivered' || o.status === 'completed' || o.status === 'closed' || o.payment_status === 'paid');
   const cancelledOrders = consolidatedClosed.filter(o => o.status === 'cancelled');
 
-  const totalClosedRev = deliveredOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  const totalClosedRev = deliveredOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
   const totalClosedCount = deliveredOrders.length;
 
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const todayOrders = deliveredOrders.filter(o => new Date(o.created_at).getTime() >= todayStart);
-  const todayClosedRev = todayOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  const todayStr = getLocalDateString(now);
+  const yDate = new Date(now);
+  yDate.setDate(yDate.getDate() - 1);
+  const yestStr = getLocalDateString(yDate);
+
+  const todayOrders = deliveredOrders.filter(o => getLocalDateString(o.created_at) === todayStr);
+  const todayClosedRev = todayOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
   const todayClosedCount = todayOrders.length;
 
-  const cancelledLoss = cancelledOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  const cancelledLoss = cancelledOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
   const aov = totalClosedCount > 0 ? (totalClosedRev / totalClosedCount) : 0;
 
   if ($('closed-kpi-total-rev')) $('closed-kpi-total-rev').textContent = `₹${totalClosedRev.toFixed(2)}`;
@@ -6636,25 +6626,23 @@ function renderClosedOrdersPanel() {
 
   // Date Filtering
   if (closedDateFilter === 'today') {
-    list = list.filter(o => new Date(o.created_at).getTime() >= todayStart);
+    list = list.filter(o => getLocalDateString(o.created_at) === todayStr);
   } else if (closedDateFilter === 'yesterday') {
-    const yestStart = todayStart - 86400000;
-    list = list.filter(o => {
-      const t = new Date(o.created_at).getTime();
-      return t >= yestStart && t < todayStart;
-    });
+    list = list.filter(o => getLocalDateString(o.created_at) === yestStr);
   } else if (closedDateFilter === 'week') {
-    const weekStart = todayStart - (6 * 86400000);
-    list = list.filter(o => new Date(o.created_at).getTime() >= weekStart);
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= weekStart);
   } else if (closedDateFilter === 'month') {
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    list = list.filter(o => new Date(o.created_at).getTime() >= monthStart);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= monthStart);
   } else if (closedDateFilter === 'custom' && closedCustomStart) {
-    const cStart = new Date(closedCustomStart).getTime();
-    const cEnd = closedCustomEnd ? (new Date(closedCustomEnd).getTime() + 86400000) : (cStart + 86400000);
+    const cStart = new Date(closedCustomStart + 'T00:00:00');
+    const cEnd = closedCustomEnd ? new Date(closedCustomEnd + 'T23:59:59.999') : new Date(closedCustomStart + 'T23:59:59.999');
     list = list.filter(o => {
-      const t = new Date(o.created_at).getTime();
-      return t >= cStart && t < cEnd;
+      const t = new Date(o.created_at);
+      return t >= cStart && t <= cEnd;
     });
   }
 
@@ -7219,29 +7207,30 @@ function exportRestaurantGSTReportCSV() {
 
   // Filter based on active Closed Orders filters (date, type, status, search)
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const todayStr = getLocalDateString(now);
+  const yDate = new Date(now);
+  yDate.setDate(yDate.getDate() - 1);
+  const yestStr = getLocalDateString(yDate);
   let list = [...consolidatedClosed];
 
   if (closedDateFilter === 'today') {
-    list = list.filter(o => new Date(o.created_at).getTime() >= todayStart);
+    list = list.filter(o => getLocalDateString(o.created_at) === todayStr);
   } else if (closedDateFilter === 'yesterday') {
-    const yestStart = todayStart - 86400000;
-    list = list.filter(o => {
-      const t = new Date(o.created_at).getTime();
-      return t >= yestStart && t < todayStart;
-    });
+    list = list.filter(o => getLocalDateString(o.created_at) === yestStr);
   } else if (closedDateFilter === 'week') {
-    const weekStart = todayStart - (6 * 86400000);
-    list = list.filter(o => new Date(o.created_at).getTime() >= weekStart);
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= weekStart);
   } else if (closedDateFilter === 'month') {
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    list = list.filter(o => new Date(o.created_at).getTime() >= monthStart);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= monthStart);
   } else if (closedDateFilter === 'custom' && closedCustomStart) {
-    const cStart = new Date(closedCustomStart).getTime();
-    const cEnd = closedCustomEnd ? (new Date(closedCustomEnd).getTime() + 86400000) : (cStart + 86400000);
+    const cStart = new Date(closedCustomStart + 'T00:00:00');
+    const cEnd = closedCustomEnd ? new Date(closedCustomEnd + 'T23:59:59.999') : new Date(closedCustomStart + 'T23:59:59.999');
     list = list.filter(o => {
-      const t = new Date(o.created_at).getTime();
-      return t >= cStart && t < cEnd;
+      const t = new Date(o.created_at);
+      return t >= cStart && t <= cEnd;
     });
   }
 
@@ -7356,6 +7345,64 @@ function exportClosedOrdersCSV() {
     return;
   }
 
+  const now = new Date();
+  const todayStr = getLocalDateString(now);
+  const yDate = new Date(now);
+  yDate.setDate(yDate.getDate() - 1);
+  const yestStr = getLocalDateString(yDate);
+  let list = [...consolidatedClosed];
+
+  if (closedDateFilter === 'today') {
+    list = list.filter(o => getLocalDateString(o.created_at) === todayStr);
+  } else if (closedDateFilter === 'yesterday') {
+    list = list.filter(o => getLocalDateString(o.created_at) === yestStr);
+  } else if (closedDateFilter === 'week') {
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= weekStart);
+  } else if (closedDateFilter === 'month') {
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= monthStart);
+  } else if (closedDateFilter === 'custom' && closedCustomStart) {
+    const cStart = new Date(closedCustomStart + 'T00:00:00');
+    const cEnd = closedCustomEnd ? new Date(closedCustomEnd + 'T23:59:59.999') : new Date(closedCustomStart + 'T23:59:59.999');
+    list = list.filter(o => {
+      const t = new Date(o.created_at);
+      return t >= cStart && t <= cEnd;
+    });
+  }
+
+  const typeFilter = $('closed-orders-type-filter')?.value || 'all';
+  if (typeFilter !== 'all') {
+    list = list.filter(o => {
+      const parsed = parseNotesMetadata(o.notes, o);
+      return parsed.type === typeFilter || o.order_type === typeFilter;
+    });
+  }
+
+  const statusFilter = $('closed-orders-status-filter')?.value || 'all';
+  if (statusFilter !== 'all') {
+    if (statusFilter === 'delivered') {
+      list = list.filter(o => o.status === 'delivered' || o.payment_status === 'paid');
+    } else {
+      list = list.filter(o => o.status === statusFilter);
+    }
+  }
+
+  const search = ($('closed-orders-search')?.value || '').toLowerCase().trim();
+  if (search) {
+    list = list.filter(o => {
+      const parsed = parseNotesMetadata(o.notes, o);
+      return (
+        String(o.order_number || '').includes(search) ||
+        (o.customer_name && o.customer_name.toLowerCase().includes(search)) ||
+        (o.customer_phone && o.customer_phone.includes(search)) ||
+        String(parsed.tableNumber || o.table_number || '').toLowerCase().includes(search)
+      );
+    });
+  }
+
   const headers = [
     'Order Number',
     'Date & Time',
@@ -7374,7 +7421,7 @@ function exportClosedOrdersCSV() {
     'Total Amount (INR)'
   ];
 
-  const rows = consolidatedClosed.map(o => {
+  const rows = list.map(o => {
     const td = computeOrderTaxDetails(o);
     const parsed = parseNotesMetadata(o.notes, o);
     const itemsStr = td.items.map(i => `${i.quantity || i.qty}x ${i.item_name || i.name}`).join('; ');
