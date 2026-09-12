@@ -400,7 +400,9 @@ BEGIN
   NEW.updated_at = now();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = public;
+
+REVOKE ALL ON FUNCTION public.update_updated_at() FROM PUBLIC, anon, authenticated;
 
 DROP TRIGGER IF EXISTS orders_updated_at ON public.orders;
 CREATE TRIGGER orders_updated_at
@@ -428,7 +430,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '';
 
-GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated, anon;
+REVOKE EXECUTE ON FUNCTION public.is_admin() FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
 
 -- Centralized Security Event Logger
 CREATE OR REPLACE FUNCTION public.log_security_event(
@@ -471,7 +474,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.log_security_event(uuid, text, text, jsonb) TO authenticated, anon;
+REVOKE ALL ON FUNCTION public.log_security_event(uuid, text, text, jsonb) FROM PUBLIC, anon, authenticated;
 
 -- Profile upsert retroactive order linker
 CREATE OR REPLACE FUNCTION public.tr_on_profile_upsert_or_verify()
@@ -498,6 +501,8 @@ DROP TRIGGER IF EXISTS tr_profile_upsert_or_verify ON public.customer_profiles;
 CREATE TRIGGER tr_profile_upsert_or_verify
   AFTER INSERT OR UPDATE ON public.customer_profiles
   FOR EACH ROW EXECUTE FUNCTION public.tr_on_profile_upsert_or_verify();
+
+REVOKE ALL ON FUNCTION public.tr_on_profile_upsert_or_verify() FROM PUBLIC, anon, authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 5. RPC STORED PROCEDURES
@@ -1088,55 +1093,99 @@ ALTER TABLE public.stock_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stock_in_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stock_out_entries ENABLE ROW LEVEL SECURITY;
 
--- Drop prior policies if recreating
-DROP POLICY IF EXISTS "Public full access orders" ON public.orders;
-DROP POLICY IF EXISTS "Public full access order_items" ON public.order_items;
-DROP POLICY IF EXISTS "Public full access bookings" ON public.bookings;
-DROP POLICY IF EXISTS "Public full access admin_users" ON public.admin_users;
-DROP POLICY IF EXISTS "Public full access menu_overrides" ON public.menu_overrides;
-DROP POLICY IF EXISTS "Public full access combos" ON public.combos;
-DROP POLICY IF EXISTS "Public full access coupons" ON public.coupons;
-DROP POLICY IF EXISTS "Public full access coupon_usage" ON public.coupon_usage;
+-- Store catalog public read & admin manage policies
 DROP POLICY IF EXISTS "Public full access delivery_areas" ON public.delivery_areas;
-DROP POLICY IF EXISTS "Public full access notifications" ON public.notifications;
-DROP POLICY IF EXISTS "Public full access printer_settings" ON public.printer_settings;
-DROP POLICY IF EXISTS "Public full access reviews" ON public.reviews;
-DROP POLICY IF EXISTS "Public full access customer_profiles" ON public.customer_profiles;
-DROP POLICY IF EXISTS "Public full access phone_verifications" ON public.phone_verifications;
-DROP POLICY IF EXISTS "Public full access verified_payments" ON public.verified_payments;
-DROP POLICY IF EXISTS "Public full access payment_history" ON public.payment_history;
-DROP POLICY IF EXISTS "Public full access security_audit_logs" ON public.security_audit_logs;
-DROP POLICY IF EXISTS "Public full access stock_items" ON public.stock_items;
-DROP POLICY IF EXISTS "Public full access stock_in" ON public.stock_in;
-DROP POLICY IF EXISTS "Public full access stock_out" ON public.stock_out;
-DROP POLICY IF EXISTS "Public full access stock_logs" ON public.stock_logs;
-DROP POLICY IF EXISTS "Public full access stock_in_entries" ON public.stock_in_entries;
-DROP POLICY IF EXISTS "Public full access stock_out_entries" ON public.stock_out_entries;
+CREATE POLICY "Public can view delivery areas" ON public.delivery_areas FOR SELECT USING (true);
+CREATE POLICY "Admins can manage delivery areas" ON public.delivery_areas FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 
--- Allow public read and write policies for store operations
-CREATE POLICY "Public full access orders" ON public.orders FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access order_items" ON public.order_items FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access bookings" ON public.bookings FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access admin_users" ON public.admin_users FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access menu_overrides" ON public.menu_overrides FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access combos" ON public.combos FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access coupons" ON public.coupons FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access coupon_usage" ON public.coupon_usage FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access delivery_areas" ON public.delivery_areas FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access notifications" ON public.notifications FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access printer_settings" ON public.printer_settings FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access reviews" ON public.reviews FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access customer_profiles" ON public.customer_profiles FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access phone_verifications" ON public.phone_verifications FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access verified_payments" ON public.verified_payments FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access payment_history" ON public.payment_history FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access security_audit_logs" ON public.security_audit_logs FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access stock_items" ON public.stock_items FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access stock_in" ON public.stock_in FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access stock_out" ON public.stock_out FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access stock_logs" ON public.stock_logs FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access stock_in_entries" ON public.stock_in_entries FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access stock_out_entries" ON public.stock_out_entries FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public full access combos" ON public.combos;
+CREATE POLICY "Public can view combos" ON public.combos FOR SELECT USING (true);
+CREATE POLICY "Admins can manage combos" ON public.combos FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access menu_overrides" ON public.menu_overrides;
+CREATE POLICY "Public can view menu overrides" ON public.menu_overrides FOR SELECT USING (true);
+CREATE POLICY "Admins can manage menu overrides" ON public.menu_overrides FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access coupons" ON public.coupons;
+CREATE POLICY "Public can view coupons" ON public.coupons FOR SELECT USING (true);
+CREATE POLICY "Public can increment coupon usage" ON public.coupons FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY "Admins can manage coupons" ON public.coupons FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access coupon_usage" ON public.coupon_usage;
+CREATE POLICY "Public can check coupon usage" ON public.coupon_usage FOR SELECT USING (true);
+CREATE POLICY "Public can insert coupon usage" ON public.coupon_usage FOR INSERT WITH CHECK (true);
+CREATE POLICY "Admins can manage coupon usage" ON public.coupon_usage FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access reviews" ON public.reviews;
+CREATE POLICY "Public can view reviews" ON public.reviews FOR SELECT USING (true);
+CREATE POLICY "Public can insert reviews" ON public.reviews FOR INSERT WITH CHECK (true);
+CREATE POLICY "Admins can manage reviews" ON public.reviews FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- Admin & Internal security policies
+DROP POLICY IF EXISTS "Public full access admin_users" ON public.admin_users;
+CREATE POLICY "Admins can read admin_users" ON public.admin_users FOR SELECT TO authenticated USING (user_id = auth.uid() OR lower(email) = lower(auth.jwt()->>'email') OR public.is_admin());
+CREATE POLICY "Admins can manage admin_users" ON public.admin_users FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access printer_settings" ON public.printer_settings;
+CREATE POLICY "Admins can manage printer settings" ON public.printer_settings FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access phone_verifications" ON public.phone_verifications;
+CREATE POLICY "Admins can view phone verifications" ON public.phone_verifications FOR SELECT TO authenticated USING (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access security_audit_logs" ON public.security_audit_logs;
+CREATE POLICY "Admins can view security logs" ON public.security_audit_logs FOR SELECT TO authenticated USING (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access verified_payments" ON public.verified_payments;
+CREATE POLICY "Admins can view verified payments" ON public.verified_payments FOR SELECT TO authenticated USING (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access payment_history" ON public.payment_history;
+CREATE POLICY "Admins can manage payment history" ON public.payment_history FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "Users can read own payment history" ON public.payment_history FOR SELECT TO authenticated USING (EXISTS (
+  SELECT 1 FROM public.orders o
+  WHERE o.id = payment_history.order_id
+    AND (o.user_id = auth.uid() OR regexp_replace(o.customer_phone, '\D', '', 'g') = (SELECT regexp_replace(phone, '\D', '', 'g') FROM public.customer_profiles WHERE id = auth.uid()))
+));
+
+-- Inventory & Stock management policies
+DROP POLICY IF EXISTS "Public full access stock_items" ON public.stock_items;
+CREATE POLICY "Admins can manage stock items" ON public.stock_items FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access stock_in" ON public.stock_in;
+DROP POLICY IF EXISTS "Public full access stock_in_entries" ON public.stock_in_entries;
+CREATE POLICY "Admins can manage stock in" ON public.stock_in FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "Admins can manage stock in entries" ON public.stock_in_entries FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access stock_out" ON public.stock_out;
+DROP POLICY IF EXISTS "Public full access stock_out_entries" ON public.stock_out_entries;
+CREATE POLICY "Admins can manage stock out" ON public.stock_out FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "Admins can manage stock out entries" ON public.stock_out_entries FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access stock_logs" ON public.stock_logs;
+CREATE POLICY "Admins can manage stock logs" ON public.stock_logs FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- Customer active orders & bookings access
+DROP POLICY IF EXISTS "Public full access orders" ON public.orders;
+CREATE POLICY "Public can view orders" ON public.orders FOR SELECT USING (true);
+CREATE POLICY "Admins can manage orders" ON public.orders FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access order_items" ON public.order_items;
+CREATE POLICY "Public can view order items" ON public.order_items FOR SELECT USING (true);
+CREATE POLICY "Admins can manage order items" ON public.order_items FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Public full access bookings" ON public.bookings;
+CREATE POLICY "Admins can manage bookings" ON public.bookings FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "Users can read own bookings" ON public.bookings FOR SELECT TO authenticated USING (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "Public full access notifications" ON public.notifications;
+CREATE POLICY "Admins can manage notifications" ON public.notifications FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "Users can read own notifications" ON public.notifications FOR SELECT TO authenticated USING (user_id = auth.uid());
+CREATE POLICY "Users can update own notifications" ON public.notifications FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "Public full access customer_profiles" ON public.customer_profiles;
+CREATE POLICY "Admins can manage customer profiles" ON public.customer_profiles FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "Users can view own profile" ON public.customer_profiles FOR SELECT TO authenticated USING (id = auth.uid());
+CREATE POLICY "Users can insert own profile" ON public.customer_profiles FOR INSERT TO authenticated WITH CHECK (id = auth.uid());
+CREATE POLICY "Users can update own profile" ON public.customer_profiles FOR UPDATE TO authenticated USING (id = auth.uid()) WITH CHECK (id = auth.uid());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 7. SUPABASE REALTIME REPLICATION SETUP
