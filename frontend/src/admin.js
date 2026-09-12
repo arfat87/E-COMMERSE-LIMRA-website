@@ -1149,14 +1149,15 @@ function isFoodDishItem(i) {
 }
 
 function getItemsForOrder(orderId) {
-  const primaryItems = orderItems.filter(i => i.order_id === orderId && isFoodDishItem(i));
-  const targetOrder = orders.find(o => o.id === orderId);
+  if (!orderId) return [];
+  const primaryItems = orderItems.filter(i => String(i.order_id) === String(orderId) && isFoodDishItem(i));
+  const targetOrder = orders.find(o => String(o.id) === String(orderId));
   if (!targetOrder) return primaryItems;
 
   // If this order object has explicit sibling_order_ids from consolidation
   if (targetOrder.sibling_order_ids && targetOrder.sibling_order_ids.length > 0) {
-    const siblingIds = new Set(targetOrder.sibling_order_ids);
-    const siblingItems = orderItems.filter(i => siblingIds.has(i.order_id) && isFoodDishItem(i));
+    const siblingIds = new Set(targetOrder.sibling_order_ids.map(id => String(id)));
+    const siblingItems = orderItems.filter(i => siblingIds.has(String(i.order_id)) && isFoodDishItem(i));
     return [...primaryItems, ...siblingItems];
   }
 
@@ -1168,7 +1169,7 @@ function getItemsForOrder(orderId) {
   if (isTable && targetOrder.notes && (targetOrder.notes.includes('[FINAL_BILL]') || targetOrder.notes.includes('[KOTS:'))) {
     const tTime = new Date(targetOrder.created_at).getTime();
     const siblingOrders = orders.filter(sibling => {
-      if (sibling.id === orderId) return false;
+      if (String(sibling.id) === String(orderId)) return false;
       const sParsed = parseNotesMetadata(sibling.notes, sibling);
       const sTableNum = sParsed.tableNumber || sibling.table_number;
       if (String(sTableNum) === String(tableNum)) {
@@ -1179,8 +1180,8 @@ function getItemsForOrder(orderId) {
     });
 
     if (siblingOrders.length > 0) {
-      const siblingIds = new Set(siblingOrders.map(s => s.id));
-      const siblingItems = orderItems.filter(i => siblingIds.has(i.order_id) && isFoodDishItem(i));
+      const siblingIds = new Set(siblingOrders.map(s => String(s.id)));
+      const siblingItems = orderItems.filter(i => siblingIds.has(String(i.order_id)) && isFoodDishItem(i));
       return [...primaryItems, ...siblingItems];
     }
   }
@@ -3444,130 +3445,13 @@ function renderOrdersTable() {
 }
 
 async function toggleOrderHoldStatus(orderId, targetActionOrStatus) {
-  const order = orders.find(o => o.id === orderId);
+  const order = orders.find(o => String(o.id) === String(orderId));
   if (!order) {
     showAdminToast('Order not found.', 'error');
     return;
   }
 
-  const meta = parseNotesMetadata(order.notes, order);
-  const isTable = meta.type === 'table' || order.order_type === 'table' || Boolean(meta.tableNumber || order.table_number);
-  const tableNum = parseInt(String(meta.tableNumber || order.table_number || '').replace(/\D/g, ''), 10);
-
-  // Determine round number from notes
-  const roundNumFromNotes = meta.roundNumber || null;
-  const isSubsequentRound = (roundNumFromNotes !== null && roundNumFromNotes > 1) || Boolean(meta.parentOrderId);
-
   if (targetActionOrStatus === 'hold') {
-    // ──────────────────────────────────────────────────────────────────────────────
-    // CASE A: Subsequent table round → merge into the primary held order
-    // ──────────────────────────────────────────────────────────────────────────────
-    if (isTable && tableNum && isSubsequentRound) {
-      const orderTime = new Date(order.created_at || Date.now()).getTime();
-      const sessionWindow = 12 * 3600 * 1000;
-
-      // Collect all other active orders for this table in the session window
-      const tableSessionOrders = orders
-        .filter(o => {
-          if (o.id === order.id) return false;
-          if (o.status === 'delivered' || o.status === 'cancelled') return false;
-          const oMeta = parseNotesMetadata(o.notes, o);
-          const oTNum = parseInt(String(oMeta.tableNumber || o.table_number || '').replace(/\D/g, ''), 10);
-          if (oTNum !== tableNum) return false;
-          const oTime = new Date(o.created_at || Date.now()).getTime();
-          return Math.abs(orderTime - oTime) <= sessionWindow;
-        })
-        .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
-
-      // Resolve primary: prefer explicit parentOrderId, else the oldest session order
-      let primaryOrder = null;
-      if (meta.parentOrderId) {
-        primaryOrder = orders.find(o => o.id === meta.parentOrderId && o.status !== 'delivered' && o.status !== 'cancelled');
-      }
-      if (!primaryOrder && tableSessionOrders.length > 0) {
-        primaryOrder = tableSessionOrders[0];
-      }
-
-      if (!primaryOrder || primaryOrder.id === order.id) {
-        // Cannot find primary — fall through to standard hold
-        showAdminToast(`Could not find primary order for Table ${tableNum}. Putting order on Hold instead.`, 'error');
-        // Fall through to standard hold below
-      } else {
-        // ── MERGE ──────────────────────────────────────────────────────────────
-        try {
-          // 1. Reassign all items of this round to the primary order in DB & memory
-          const roundItems = getItemsForOrder(order.id);
-          if (roundItems.length > 0) {
-            const { error: itemsErr } = await insforge.database
-              .from('order_items')
-              .update({ order_id: primaryOrder.id })
-              .eq('order_id', order.id);
-            if (itemsErr) throw itemsErr;
-            orderItems.forEach(it => {
-              if (it.order_id === order.id) it.order_id = primaryOrder.id;
-            });
-          }
-
-          // 2. Recalculate combined total for primary after merge
-          const allPrimaryItems = getItemsForOrder(primaryOrder.id);
-          const subtotal = allPrimaryItems.reduce((sum, it) =>
-            sum + Number(it.line_total || (it.unit_price * it.quantity) || 0), 0);
-          const s = getBillSettings();
-          const cgst = subtotal * (s.cgstRate / 100);
-          const sgst = subtotal * (s.sgstRate / 100);
-          const combinedTotal = Math.round((subtotal + cgst + sgst) * 100) / 100;
-
-          // 3. Update primary order: status=hold, new total, tag notes
-          const mergedTag = `[MERGED_ROUND_${roundNumFromNotes || 'N'}]`;
-          const newPrimaryNotes = (primaryOrder.notes || '')
-            .includes(mergedTag)
-            ? (primaryOrder.notes || '')
-            : `${primaryOrder.notes || ''} ${mergedTag}`.trim();
-
-          const { error: primErr } = await insforge.database
-            .from('orders')
-            .update({ status: 'hold', total_amount: combinedTotal, notes: newPrimaryNotes, updated_at: new Date().toISOString() })
-            .eq('id', primaryOrder.id);
-          if (primErr) throw primErr;
-
-          // 4. Mark this round as merged/absorbed (total=0, status=hold)
-          const mergedIntoTag = `[MERGED_INTO: ${primaryOrder.id}]`;
-          const newSubNotes = `${order.notes || ''} ${mergedIntoTag}`.trim();
-          const { error: subErr } = await insforge.database
-            .from('orders')
-            .update({ status: 'hold', total_amount: 0, notes: newSubNotes, updated_at: new Date().toISOString() })
-            .eq('id', order.id);
-          if (subErr) throw subErr;
-
-          // 5. Sync local memory
-          primaryOrder.status = 'hold';
-          primaryOrder.total_amount = combinedTotal;
-          primaryOrder.notes = newPrimaryNotes;
-          order.status = 'hold';
-          order.total_amount = 0;
-          order.notes = newSubNotes;
-
-          showAdminToast(
-            `Round ${roundNumFromNotes || ''} merged into Table ${tableNum} — New Total: ₹${combinedTotal.toFixed(2)} ✅`,
-            'success'
-          );
-          renderOrdersTable();
-          renderHoldOrdersPanel();
-          renderBillingQuickCards();
-          renderBillingTotalBills();
-          renderOverview();
-          return;
-        } catch (err) {
-          console.error('[Hold Merge Error]', err);
-          showAdminToast('Failed to merge round: ' + (err.message || err), 'error');
-          return;
-        }
-      }
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────────
-    // CASE B: Standard Hold (Round 1 / non-table / subsequent round with no primary)
-    // ──────────────────────────────────────────────────────────────────────────────
     try {
       const { error } = await insforge.database
         .from('orders')
@@ -3584,11 +3468,7 @@ async function toggleOrderHoldStatus(orderId, targetActionOrStatus) {
     } catch (err) {
       showAdminToast('Failed to put order on hold: ' + (err.message || err), 'error');
     }
-
   } else if (targetActionOrStatus === 'release' || targetActionOrStatus === 'confirmed') {
-    // ──────────────────────────────────────────────────────────────────────────────
-    // CASE C: Release from Hold
-    // ──────────────────────────────────────────────────────────────────────────────
     try {
       const { error } = await insforge.database
         .from('orders')
@@ -3609,17 +3489,9 @@ async function toggleOrderHoldStatus(orderId, targetActionOrStatus) {
 }
 window.toggleOrderHoldStatus = toggleOrderHoldStatus;
 
-function createBillForOrder(orderId) {
-  const order = orders.find(o => o.id === orderId);
-  if (!order) {
-    showAdminToast('Order not found.', 'error');
-    return;
-  }
-
-  const items = getItemsForOrder(order.id);
-  const parsedMeta = parseNotesMetadata(order.notes, order);
-  const isTable = parsedMeta.type === 'table' || order.order_type === 'table';
-  const orderType = isTable ? 'table' : (parsedMeta.type === 'delivery' ? 'delivery' : 'pickup');
+function loadOrderIntoPos(order) {
+  if (!order) return;
+  posEditingOrderId = order.id;
 
   // Switch to Billing panel
   switchPanel('order-detail');
@@ -3627,24 +3499,28 @@ function createBillForOrder(orderId) {
   // Allow panel mount then open POS builder
   setTimeout(() => {
     const posEl = $('billing-pos');
-    const totalSection = $('billing-total-bills-section');
+    const totalSection = $('billing-total-section');
     const detailEl = $('billing-detail-view');
+    const picker = $('billing-order-picker');
 
     if (posEl) posEl.style.display = 'block';
     if (totalSection) totalSection.style.display = 'none';
     if (detailEl) detailEl.style.display = 'none';
+    if (picker) picker.value = '';
+
+    const parsedMeta = parseNotesMetadata(order.notes, order);
+    const isTable = parsedMeta.type === 'table' || order.order_type === 'table' || Boolean(parsedMeta.tableNumber || order.table_number);
+    const orderType = isTable ? 'table' : (parsedMeta.type === 'delivery' ? 'delivery' : 'pickup');
 
     // Populate Customer info
-    if ($('pos-customer-name')) $('pos-customer-name').value = order.customer_name || 'Customer';
+    if ($('pos-customer-name')) $('pos-customer-name').value = order.customer_name || 'Walk-in';
     if ($('pos-customer-phone')) $('pos-customer-phone').value = order.customer_phone || '';
 
     // Set Order Type
     posOrderType = orderType;
     document.querySelectorAll('.pos-type-btn').forEach(b => {
       const isSelected = b.dataset.type === orderType;
-      b.classList.toggle('active', isSelected);
-      b.classList.toggle('adm-btn-primary', isSelected);
-      b.classList.toggle('adm-btn-outline', !isSelected);
+      b.className = 'pos-type-btn adm-btn ' + (isSelected ? 'adm-btn-primary' : 'adm-btn-outline');
     });
 
     const tableField = $('pos-table-field');
@@ -3670,28 +3546,35 @@ function createBillForOrder(orderId) {
     }
 
     if ($('pos-notes')) {
-      $('pos-notes').value = order.notes ? `[Ref #${order.order_number}] ${parsedMeta.notes || ''}`.trim() : '';
+      $('pos-notes').value = (parsedMeta.notes || '').replace(/\[Ref\s*#\d+\]/gi, '').trim();
     }
 
-    // Load strictly food items and base unit prices into POS Cart (excluding any tax/fee entries)
+    // Load items into POS Cart
+    const items = getItemsForOrder(order.id);
     const foodOnlyItems = (items || []).filter(isFoodDishItem);
     if (foodOnlyItems.length > 0) {
-      posCart = foodOnlyItems.map(i => ({
-        id: i.menu_item_id || null,
-        name: i.item_name || i.name,
-        price: parseFloat(i.unit_price || i.price || (i.line_total / (i.quantity || 1)) || 0),
-        qty: parseInt(i.quantity || i.qty || 1)
-      }));
+      posCart = foodOnlyItems.map(i => {
+        const parsed = parseItemNameAndNotes(i.item_name || i.name);
+        const unitP = Number(i.unit_price ?? i.price ?? (i.quantity > 0 ? (i.line_total / i.quantity) : 0) ?? 0);
+        return {
+          id: i.menu_item_id || null,
+          name: parsed.name || i.item_name || i.name,
+          price: unitP,
+          qty: parseInt(i.quantity || i.qty || 1, 10),
+          notes: i.notes || parsed.notes || ''
+        };
+      });
     } else {
       posCart = [{
         id: null,
         name: `Order #${formatDailyOrderNumber(order)} (${isTable ? 'Table Order' : 'Website Order'})`,
         price: parseFloat(order.total_amount || 0),
-        qty: 1
+        qty: 1,
+        notes: ''
       }];
     }
 
-    // Set discount percentage if present in order notes
+    // Set discount percentage if present
     if (parsedMeta.discountPct && $('pos-discount-pct')) {
       $('pos-discount-pct').value = parsedMeta.discountPct;
     } else if (parsedMeta.discountAmt && $('pos-discount-pct')) {
@@ -3707,8 +3590,18 @@ function createBillForOrder(orderId) {
     renderCategoryPills();
     renderFoodGrid();
 
-    showAdminToast(`Loaded Order #${formatDailyOrderNumber(order)} into POS Billing with ${posCart.length} item(s)! 🧾`, 'success');
-  }, 120);
+    showAdminToast(`Loaded Order #${formatDailyOrderNumber(order)} into POS Billing with ${posCart.length} item(s)! 🧾`, 'info');
+  }, 100);
+}
+window.loadOrderIntoPos = loadOrderIntoPos;
+
+function createBillForOrder(orderId) {
+  const order = orders.find(o => String(o.id) === String(orderId));
+  if (!order) {
+    showAdminToast('Order not found.', 'error');
+    return;
+  }
+  loadOrderIntoPos(order);
 }
 
 function exportOrdersListCSV() {
@@ -11215,6 +11108,7 @@ async function initProfilePanel() {
 // ════════════════════════════════════════════════════════
 
 let posCart = []; // [{ id, name, price, qty }]
+let posEditingOrderId = null;
 let posOrderType = 'table';
 let posBillingMounted = false;
 let allFoodsCache = [];
@@ -11655,6 +11549,86 @@ async function buildOrderFromPos(action) {
   notesStr += ` [PAYMENT: ${payMode}] [CGST: ${t.cgstRate}%] [SGST: ${t.sgstRate}%]`;
   if (notes) notesStr += ` ${notes}`;
 
+  if (posEditingOrderId) {
+    const existingOrder = orders.find(o => String(o.id) === String(posEditingOrderId));
+    if (existingOrder) {
+      const updateData = {
+        customer_name: name,
+        customer_phone: phone,
+        order_type: posOrderType,
+        table_number: posOrderType === 'table' ? (parseInt(String(tableNum).replace(/\D/g, ''), 10) || null) : null,
+        total_amount: t.grand,
+        status: action === 'hold' ? 'hold' : (action === 'bill' ? 'delivered' : 'confirmed'),
+        payment_status: payMode === 'pay_later' ? 'unpaid' : (action === 'hold' ? 'unpaid' : 'paid'),
+        notes: notesStr,
+        updated_at: new Date().toISOString()
+      };
+
+      try {
+        const { data: updatedOrder, error: updateErr } = await insforge.database
+          .from('orders')
+          .update(updateData)
+          .eq('id', posEditingOrderId)
+          .select()
+          .single();
+        if (updateErr) throw updateErr;
+
+        // Delete previous order items and insert updated ones
+        await insforge.database.from('order_items').delete().eq('order_id', posEditingOrderId);
+
+        const itemRows = posCart.map(i => ({
+          order_id: posEditingOrderId,
+          item_name: i.notes ? `${i.name} [Note: ${i.notes}]` : i.name,
+          quantity: i.qty,
+          unit_price: i.price,
+          line_total: i.price * i.qty,
+          menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null,
+        }));
+        const { data: insertedItems, error: itemsErr } = await insforge.database.from('order_items').insert(itemRows).select();
+        if (itemsErr) throw itemsErr;
+
+        Object.assign(existingOrder, updatedOrder || updateData);
+        orderItems = orderItems.filter(i => String(i.order_id) !== String(posEditingOrderId));
+        if (insertedItems && insertedItems.length > 0) {
+          orderItems.push(...insertedItems);
+        } else {
+          orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
+        }
+
+        posEditingOrderId = null;
+
+        // Refresh UI
+        renderBillingQuickCards();
+        renderBillingTotalBills();
+        renderHoldOrdersPanel();
+        renderOverview();
+        renderOrdersTable();
+        renderClosedOrdersPanel();
+
+        if ((existingOrder.status === 'delivered' || action === 'bill') && isGoogleSheetAutoSyncEnabled()) {
+          syncOrderToGoogleSheet(existingOrder).catch(e => console.warn('[Google Sheet] POS bill auto-sync error:', e));
+        }
+
+        return {
+          order: existingOrder,
+          items: posCart.map(i => ({
+            item_name: i.name,
+            name: i.name,
+            quantity: i.qty,
+            qty: i.qty,
+            unit_price: i.price,
+            price: i.price,
+            line_total: i.price * i.qty,
+            notes: i.notes || ''
+          }))
+        };
+      } catch(e) {
+        showAdminToast('Failed to update order: ' + e.message, 'error');
+        return null;
+      }
+    }
+  }
+
   const nextDailyNum = getTodayDailyOrderNumber();
   const orderData = {
     order_number: nextDailyNum,
@@ -11682,17 +11656,22 @@ async function buildOrderFromPos(action) {
       line_total: i.price * i.qty,
       menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null,
     }));
-    const { error: itemsErr } = await insforge.database.from('order_items').insert(itemRows);
+    const { data: insertedItems, error: itemsErr } = await insforge.database.from('order_items').insert(itemRows).select();
     if (itemsErr) throw itemsErr;
 
     orders.unshift(newOrder);
-    orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
+    if (insertedItems && insertedItems.length > 0) {
+      orderItems.push(...insertedItems);
+    } else {
+      orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
+    }
 
     // Refresh UI
     renderBillingQuickCards();
     renderBillingTotalBills();
     renderHoldOrdersPanel();
     renderOverview();
+    renderOrdersTable();
 
     // Auto-sync billed / closed POS order to Google Sheets
     if ((newOrder.status === 'delivered' || action === 'bill') && isGoogleSheetAutoSyncEnabled()) {
@@ -12038,16 +12017,25 @@ let holdModalContext = {
 
 async function openHoldEditModal(idOrTableNum, initialTab = 'edit') {
   const tableSessions = getActiveTableSessions();
-  const foundSession = typeof idOrTableNum === 'number' || (!isNaN(parseInt(idOrTableNum, 10)) && tableSessions.some(s => s.tableNumber === parseInt(idOrTableNum, 10)))
-    ? tableSessions.find(s => s.tableNumber === parseInt(idOrTableNum, 10))
-    : null;
+  const directOrder = orders.find(o => String(o.id) === String(idOrTableNum));
+  let foundSession = null;
+
+  if (directOrder) {
+    const meta = parseNotesMetadata(directOrder.notes, directOrder);
+    const tNum = parseInt(String(meta.tableNumber || directOrder.table_number || '').replace(/\D/g, ''), 10);
+    if (tNum) {
+      foundSession = tableSessions.find(s => s.tableNumber === tNum);
+    }
+  } else if (typeof idOrTableNum === 'number' || (!isNaN(parseInt(idOrTableNum, 10)) && tableSessions.some(s => s.tableNumber === parseInt(idOrTableNum, 10)))) {
+    foundSession = tableSessions.find(s => s.tableNumber === parseInt(idOrTableNum, 10));
+  }
 
   holdModalContext = {
     mode: foundSession ? 'table' : 'order',
-    orderId: foundSession ? (foundSession.orders[0]?.id || null) : String(idOrTableNum),
+    orderId: foundSession ? (foundSession.orders[0]?.id || null) : (directOrder ? directOrder.id : String(idOrTableNum)),
     tableNumber: foundSession ? foundSession.tableNumber : null,
     activeTab: initialTab || 'edit',
-    ordersInSession: foundSession ? foundSession.orders : (orders.filter(o => String(o.id) === String(idOrTableNum))),
+    ordersInSession: foundSession ? foundSession.orders : (directOrder ? [directOrder] : orders.filter(o => String(o.id) === String(idOrTableNum))),
     existingItems: [],
     newItemsCart: [],
     activeCat: 'all'
@@ -12084,16 +12072,20 @@ async function openHoldEditModal(idOrTableNum, initialTab = 'edit') {
 
   // Filter food items and map to editable existing items
   const cleanItems = (rawItems || []).filter(i => i && !/delivery|discount|tax|fee/i.test(i.item_name || i.name || ''));
-  holdModalContext.existingItems = cleanItems.map(it => ({
-    id: it.id,
-    order_id: it.order_id,
-    name: it.item_name || it.name,
-    price: Number(it.unit_price || it.price || 0),
-    qty: Number(it.quantity || it.qty || 1),
-    originalQty: Number(it.quantity || it.qty || 1),
-    isCancelled: false,
-    notes: it.notes || ''
-  }));
+  holdModalContext.existingItems = cleanItems.map(it => {
+    const unitP = Number(it.unit_price ?? it.price ?? (it.quantity > 0 ? (it.line_total / it.quantity) : 0) ?? 0);
+    const q = Number(it.quantity ?? it.qty ?? 1);
+    return {
+      id: it.id,
+      order_id: it.order_id,
+      name: it.item_name || it.name,
+      price: unitP,
+      qty: q,
+      originalQty: q,
+      isCancelled: false,
+      notes: it.notes || ''
+    };
+  });
 
   // Update Modal Title & Subtitle
   const titleEl = $('hold-modal-title');
@@ -12739,8 +12731,9 @@ function renderBillingTotalBills() {
 
     const actionsHtml = isHold
       ? `
-        <button type="button" class="adm-btn adm-btn-outline adm-btn-sm billing-row-add-items-btn" data-id="${o.id}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;" title="Add Items to Table">✏️ Add</button>
-        <button type="button" class="adm-btn adm-btn-primary adm-btn-sm billing-row-settle-btn" data-id="${o.id}" style="background:#10b981;border-color:#10b981;" title="Print Final Bill & Settle / Close">🧾 Final Bill</button>
+        <button type="button" class="adm-btn adm-btn-outline adm-btn-sm billing-row-edit-hold-btn" data-id="${o.id}" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;font-weight:700;" title="Edit / Cancel Dishes">✏️ Edit</button>
+        <button type="button" class="adm-btn adm-btn-outline adm-btn-sm billing-row-pos-btn" data-id="${o.id}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;font-weight:700;" title="Resume in POS Cart">🛒 POS</button>
+        <button type="button" class="adm-btn adm-btn-primary adm-btn-sm billing-row-settle-btn" data-id="${o.id}" style="background:#10b981;border-color:#10b981;font-weight:700;" title="Print Final Bill & Settle / Close">🧾 Final Bill</button>
         <button type="button" class="adm-btn adm-btn-outline adm-btn-sm billing-row-kot-btn" data-id="${o.id}" style="background:#fff3e0;border-color:#f59e0b;color:#b45309;" title="Reprint KOT">🗒️ KOT</button>
       `
       : `
@@ -12773,6 +12766,21 @@ function renderBillingTotalBills() {
   }).join('');
 
   // Wire row actions
+  tbody.querySelectorAll('.billing-row-edit-hold-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const orderId = btn.dataset.id;
+      if (orderId) openHoldEditModal(orderId, 'edit');
+    });
+  });
+
+  tbody.querySelectorAll('.billing-row-pos-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const orderId = btn.dataset.id;
+      const order = orders.find(o => String(o.id) === String(orderId));
+      if (order) loadOrderIntoPos(order);
+    });
+  });
+
   tbody.querySelectorAll('.billing-row-view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const orderId = btn.dataset.id;
@@ -12789,14 +12797,14 @@ function renderBillingTotalBills() {
   tbody.querySelectorAll('.billing-row-settle-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const orderId = btn.dataset.id;
-      const order = orders.find(o => o.id === orderId);
+      const order = orders.find(o => String(o.id) === String(orderId));
       if (!order) return;
       if (!confirm(`Print final bill for Order #${formatDailyOrderNumber(order)} and mark as completed / closed?`)) return;
       await printOrderReceiptWithTax(order);
       try {
         const { error } = await insforge.database.from('orders').update({ status: 'delivered', payment_status: 'paid' }).eq('id', orderId);
         if (error) throw error;
-        const o = orders.find(x => x.id === orderId);
+        const o = orders.find(x => String(x.id) === String(orderId));
         if (o) { o.status = 'delivered'; o.payment_status = 'paid'; }
         showAdminToast(`Order #${formatDailyOrderNumber(order)} billed, settled & closed! ✅`, 'success');
         if (isGoogleSheetAutoSyncEnabled()) {
@@ -12811,24 +12819,9 @@ function renderBillingTotalBills() {
     });
   });
 
-  tbody.querySelectorAll('.billing-row-add-items-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const orderId = btn.dataset.id;
-      switchPanel('hold-orders');
-      setTimeout(() => {
-        const card = document.querySelector(`.adm-hold-card[data-order-id="${orderId}"]`);
-        if (card) {
-          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          const addBtn = card.querySelector('.hold-add-items-btn');
-          if (addBtn) addBtn.click();
-        }
-      }, 150);
-    });
-  });
-
   tbody.querySelectorAll('.billing-row-print-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const order = orders.find(o => o.id === btn.dataset.id);
+      const order = orders.find(o => String(o.id) === String(btn.dataset.id));
       if (!order) return;
       await printOrderReceiptWithTax(order);
     });
@@ -12836,7 +12829,7 @@ function renderBillingTotalBills() {
 
   tbody.querySelectorAll('.billing-row-kot-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const order = orders.find(o => o.id === btn.dataset.id);
+      const order = orders.find(o => String(o.id) === String(btn.dataset.id));
       if (!order) return;
       const items = getItemsForOrder(order.id);
       await printKOT(order, items);
@@ -12974,6 +12967,7 @@ async function initBillingPanel() {
   const closePosBtn = $('pos-close-btn');
 
   newBtn?.addEventListener('click', async () => {
+    posEditingOrderId = null;
     posCart = [];
     posActiveCat = 'all';
     clearPosSelectedPlace();
@@ -13011,6 +13005,7 @@ async function initBillingPanel() {
   });
 
   closePosBtn?.addEventListener('click', () => {
+    posEditingOrderId = null;
     if (posEl) posEl.style.display = 'none';
     if (totalSection) totalSection.style.display = 'block';
     if (detailEl) detailEl.style.display = 'none';
