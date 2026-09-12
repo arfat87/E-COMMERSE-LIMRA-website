@@ -86,7 +86,8 @@ export default async function handler(req, res) {
     const { data: orderItems } = await supabase
       .from("order_items")
       .select("item_name, quantity, line_total")
-      .limit(5000);
+      .order("created_at", { ascending: false })
+      .limit(1000);
 
     const dishMap = {};
     for (const it of orderItems || []) {

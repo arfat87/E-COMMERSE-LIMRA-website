@@ -1303,6 +1303,35 @@ function computeOrderTaxDetails(order, optionalItemsList) {
   };
 }
 
+function getEffectiveOrderTotal(order) {
+  if (!order) return 0;
+  const direct = Number(order.total_amount);
+  if (!isNaN(direct) && direct > 0) return direct;
+
+  // Fallback: calculate from line items and notes tax
+  try {
+    const td = computeOrderTaxDetails(order);
+    if (td && td.grandTotal > 0) return td.grandTotal;
+  } catch (e) {}
+
+  const items = getItemsForOrder(order.id);
+  if (items && items.length > 0) {
+    const sub = items.reduce((s, i) => s + Number(i.line_total || ((i.unit_price || i.price || 0) * (i.quantity || i.qty || 1)) || 0), 0);
+    const meta = parseNotesMetadata(order.notes, order);
+    const s = getBillSettings();
+    const cgstRate = meta.cgstRate ?? s.cgstRate ?? 2.5;
+    const sgstRate = meta.sgstRate ?? s.sgstRate ?? 2.5;
+    const delCharge = meta.deliveryFee || 0;
+    const discPct = meta.discountPct || 0;
+    const discAmt = meta.discountAmt || (sub * (discPct / 100));
+    const taxable = Math.max(0, sub - discAmt);
+    const tax = taxable * ((cgstRate + sgstRate) / 100);
+    return Math.round((taxable + tax + delCharge) * 100) / 100;
+  }
+
+  return 0;
+}
+
 function getGlobalSearch() {
   return ($('global-search')?.value || '').toLowerCase().trim();
 }
@@ -1345,10 +1374,32 @@ async function checkAdminAccess() {
   return false;
 }
 
+async function fetchAllTableRows(table, select = '*', orderCol = 'created_at', ascending = false) {
+  const pageSize = 1000;
+  let allRows = [];
+  let from = 0;
+  while (true) {
+    let query = insforge.database
+      .from(table)
+      .select(select)
+      .range(from, from + pageSize - 1);
+    if (orderCol) {
+      query = query.order(orderCol, { ascending });
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allRows.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return allRows;
+}
+
 async function loadData() {
-  const [ordersRes, itemsRes, bookingsRes, notifsRes, placesRes, combosRes, customDishesRes, overridesRes] = await Promise.all([
-    insforge.database.from('orders').select('*').order('created_at', { ascending: false }),
-    insforge.database.from('order_items').select('*'),
+  const [fetchedOrders, fetchedItems, bookingsRes, notifsRes, placesRes, combosRes, customDishesRes, overridesRes] = await Promise.all([
+    fetchAllTableRows('orders', '*', 'created_at', false),
+    fetchAllTableRows('order_items', '*', 'created_at', false),
     insforge.database.from('bookings').select('*').order('created_at', { ascending: false }),
     insforge.database.from('notifications').select('*').order('created_at', { ascending: false }).limit(50),
     insforge.database.from('delivery_areas').select('*').order('name', { ascending: true }),
@@ -1357,8 +1408,6 @@ async function loadData() {
     getMenuOverrides().catch(() => [])
   ]);
   
-  if (ordersRes.error) throw ordersRes.error;
-  if (itemsRes.error) throw itemsRes.error;
   if (bookingsRes.error) throw bookingsRes.error;
   if (notifsRes.error) throw notifsRes.error;
 
@@ -1372,7 +1421,7 @@ async function loadData() {
     activeMenuOverrides = overridesRes;
   }
 
-  const newOrders = ordersRes.data || [];
+  const newOrders = fetchedOrders || [];
   const newBookings = bookingsRes.data || [];
   const fetchedNotifs = notifsRes.data || [];
 
@@ -1519,7 +1568,7 @@ async function loadData() {
   renderNotifications();
 
   orders = newOrders;
-  orderItems = itemsRes.data || [];
+  orderItems = fetchedItems || [];
   bookings = newBookings;
   adminPlaces = (placesRes && placesRes.data) || [];
   $('last-updated').textContent = `Updated ${new Date().toLocaleTimeString('en-IN')}`;
@@ -1657,7 +1706,7 @@ function getOrdersByDayOfWeek() {
 function getRevenueByMonth() {
   const rev = new Array(12).fill(0);
   orders.filter(o => o.status !== 'cancelled').forEach(o => {
-    rev[new Date(o.created_at).getMonth()] += Number(o.total_amount);
+    rev[new Date(o.created_at).getMonth()] += getEffectiveOrderTotal(o);
   });
   return rev;
 }
@@ -1676,7 +1725,7 @@ function getBookingsByDayOfWeek() {
 function renderStats() {
   const pending = orders.filter(o => o.status === 'pending').length;
   const delivered = orders.filter(o => o.status === 'delivered').length;
-  const revenue = orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + Number(o.total_amount), 0);
+  const revenue = orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
 
   // New payment stats calculations
   const paidCount = orders.filter(o => o.payment_status === 'paid').length;
@@ -1686,9 +1735,9 @@ function renderStats() {
   const todayStr = todayDate.toDateString();
   const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === todayStr);
 
-  const todayGrossRev = todayOrders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + Number(o.total_amount || 0), 0);
-  const todayPaidRev = todayOrders.filter(o => o.payment_status === 'paid' && o.status !== 'cancelled').reduce((s, o) => s + Number(o.total_amount || 0), 0);
-  const todayPendingRev = todayOrders.filter(o => (o.payment_status === 'unpaid' || !o.payment_status) && o.status !== 'cancelled').reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  const todayGrossRev = todayOrders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
+  const todayPaidRev = todayOrders.filter(o => o.payment_status === 'paid' && o.status !== 'cancelled').reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
+  const todayPendingRev = todayOrders.filter(o => (o.payment_status === 'unpaid' || !o.payment_status) && o.status !== 'cancelled').reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
 
   const todayDineIn = todayOrders.filter(o => {
     const meta = parseNotesMetadata(o.notes, o);
@@ -1698,7 +1747,7 @@ function renderStats() {
 
   // Active Hold Orders (in kitchen / table)
   const heldOrders = orders.filter(o => o.status === 'hold');
-  const heldTotal = heldOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  const heldTotal = heldOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
 
   // Digital vs Cash today
   let todayDigital = 0;
@@ -1706,10 +1755,11 @@ function renderStats() {
   todayOrders.filter(o => o.payment_status === 'paid').forEach(o => {
     const meta = parseNotesMetadata(o.notes, o);
     const mode = (meta.paymentMode || o.payment_mode || meta.payment || '').toLowerCase();
+    const amt = getEffectiveOrderTotal(o);
     if (mode.includes('upi') || mode.includes('card') || mode.includes('online')) {
-      todayDigital += Number(o.total_amount || 0);
+      todayDigital += amt;
     } else {
-      todayCash += Number(o.total_amount || 0);
+      todayCash += amt;
     }
   });
 
@@ -1729,15 +1779,15 @@ function renderStats() {
   // Standard 8 stats
   const pendingPayments = orders
     .filter(o => o.payment_status === 'unpaid' || !o.payment_status)
-    .reduce((s, o) => s + Number(o.total_amount), 0);
+    .reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
 
   const collectedRev = orders
     .filter(o => o.payment_status === 'paid' && o.status !== 'cancelled')
-    .reduce((s, o) => s + Number(o.total_amount), 0);
+    .reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
 
   const outstandingRev = orders
     .filter(o => (o.payment_status === 'unpaid' || !o.payment_status) && o.status !== 'cancelled')
-    .reduce((s, o) => s + Number(o.total_amount), 0);
+    .reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
 
   if ($('stat-total-orders')) $('stat-total-orders').textContent = orders.length;
   if ($('stat-revenue')) $('stat-revenue').textContent = fmtMoney(revenue);
@@ -1755,8 +1805,8 @@ function renderStats() {
 
   orders.filter(o => o.status !== 'cancelled').forEach(o => {
     const meta = parseNotesMetadata(o.notes, o);
-    const deliveryCharge = meta.charge ? parseFloat(meta.charge.replace(/[^\d.]/g, '')) || 0 : 0;
-    const totalAmt = parseFloat(o.total_amount) || 0;
+    const deliveryCharge = meta.charge ? parseFloat(meta.charge.replace(/[^\d.]/g, '')) || 0 : (meta.deliveryFee || 0);
+    const totalAmt = getEffectiveOrderTotal(o);
     const subtotal = Math.max(0, totalAmt - deliveryCharge) / 1.05;
     const gst = subtotal * 0.05;
 
@@ -2851,9 +2901,9 @@ function renderDashboardDateFilter() {
 
   const validOrders = filtered.filter(o => o.status !== 'cancelled');
   const totalCount = filtered.length;
-  const totalAmount = validOrders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
-  const paidAmount = validOrders.filter(o => o.payment_status === 'paid').reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
-  const unpaidAmount = validOrders.filter(o => o.payment_status === 'unpaid' || !o.payment_status).reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
+  const totalAmount = validOrders.reduce((sum, o) => sum + getEffectiveOrderTotal(o), 0);
+  const paidAmount = validOrders.filter(o => o.payment_status === 'paid').reduce((sum, o) => sum + getEffectiveOrderTotal(o), 0);
+  const unpaidAmount = validOrders.filter(o => o.payment_status === 'unpaid' || !o.payment_status).reduce((sum, o) => sum + getEffectiveOrderTotal(o), 0);
   const onlineCount = filtered.filter(o => o.order_type !== 'table').length;
   const tableCount = filtered.filter(o => o.order_type === 'table').length;
 
@@ -2887,7 +2937,7 @@ function renderDashboardDateFilter() {
             <td><strong>#${order.order_number}</strong></td>
             <td><strong>${escapeHtml(order.customer_name)}</strong> <br/><span class="adm-info-muted" style="font-size: 11px;">${order.customer_phone}</span></td>
             <td><span class="adm-badge" style="font-size: 11px;">${typeText}</span></td>
-            <td><strong style="color: var(--adm-green);">${fmtMoney(order.total_amount)}</strong></td>
+            <td><strong style="color: var(--adm-green);">${fmtMoney(getEffectiveOrderTotal(order))}</strong></td>
             <td>${statusPill(order.status, parsedMeta.type === 'table')}</td>
             <td>${paymentStatusPill(order.payment_status || 'unpaid')}</td>
             <td>${dateStr} <br/><span class="adm-info-muted" style="font-size: 11px;">${timeStr}</span></td>
@@ -4826,7 +4876,12 @@ async function createFinalBillForTableSession(tableNum) {
   const s = getBillSettings();
   const cgst = subtotal * (s.cgstRate / 100);
   const sgst = subtotal * (s.sgstRate / 100);
-  const grandTotal = subtotal + cgst + sgst;
+  let grandTotal = subtotal + cgst + sgst;
+  if (grandTotal <= 0 && Number(session.totalAmount || 0) > 0) {
+    grandTotal = Number(session.totalAmount);
+  } else if (grandTotal <= 0 && Number(primaryOrder.total_amount || 0) > 0) {
+    grandTotal = Number(primaryOrder.total_amount);
+  }
 
   const primaryOrder = session.orders[0];
   const kotNumbersText = session.kots.map(k => `#${k.orderNumber}`).join(' + ');
@@ -12586,7 +12641,10 @@ async function saveHoldOrderCorrections(shouldPrintKitchenSlip = false) {
       const curOrdItems = orderItems.filter(i => String(i.order_id) === String(ord.id) && !/delivery|discount|tax|fee/i.test(i.item_name || i.name || ''));
       const sub = curOrdItems.reduce((sum, i) => sum + Number(i.line_total || ((i.price || i.unit_price) * (i.qty || i.quantity)) || 0), 0);
       const taxAmt = sub * (s.cgstRate + s.sgstRate) / 100;
-      const newTotal = sub + taxAmt;
+      let newTotal = sub + taxAmt;
+      if (newTotal <= 0 && curOrdItems.length === 0 && Number(ord.total_amount || 0) > 0) {
+        newTotal = Number(ord.total_amount);
+      }
 
       await insforge.database.from('orders').update({ total_amount: newTotal }).eq('id', ord.id);
       ord.total_amount = newTotal;
