@@ -1562,7 +1562,13 @@ async function loadData() {
   orders = newOrders;
   orderItems = fetchedItems || [];
   bookings = newBookings;
-  adminPlaces = (placesRes && placesRes.data) || [];
+  adminPlaces = ((placesRes && placesRes.data) || []).map(p => ({
+    ...p,
+    id: String(p.id),
+    name: p.name || '',
+    charge: Number(p.delivery_fee ?? p.charge ?? 0),
+    delivery_fee: Number(p.delivery_fee ?? p.charge ?? 0)
+  }));
   $('last-updated').textContent = `Updated ${new Date().toLocaleTimeString('en-IN')}`;
 }
 
@@ -9359,12 +9365,18 @@ async function loadAndRenderPlaces() {
   try {
     const res = await insforge.database.from('delivery_areas').select('*').order('name', { ascending: true });
     if (res.error) throw res.error;
-    adminPlaces = res.data || [];
+    adminPlaces = (res.data || []).map(p => ({
+      ...p,
+      id: String(p.id),
+      name: p.name || '',
+      charge: Number(p.delivery_fee ?? p.charge ?? 0),
+      delivery_fee: Number(p.delivery_fee ?? p.charge ?? 0)
+    }));
     renderPlacesTable();
     if (typeof renderPosPlaceChips === 'function') renderPosPlaceChips();
   } catch (err) {
     console.error('Failed to load places:', err);
-    showAdminToast('Failed to load delivery places.', 'error');
+    showAdminToast('Failed to load delivery places: ' + (err.message || err), 'error');
   }
 }
 
@@ -9373,25 +9385,26 @@ function renderPlacesTable() {
   if (!tbody) return;
   
   const searchQuery = ($('places-search')?.value || '').toLowerCase().trim();
-  const filtered = adminPlaces.filter(p => p.name.toLowerCase().includes(searchQuery));
+  const filtered = adminPlaces.filter(p => (p.name || '').toLowerCase().includes(searchQuery));
   
   const countSpan = $('places-count');
   if (countSpan) countSpan.textContent = adminPlaces.length;
   
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="3" class="adm-empty">No places found</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3" class="adm-empty" style="text-align:center;padding:2rem;color:var(--adm-muted);">No places found</td></tr>`;
     return;
   }
   
   tbody.innerHTML = filtered.map(p => {
+    const feeVal = Number(p.delivery_fee ?? p.charge ?? 0);
     return `
       <tr data-place-id="${p.id}">
-        <td><strong style="color:var(--adm-text)">${escapeHtml(p.name)}</strong></td>
-        <td style="text-align:right; font-weight:600">₹${Number(p.charge)}</td>
+        <td><strong style="color:var(--adm-text);font-size:.9rem;">📍 ${escapeHtml(p.name)}</strong></td>
+        <td style="text-align:right; font-weight:700; font-size:.9rem; color:#059669;">₹${feeVal.toFixed(0)}</td>
         <td style="text-align:center;">
-          <div style="display:flex; gap:0.5rem; justify-content:center;">
-            <button class="adm-btn adm-btn-primary adm-btn-sm edit-place-btn" data-id="${p.id}">Edit</button>
-            <button class="adm-btn adm-btn-danger adm-btn-sm delete-place-btn" data-id="${p.id}">Delete</button>
+          <div style="display:flex; gap:0.5rem; justify-content:center; align-items:center;">
+            <button type="button" class="adm-btn adm-btn-primary adm-btn-sm edit-place-btn" data-id="${p.id}" style="padding:.28rem .7rem;font-size:.78rem;font-weight:600;">Edit</button>
+            <button type="button" class="adm-btn adm-btn-danger adm-btn-sm delete-place-btn" data-id="${p.id}" style="padding:.28rem .7rem;font-size:.78rem;font-weight:600;">Delete</button>
           </div>
         </td>
       </tr>
@@ -9401,8 +9414,8 @@ function renderPlacesTable() {
   // Bind actions
   tbody.querySelectorAll('.edit-place-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const id = parseInt(btn.dataset.id, 10);
-      const place = adminPlaces.find(p => p.id === id);
+      const id = btn.dataset.id;
+      const place = adminPlaces.find(p => String(p.id) === String(id));
       if (place) {
         openPlaceModal(place);
       }
@@ -9411,16 +9424,17 @@ function renderPlacesTable() {
   
   tbody.querySelectorAll('.delete-place-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const id = parseInt(btn.dataset.id, 10);
-      const place = adminPlaces.find(p => p.id === id);
+      const id = btn.dataset.id;
+      const place = adminPlaces.find(p => String(p.id) === String(id));
       if (place && confirm(`Are you sure you want to delete place "${place.name}"?`)) {
         try {
           const res = await insforge.database.from('delivery_areas').delete().eq('id', id);
           if (res.error) throw res.error;
-          showAdminToast('Place deleted successfully.', 'success');
-          loadAndRenderPlaces();
+          showAdminToast(`Place "${place.name}" deleted successfully.`, 'success');
+          await loadAndRenderPlaces();
         } catch (err) {
-          alert('Failed to delete place: ' + err.message);
+          console.error('Failed to delete place:', err);
+          alert('Failed to delete place: ' + (err.message || err));
         }
       }
     });
@@ -9437,18 +9451,19 @@ function openPlaceModal(place = null) {
   if (!modal) return;
   
   if (place) {
-    title.textContent = 'Edit Place';
-    idInput.value = place.id;
-    nameInput.value = place.name;
-    chargeInput.value = place.charge;
+    if (title) title.textContent = 'Edit Delivery Place';
+    if (idInput) idInput.value = String(place.id);
+    if (nameInput) nameInput.value = place.name;
+    if (chargeInput) chargeInput.value = Number(place.delivery_fee ?? place.charge ?? 0);
   } else {
-    title.textContent = 'Add New Place';
-    idInput.value = '';
-    nameInput.value = '';
-    chargeInput.value = '';
+    if (title) title.textContent = 'Add New Delivery Place';
+    if (idInput) idInput.value = '';
+    if (nameInput) nameInput.value = '';
+    if (chargeInput) chargeInput.value = '';
   }
   
   modal.classList.add('active');
+  nameInput?.focus();
 }
 
 function setupPlaceModalListeners() {
@@ -9463,16 +9478,22 @@ function setupPlaceModalListeners() {
     modal.classList.remove('active');
   });
   
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.classList.remove('active');
+    }
+  });
+  
   searchInput?.addEventListener('input', () => {
     renderPlacesTable();
   });
   
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const idVal = $('place-modal-id').value;
-    const id = idVal ? parseInt(idVal, 10) : null;
-    const name = $('place-modal-name').value.trim();
-    const charge = parseFloat($('place-modal-charge').value);
+    const idVal = ($('place-modal-id')?.value || '').trim();
+    const id = idVal || null;
+    const name = ($('place-modal-name')?.value || '').trim();
+    const charge = parseFloat($('place-modal-charge')?.value);
     
     if (!name) {
       alert('Please enter a place name');
@@ -9484,11 +9505,17 @@ function setupPlaceModalListeners() {
     }
     
     const saveBtn = form.querySelector('button[type="submit"]');
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving...';
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+    }
     
     try {
-      const payload = { name, charge };
+      const payload = {
+        name,
+        delivery_fee: charge,
+        active: true
+      };
       let res;
       if (id) {
         res = await insforge.database.from('delivery_areas').update(payload).eq('id', id);
@@ -9497,14 +9524,17 @@ function setupPlaceModalListeners() {
       }
       
       if (res.error) throw res.error;
-      showAdminToast('Place saved successfully.', 'success');
+      showAdminToast(`Place "${name}" saved successfully!`, 'success');
       modal.classList.remove('active');
-      loadAndRenderPlaces();
+      await loadAndRenderPlaces();
     } catch (err) {
-      alert('Failed to save place: ' + err.message);
+      console.error('Failed to save place:', err);
+      alert('Failed to save place: ' + (err.message || err));
     } finally {
-      saveBtn.disabled = false;
-      saveBtn.textContent = 'Save Place';
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Place';
+      }
     }
   });
 }

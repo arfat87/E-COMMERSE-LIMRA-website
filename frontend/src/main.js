@@ -1799,11 +1799,16 @@ async function loadDeliveryAreas() {
   try {
     const { data, error } = await insforge.database.from('delivery_areas').select('*').order('name', { ascending: true });
     if (!error && data && data.length > 0) {
-      databaseDeliveryAreas = data;
+      databaseDeliveryAreas = data.map(item => ({
+        ...item,
+        id: String(item.id),
+        charge: Number(item.delivery_fee ?? item.charge ?? 0),
+        delivery_fee: Number(item.delivery_fee ?? item.charge ?? 0)
+      }));
       
       // Update AREA_DELIVERY_CHARGES dynamically
       data.forEach(item => {
-        AREA_DELIVERY_CHARGES[item.name.toLowerCase()] = Number(item.charge);
+        AREA_DELIVERY_CHARGES[item.name.toLowerCase()] = Number(item.delivery_fee ?? item.charge ?? 0);
       });
       
       // Update index.html dropdown options
