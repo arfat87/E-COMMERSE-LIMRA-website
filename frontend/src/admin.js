@@ -5316,11 +5316,14 @@ function renderPosHoldOrdersChips(containerEl) {
 // ════════════════════════════════════════════════════════
 // 📊 ITEMS REPORT & SALES PERFORMANCE ENGINE
 // ════════════════════════════════════════════════════════
+// 📊 ITEMS REPORT & SALES PERFORMANCE ENGINE
+// ════════════════════════════════════════════════════════
 
 let itemReportDateFilter = 'all';
 let itemReportCustomStart = null;
 let itemReportCustomEnd = null;
 let itemReportCategoryFilter = 'all';
+let itemReportScopeFilter = 'sold';
 let itemReportTypeFilter = 'all';
 let itemReportSort = 'revenue_desc';
 let itemReportSearch = '';
@@ -5334,7 +5337,8 @@ function computeItemSalesReport() {
   yDate.setDate(yDate.getDate() - 1);
   const yestStr = getLocalDateString(yDate);
 
-  let eligibleOrders = orders.filter(o => o.status !== 'cancelled');
+  // Exclude cancelled and hold orders so only genuine sales are analyzed
+  let eligibleOrders = orders.filter(o => o.status !== 'cancelled' && o.status !== 'hold');
 
   if (itemReportDateFilter === 'today') {
     eligibleOrders = eligibleOrders.filter(o => getLocalDateString(o.created_at) === todayStr);
@@ -5357,22 +5361,25 @@ function computeItemSalesReport() {
     });
   }
 
-  // Filter by Order Type
+  // Filter by Order Type (table, delivery, pickup)
   if (itemReportTypeFilter !== 'all') {
     eligibleOrders = eligibleOrders.filter(o => {
       const parsed = parseNotesMetadata(o.notes, o);
+      const isTable = parsed.type === 'table' || o.order_type === 'table' || Boolean(parsed.tableNumber || o.table_number);
+      if (itemReportTypeFilter === 'table') return isTable;
+      if (itemReportTypeFilter === 'delivery') return parsed.type === 'delivery' || o.order_type === 'delivery';
+      if (itemReportTypeFilter === 'pickup') return parsed.type === 'pickup' || o.order_type === 'pickup' || o.order_type === 'takeaway';
       return parsed.type === itemReportTypeFilter || o.order_type === itemReportTypeFilter;
     });
   }
 
-  const eligibleOrderIds = new Set(eligibleOrders.map(o => String(o.id)));
-
-  // Map of items
+  // Initialize catalog lookup from menuItems, combos, and custom dishes
   const itemMap = new Map();
 
-  // Initialize with menu items catalog
+  // Add menuItems
   menuItems.forEach(m => {
-    itemMap.set(m.name.toLowerCase().trim(), {
+    const key = (m.name || '').toLowerCase().trim();
+    itemMap.set(key, {
       id: m.id,
       name: m.name,
       category: m.category || 'other',
@@ -5380,48 +5387,120 @@ function computeItemSalesReport() {
       image: m.image || categoryImages[m.category] || '/images/food_starters.png',
       qtySold: 0,
       totalRevenue: 0,
+      orderIds: new Set(),
       orderCount: 0
     });
   });
 
-  // Aggregate items from eligible orders
-  orderItems.forEach(oi => {
-    if (!eligibleOrderIds.has(String(oi.order_id))) return;
-    if (!isFoodDishItem(oi)) return;
-    const key = (oi.item_name || '').toLowerCase().trim();
-    if (!key) return;
+  // Add Combos
+  if (Array.isArray(adminCombos)) {
+    adminCombos.forEach(c => {
+      const key = (c.name || '').toLowerCase().trim();
+      if (!itemMap.has(key)) {
+        itemMap.set(key, {
+          id: c.id,
+          name: c.name,
+          category: 'combo',
+          price: Number(c.price || 0),
+          image: c.image_url || categoryImages['combo'] || '/images/food_biryani.png',
+          qtySold: 0,
+          totalRevenue: 0,
+          orderIds: new Set(),
+          orderCount: 0
+        });
+      }
+    });
+  }
 
-    let entry = itemMap.get(key);
-    if (!entry) {
-      const foundMenu = menuItems.find(m => m.name.toLowerCase().includes(key) || key.includes(m.name.toLowerCase()));
-      const category = foundMenu ? foundMenu.category : 'other';
-      const image = foundMenu ? (foundMenu.image || categoryImages[category]) : '/images/food_starters.png';
-      entry = {
-        id: oi.menu_item_id || null,
-        name: oi.item_name,
-        category,
-        price: Number(oi.unit_price || 0),
-        image,
-        qtySold: 0,
-        totalRevenue: 0,
-        orderCount: 0
-      };
-      itemMap.set(key, entry);
+  // Add Custom Dishes
+  if (Array.isArray(customCreatedFoods)) {
+    customCreatedFoods.forEach(cd => {
+      const key = (cd.name || '').toLowerCase().trim();
+      if (!itemMap.has(key)) {
+        itemMap.set(key, {
+          id: cd.id,
+          name: cd.name,
+          category: cd.category || 'other',
+          price: Number(cd.price || 0),
+          image: cd.image || categoryImages[cd.category] || '/images/food_starters.png',
+          qtySold: 0,
+          totalRevenue: 0,
+          orderIds: new Set(),
+          orderCount: 0
+        });
+      }
+    });
+  }
+
+  // Aggregate items from all eligible orders using getItemsForOrder
+  eligibleOrders.forEach(order => {
+    let items = getItemsForOrder(order.id);
+    if ((!items || items.length === 0) && Array.isArray(order.items) && order.items.length > 0) {
+      items = order.items.filter(isFoodDishItem);
     }
+    if (!items || !items.length) return;
 
-    const qty = Number(oi.quantity || 1);
-    const unitPrice = Number(oi.unit_price || (oi.line_total ? oi.line_total / qty : entry.price));
-    const lineTot = Number(oi.line_total || (unitPrice * qty));
+    items.forEach(oi => {
+      if (!isFoodDishItem(oi)) return;
+      const rawName = String(oi.item_name || oi.name || '').trim();
+      if (!rawName) return;
+      const key = rawName.toLowerCase();
 
-    entry.qtySold += qty;
-    entry.totalRevenue += lineTot;
-    entry.orderCount += 1;
-    if (unitPrice > 0) entry.price = unitPrice;
+      let entry = itemMap.get(key);
+      if (!entry) {
+        // Try to match by ID
+        if (oi.menu_item_id || oi.id) {
+          const matchId = Number(oi.menu_item_id || oi.id);
+          entry = Array.from(itemMap.values()).find(x => x.id === matchId);
+        }
+      }
+
+      if (!entry) {
+        // Clean combo prefix if present
+        const cleanName = rawName.replace(/^🍱\s*\[combo\]\s*/i, '').trim().toLowerCase();
+        entry = itemMap.get(cleanName);
+      }
+
+      if (!entry) {
+        // Match with category in menuItems
+        const isCombo = /combo|platter/i.test(rawName);
+        let category = isCombo ? 'combo' : 'other';
+        let image = isCombo ? '/images/food_biryani.png' : '/images/food_starters.png';
+
+        const foundMenu = menuItems.find(m => m.name.toLowerCase() === key || m.name.toLowerCase().includes(key) || key.includes(m.name.toLowerCase()));
+        if (foundMenu) {
+          category = foundMenu.category || category;
+          image = foundMenu.image || categoryImages[category] || image;
+        }
+
+        entry = {
+          id: oi.menu_item_id || oi.id || null,
+          name: rawName,
+          category,
+          price: Number(oi.unit_price || oi.price || 0),
+          image,
+          qtySold: 0,
+          totalRevenue: 0,
+          orderIds: new Set(),
+          orderCount: 0
+        };
+        itemMap.set(key, entry);
+      }
+
+      const qty = Math.max(1, Number(oi.quantity || oi.qty || 1));
+      const unitPrice = Number(oi.unit_price || oi.price || (oi.line_total ? Number(oi.line_total) / qty : entry.price));
+      const lineTot = Number(oi.line_total !== undefined && oi.line_total !== null ? oi.line_total : (unitPrice * qty));
+
+      entry.qtySold += qty;
+      entry.totalRevenue += lineTot;
+      if (!entry.orderIds) entry.orderIds = new Set();
+      entry.orderIds.add(String(order.id));
+      entry.orderCount = entry.orderIds.size;
+      if (unitPrice > 0 && entry.price <= 0) entry.price = unitPrice;
+    });
   });
 
-  let allItems = Array.from(itemMap.values());
-
-  // Sold dishes
+  const allItems = Array.from(itemMap.values());
   const soldItems = allItems.filter(i => i.qtySold > 0);
   const totalQtySold = soldItems.reduce((s, i) => s + i.qtySold, 0);
   const totalItemRev = soldItems.reduce((s, i) => s + i.totalRevenue, 0);
@@ -5429,19 +5508,22 @@ function computeItemSalesReport() {
 
   let bestSellingDish = null;
   if (soldItems.length > 0) {
-    bestSellingDish = soldItems.slice().sort((a, b) => b.totalRevenue - a.totalRevenue)[0];
+    bestSellingDish = soldItems.slice().sort((a, b) => b.totalRevenue - a.totalRevenue || b.qtySold - a.qtySold)[0];
   }
+
+  // Filter based on Scope (Sold Items Only vs All Menu Dishes)
+  let displayedItems = itemReportScopeFilter === 'sold' ? soldItems : allItems;
 
   // Category filter
   if (itemReportCategoryFilter !== 'all') {
     const matchCats = categoryAliases[itemReportCategoryFilter] || [itemReportCategoryFilter];
-    allItems = allItems.filter(i => matchCats.includes(i.category));
+    displayedItems = displayedItems.filter(i => matchCats.includes(i.category));
   }
 
   // Search filter
   if (itemReportSearch) {
     const q = itemReportSearch.toLowerCase().trim();
-    allItems = allItems.filter(i =>
+    displayedItems = displayedItems.filter(i =>
       i.name.toLowerCase().includes(q) ||
       (categoryLabels[i.category] || i.category).toLowerCase().includes(q)
     );
@@ -5449,19 +5531,20 @@ function computeItemSalesReport() {
 
   // Sorting
   if (itemReportSort === 'revenue_desc') {
-    allItems.sort((a, b) => b.totalRevenue - a.totalRevenue || b.qtySold - a.qtySold);
+    displayedItems.sort((a, b) => b.totalRevenue - a.totalRevenue || b.qtySold - a.qtySold);
   } else if (itemReportSort === 'qty_desc') {
-    allItems.sort((a, b) => b.qtySold - a.qtySold || b.totalRevenue - a.totalRevenue);
+    displayedItems.sort((a, b) => b.qtySold - a.qtySold || b.totalRevenue - a.totalRevenue);
   } else if (itemReportSort === 'qty_asc') {
-    allItems.sort((a, b) => a.qtySold - b.qtySold || a.totalRevenue - b.totalRevenue);
+    displayedItems.sort((a, b) => a.qtySold - b.qtySold || a.totalRevenue - b.totalRevenue);
   } else if (itemReportSort === 'price_desc') {
-    allItems.sort((a, b) => b.price - a.price);
+    displayedItems.sort((a, b) => b.price - a.price);
   } else if (itemReportSort === 'name_asc') {
-    allItems.sort((a, b) => a.name.localeCompare(b.name));
+    displayedItems.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   return {
-    allItems,
+    allItems: displayedItems,
+    allCatalogItems: allItems,
     soldItems,
     totalQtySold,
     totalItemRev,
@@ -5483,21 +5566,26 @@ function populateItemReportCategories() {
 }
 
 function renderItemReportCharts(soldItems) {
+  // Only render charts if the panel is currently active/visible in DOM
+  const panel = $('panel-customer-analysis');
+  if (!panel || !panel.classList.contains('active')) return;
+
   // Chart 1: Top 10 Best Sellers
   const canvasTop = $('chart-item-top-sellers');
   if (canvasTop) {
-    const top10 = soldItems.slice().sort((a, b) => b.qtySold - a.qtySold).slice(0, 10);
+    const top10 = soldItems.slice().sort((a, b) => b.qtySold - a.qtySold || b.totalRevenue - a.totalRevenue).slice(0, 10);
     const labels = top10.map(i => i.name.length > 18 ? i.name.slice(0, 16) + '…' : i.name);
     const data = top10.map(i => i.qtySold);
 
     if (itemTopSellersChartInstance) {
       itemTopSellersChartInstance.destroy();
+      itemTopSellersChartInstance = null;
     }
 
     itemTopSellersChartInstance = new Chart(canvasTop, {
       type: 'bar',
       data: {
-        labels: labels.length ? labels : ['No Sales Yet'],
+        labels: labels.length ? labels : ['No Sales In Period'],
         datasets: [{
           label: 'Units Sold',
           data: data.length ? data : [0],
@@ -5531,22 +5619,27 @@ function renderItemReportCharts(soldItems) {
     const catMap = new Map();
     soldItems.forEach(i => {
       const cat = i.category || 'other';
-      const label = categoryLabels[cat] || cat;
+      const label = (categoryEmojis[cat] || '🍽️') + ' ' + (categoryLabels[cat] || cat);
       catMap.set(label, (catMap.get(label) || 0) + i.totalRevenue);
     });
 
     const labels = Array.from(catMap.keys());
     const data = Array.from(catMap.values());
-    const colors = ['#6366f1', '#10b981', '#f59e0b', '#06b6d4', '#ec4899', '#8b5cf6', '#3b82f6', '#14b8a6', '#f97316'];
+    const colors = [
+      '#6366f1', '#10b981', '#f59e0b', '#06b6d4', '#ec4899',
+      '#8b5cf6', '#3b82f6', '#14b8a6', '#f97316', '#ef4444',
+      '#84cc16', '#a855f7', '#0ea5e9', '#d946ef', '#f43f5e'
+    ];
 
     if (itemCategorySplitChartInstance) {
       itemCategorySplitChartInstance.destroy();
+      itemCategorySplitChartInstance = null;
     }
 
     itemCategorySplitChartInstance = new Chart(canvasCat, {
       type: 'doughnut',
       data: {
-        labels: labels.length ? labels : ['No Sales Yet'],
+        labels: labels.length ? labels : ['No Sales In Period'],
         datasets: [{
           data: data.length ? data : [1],
           backgroundColor: data.length ? colors.slice(0, labels.length) : ['#e2e8f0'],
@@ -5561,7 +5654,7 @@ function renderItemReportCharts(soldItems) {
           legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
           tooltip: {
             callbacks: {
-              label: (ctx) => ` ₹${Number(ctx.raw || 0).toFixed(0)}`
+              label: (ctx) => data.length ? ` ₹${Number(ctx.raw || 0).toFixed(0)}` : ' No sales in this period'
             }
           }
         },
@@ -5591,11 +5684,17 @@ function renderItemsReport() {
 
   if ($('item-kpi-varieties')) $('item-kpi-varieties').textContent = `${activeVarieties} Varieties`;
 
-  // 2. Charts
+  // 2. Charts (only renders when visible)
   renderItemReportCharts(soldItems);
 
   // 3. Summary Bar
-  if ($('item-report-count')) $('item-report-count').textContent = `${allItems.length} ${allItems.length === 1 ? 'dish' : 'dishes'}`;
+  if ($('item-report-count')) {
+    if (itemReportScopeFilter === 'sold') {
+      $('item-report-count').textContent = `${allItems.length} ${allItems.length === 1 ? 'dish sold' : 'dishes sold'}`;
+    } else {
+      $('item-report-count').textContent = `${soldItems.length} sold / ${allItems.length} dishes`;
+    }
+  }
   const totalUnitsFiltered = allItems.reduce((s, i) => s + i.qtySold, 0);
   const totalRevFiltered = allItems.reduce((s, i) => s + i.totalRevenue, 0);
   if ($('item-report-units')) $('item-report-units').textContent = `${totalUnitsFiltered} qty`;
@@ -5606,7 +5705,10 @@ function renderItemsReport() {
   if (!tbody) return;
 
   if (!allItems.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2.5rem;color:var(--adm-muted);">No dishes match your selected filter criteria.</td></tr>';
+    const emptyMsg = itemReportScopeFilter === 'sold'
+      ? '🍽️ No dishes were sold matching your selected criteria in this period.'
+      : 'No dishes match your selected filter criteria.';
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:2.5rem;color:var(--adm-muted);font-weight:500;">${emptyMsg}</td></tr>`;
     return;
   }
 
@@ -5621,7 +5723,7 @@ function renderItemsReport() {
             <img src="${item.image}" alt="${escapeHtml(item.name)}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;background:#f1f5f9;" onerror="this.src='/images/food_starters.png'" loading="lazy" />
             <div>
               <strong style="font-size:.88rem;color:#111827;">${escapeHtml(item.name)}</strong>
-              <div style="font-size:.72rem;color:var(--adm-muted);">Ordered in ${item.orderCount} bills</div>
+              <div style="font-size:.72rem;color:var(--adm-muted);">${item.orderCount ? `Ordered in ${item.orderCount} ${item.orderCount === 1 ? 'bill' : 'bills'}` : 'Not ordered in this period'}</div>
             </div>
           </div>
         </td>
@@ -5660,7 +5762,7 @@ function exportItemsReportCSV() {
     return;
   }
 
-  const headers = ['Dish Name', 'Category', 'Unit Price (INR)', 'Units Sold', 'Total Revenue (INR)', 'Revenue Contribution (%)'];
+  const headers = ['Dish Name', 'Category', 'Unit Price (INR)', 'Units Sold', 'Total Revenue (INR)', 'Revenue Contribution (%)', 'Bills Count'];
   const rows = allItems.map(i => {
     const share = totalItemRev > 0 ? ((i.totalRevenue / totalItemRev) * 100).toFixed(1) : '0.0';
     const catLabel = categoryLabels[i.category] || i.category;
@@ -5670,7 +5772,8 @@ function exportItemsReportCSV() {
       `"${i.price.toFixed(2)}"`,
       `"${i.qtySold}"`,
       `"${i.totalRevenue.toFixed(2)}"`,
-      `"${share}%"`
+      `"${share}%"`,
+      `"${i.orderCount || 0}"`
     ];
   });
 
@@ -5705,6 +5808,12 @@ function initItemsReportListeners() {
   $('item-report-apply-custom-date')?.addEventListener('click', () => {
     itemReportCustomStart = $('item-report-start-date')?.value || null;
     itemReportCustomEnd = $('item-report-end-date')?.value || null;
+    renderItemsReport();
+  });
+
+  // Scope Filter (Sold Only vs All Dishes)
+  $('item-report-scope-filter')?.addEventListener('change', (e) => {
+    itemReportScopeFilter = e.target.value;
     renderItemsReport();
   });
 
