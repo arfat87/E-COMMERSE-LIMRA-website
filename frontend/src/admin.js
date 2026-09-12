@@ -6716,8 +6716,10 @@ function renderClosedOrdersPanel() {
     const tableNum = parsed.tableNumber || o.table_number || '';
     const isTable = parsed.type === 'table';
     const typeLabel = isTable
-      ? `<span style="background:#eef2ff;color:#4f46e5;padding:.15rem .5rem;border-radius:999px;font-weight:700;font-size:.75rem;">🪑 Table ${tableNum || '—'}</span>`
-      : (parsed.type === 'delivery' ? '<span style="background:#eff6ff;color:#1d4ed8;padding:.15rem .5rem;border-radius:999px;font-weight:600;font-size:.75rem;">🚗 Delivery</span>' : '<span style="background:#fef3c7;color:#b45309;padding:.15rem .5rem;border-radius:999px;font-weight:600;font-size:.75rem;">🥡 Pickup</span>');
+      ? `<span class="closed-type-badge table">🪑 Table ${tableNum || '—'}</span>`
+      : (parsed.type === 'delivery'
+          ? '<span class="closed-type-badge delivery">🚗 Delivery</span>'
+          : '<span class="closed-type-badge pickup">🥡 Pickup</span>');
 
     const itemsSummary = items.length
       ? items.slice(0, 2).map(i => `${i.quantity || i.qty}× ${escapeHtml(i.item_name || i.name)}`).join(', ') + (items.length > 2 ? ` +${items.length - 2} more` : '')
@@ -6726,12 +6728,12 @@ function renderClosedOrdersPanel() {
     const isPaid = o.payment_status === 'paid';
     const isCancelled = o.status === 'cancelled';
     const statusPill = isCancelled
-      ? '<span class="adm-pill cancelled" style="background:#fee2e2;color:#b91c1c;font-weight:700;">✕ Cancelled</span>'
-      : '<span class="adm-pill delivered" style="background:#dcfce7;color:#15803d;font-weight:700;">✓ Settled</span>';
+      ? '<span class="closed-status-badge cancelled"><span class="badge-dot red"></span>Cancelled</span>'
+      : '<span class="closed-status-badge settled"><span class="badge-dot green"></span>Settled</span>';
 
     const payPill = isPaid
-      ? `<span style="background:#f0fdf4;color:#166534;font-size:.72rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;border:1px solid #bbf7d0;">Paid · ${escapeHtml(parsed.paymentMode || o.payment_mode || 'Cash/UPI')}</span>`
-      : '<span style="background:#fef2f2;color:#991b1b;font-size:.72rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;border:1px solid #fecaca;">Unpaid</span>';
+      ? `<span class="closed-pay-mode">Paid · ${escapeHtml(parsed.paymentMode || o.payment_mode || 'Cash/UPI')}</span>`
+      : '<span class="closed-pay-mode unpaid">Unpaid</span>';
 
     const d = new Date(o.created_at);
     const dateStr = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) + ', ' + d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
@@ -6739,43 +6741,45 @@ function renderClosedOrdersPanel() {
     return `
       <tr>
         <td>
-          <strong style="color:#111827;font-size:.88rem;">#${formatDailyOrderNumber(o)}</strong>
+          <span class="closed-order-num">#${formatDailyOrderNumber(o)}</span>
         </td>
         <td>
-          <div style="font-weight:700;color:#111827;font-size:.85rem;">${escapeHtml(o.customer_name || 'Walk-in')}</div>
-          <div style="font-size:.75rem;color:var(--adm-muted);">${escapeHtml(o.customer_phone || '—')}</div>
+          <div class="closed-cust-name">${escapeHtml(o.customer_name || 'Walk-in')}</div>
+          <div class="closed-cust-phone">${escapeHtml(o.customer_phone || '—')}</div>
         </td>
         <td>${typeLabel}</td>
-        <td style="max-width:200px;font-size:.8rem;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${items.map(i=>`${i.quantity || i.qty}x ${i.item_name || i.name}`).join(', ')}">
-          ${itemsSummary}
+        <td>
+          <div class="closed-items-cell" title="${items.map(i=>`${i.quantity || i.qty}x ${i.item_name || i.name}`).join(', ')}">
+            ${itemsSummary}
+          </div>
         </td>
-        <td style="text-align:right;font-size:.82rem;font-weight:600;color:#334155;">₹${taxDetails.taxableValue.toFixed(2)}</td>
-        <td style="text-align:right;font-size:.82rem;color:#64748b;">₹${taxDetails.cgstAmt.toFixed(2)}</td>
-        <td style="text-align:right;font-size:.82rem;color:#64748b;">₹${taxDetails.sgstAmt.toFixed(2)}</td>
-        <td style="text-align:right;font-size:.82rem;font-weight:700;color:#4f46e5;">₹${taxDetails.totalGst.toFixed(2)}</td>
+        <td style="text-align:right;" class="closed-num-cell">₹${taxDetails.taxableValue.toFixed(2)}</td>
+        <td style="text-align:right;" class="closed-num-cell closed-tax-muted">₹${taxDetails.cgstAmt.toFixed(2)}</td>
+        <td style="text-align:right;" class="closed-num-cell closed-tax-muted">₹${taxDetails.sgstAmt.toFixed(2)}</td>
+        <td style="text-align:right;" class="closed-num-cell closed-tax-highlight">₹${taxDetails.totalGst.toFixed(2)}</td>
         <td style="text-align:right;">
-          <strong style="font-size:.9rem;color:${isCancelled ? '#9ca3af' : '#059669'};">₹${taxDetails.grandTotal.toFixed(2)}</strong>
+          <strong class="closed-total-cell ${isCancelled ? 'cancelled' : ''}">₹${taxDetails.grandTotal.toFixed(2)}</strong>
         </td>
         <td>
-          <div style="display:flex;flex-direction:column;gap:.2rem;align-items:flex-start;">
+          <div class="closed-status-wrap">
             ${statusPill}
             ${payPill}
           </div>
         </td>
-        <td style="font-size:.78rem;color:var(--adm-muted);">${dateStr}</td>
+        <td style="font-size:.78rem;color:#64748b;white-space:nowrap;">${dateStr}</td>
         <td style="text-align:right;position:sticky;right:0;background:#ffffff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.04);padding-right:.75rem;">
-          <div style="display:flex;gap:.35rem;justify-content:flex-end;align-items:center;">
-            <button type="button" class="adm-btn adm-btn-primary adm-btn-sm closed-edit-btn" data-id="${o.id}" onclick="openClosedOrderEditModal('${o.id}')" style="font-size:.78rem;padding:.28rem .65rem;background:#4f46e5;color:#fff;border-color:#4f46e5;font-weight:700;box-shadow:0 1px 2px rgba(79,70,229,0.25);cursor:pointer;" title="Edit and correct dishes or bill for this order">
+          <div class="closed-actions-wrap">
+            <button type="button" class="closed-action-btn edit closed-edit-btn" data-id="${o.id}" onclick="openClosedOrderEditModal('${o.id}')" title="Edit and correct dishes or bill for this order">
               ✏️ Edit
             </button>
-            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm closed-bill-btn" data-id="${o.id}" style="font-size:.75rem;padding:.28rem .55rem;" title="Reprint final tax receipt">
+            <button type="button" class="closed-action-btn bill closed-bill-btn" data-id="${o.id}" title="Reprint final tax receipt">
               🧾 Bill
             </button>
-            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm closed-kot-btn" data-id="${o.id}" style="font-size:.75rem;padding:.28rem .55rem;background:#fff3e0;border-color:#f59e0b;color:#b45309;" title="Reprint kitchen ticket">
+            <button type="button" class="closed-action-btn kot closed-kot-btn" data-id="${o.id}" title="Reprint kitchen ticket">
               🗒️ KOT
             </button>
-            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm closed-delete-btn" data-id="${o.id}" style="font-size:.75rem;padding:.28rem .55rem;background:#fef2f2;border-color:#fca5a5;color:#ef4444;font-weight:700;" title="Permanently delete this closed order">
-              🗑️ Delete
+            <button type="button" class="closed-action-btn delete closed-delete-btn" data-id="${o.id}" title="Permanently delete this closed order">
+              🗑️
             </button>
           </div>
         </td>

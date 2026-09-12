@@ -549,25 +549,6 @@
             <div class="adm-chart"><canvas id="chart-bookings"></canvas></div>
           </div>
         </div>
-
-        <!-- 6. 📍 Live Delivery GPS Radar & Fleet Map -->
-        <div class="adm-card mb-6" style="padding:1.5rem;">
-          <div class="adm-card-head" style="flex-wrap: wrap; gap: 0.75rem; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-            <div>
-              <h3 class="adm-card-title" style="margin:0;display:flex;align-items:center;gap:.5rem;">
-                <span>📍 Live Delivery Radar &amp; Fleet Map</span>
-              </h3>
-              <p style="font-size:.8rem;color:var(--adm-muted);margin:2px 0 0 0;">Real-time GPS mapping of active deliveries and kitchen dispatch</p>
-            </div>
-            <div style="display:flex;gap:.35rem;">
-              <button type="button" id="map-filter-all" class="adm-btn adm-btn-sm adm-btn-primary active">All Active</button>
-              <button type="button" id="map-filter-pending" class="adm-btn adm-btn-sm adm-btn-outline">Pending</button>
-              <button type="button" id="map-filter-preparing" class="adm-btn adm-btn-sm adm-btn-outline">Preparing</button>
-            </div>
-          </div>
-          <div id="dashboard-deliveries-map" style="height:340px;width:100%;border-radius:12px;border:1px solid var(--adm-border);overflow:hidden;background:#f8fafc;"></div>
-        </div>
-
       </section>
 
       <!-- Orders List -->
@@ -751,144 +732,147 @@
       </section>
 
       <!-- Closed Orders -->
-      <section id="panel-closed-orders" class="adm-panel">
-        <div class="adm-page-head">
-          <div>
-            <h1 class="adm-page-title">📦 Closed Orders &amp; Audit</h1>
-            <p class="adm-page-sub">Settled bills, delivered orders, audit log, and error correction</p>
-          </div>
-          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-            <button type="button" id="closed-orders-sheet-sync-btn" class="adm-btn adm-btn-primary" style="background:#0284c7;border-color:#0284c7;font-weight:700;display:inline-flex;align-items:center;gap:.35rem;" title="Send closed orders to Google Sheets">
-              <span>📊</span> Sync to Google Sheet
-            </button>
-            <button type="button" id="closed-orders-gst-export-btn" class="adm-btn adm-btn-primary" style="background:#10b981;border-color:#10b981;font-weight:700;display:inline-flex;align-items:center;gap:.35rem;">
-              <span>🧾</span> Export Restaurant GST Report (.csv)
-            </button>
-            <button type="button" id="closed-orders-export-btn" class="adm-btn adm-btn-outline" style="font-weight:600;display:inline-flex;align-items:center;gap:.35rem;">
-              <span>📥</span> Export Audit Log
-            </button>
-          </div>
-        </div>
-
-        <!-- KPI Stat Cards -->
-        <div class="adm-stats" style="grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));margin-bottom:1.25rem;">
-          <div class="adm-stat" style="border-left:4px solid #10b981;">
+        <section id="panel-closed-orders" class="adm-panel">
+          <div class="adm-page-head" style="margin-bottom:1.25rem;">
             <div>
-              <p class="adm-stat-label">Total Closed Revenue</p>
-              <p class="adm-stat-value" id="closed-kpi-total-rev" style="color:#059669;">₹0.00</p>
-              <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;" id="closed-kpi-total-count">0 Settled Bills</p>
+              <h1 class="adm-page-title" style="font-size:1.4rem;font-weight:700;color:#0f172a;letter-spacing:-0.02em;">Closed Orders &amp; Audit</h1>
+              <p class="adm-page-sub" style="font-size:0.82rem;color:#64748b;margin-top:2px;">Settled customer bills, kitchen audit ledger, dish breakdowns, and GST records</p>
             </div>
-            <div class="adm-stat-icon green">
-              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            </div>
-          </div>
-
-          <div class="adm-stat" style="border-left:4px solid #6366f1;">
-            <div>
-              <p class="adm-stat-label">Today's Closed Revenue</p>
-              <p class="adm-stat-value" id="closed-kpi-today-rev" style="color:#4f46e5;">₹0.00</p>
-              <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;" id="closed-kpi-today-count">0 Bills Today</p>
-            </div>
-            <div class="adm-stat-icon indigo" style="background:#eef2ff;color:#6366f1;">
-              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+              <button type="button" id="closed-orders-gst-export-btn" class="adm-btn adm-btn-primary" style="background:#0f172a;border-color:#0f172a;color:#fff;font-weight:600;font-size:.82rem;display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .85rem;border-radius:8px;" title="Export restaurant GST report CSV">
+                <span>🧾</span> Export GST Report (.csv)
+              </button>
+              <button type="button" id="closed-orders-sheet-sync-btn" class="adm-btn adm-btn-outline" style="background:#fff;border-color:#cbd5e1;color:#334155;font-weight:600;font-size:.82rem;display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .85rem;border-radius:8px;" title="Send closed orders to Google Sheets">
+                <span>📊</span> Sync Sheet
+              </button>
+              <button type="button" id="closed-orders-export-btn" class="adm-btn adm-btn-outline" style="background:#fff;border-color:#cbd5e1;color:#334155;font-weight:600;font-size:.82rem;display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .85rem;border-radius:8px;" title="Export complete closed orders audit log">
+                <span>📥</span> Export Audit Log
+              </button>
             </div>
           </div>
 
-          <div class="adm-stat" style="border-left:4px solid #f59e0b;">
-            <div>
-              <p class="adm-stat-label">Delivered vs Cancelled</p>
-              <p class="adm-stat-value" id="closed-kpi-delivered-ratio" style="font-size:1.4rem;">0 / 0</p>
-              <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;" id="closed-kpi-cancel-loss">Cancelled: ₹0</p>
+          <!-- Professional Clean KPI Stat Cards -->
+          <div class="closed-kpi-grid">
+            <div class="closed-kpi-card">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                  <p class="closed-kpi-title">Total Closed Revenue</p>
+                  <p class="closed-kpi-val" id="closed-kpi-total-rev">₹0.00</p>
+                  <p class="closed-kpi-sub" id="closed-kpi-total-count">0 Settled Bills</p>
+                </div>
+                <div class="closed-kpi-icon">₹</div>
+              </div>
             </div>
-            <div class="adm-stat-icon orange">
-              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+
+            <div class="closed-kpi-card">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                  <p class="closed-kpi-title">Today's Revenue</p>
+                  <p class="closed-kpi-val" id="closed-kpi-today-rev">₹0.00</p>
+                  <p class="closed-kpi-sub" id="closed-kpi-today-count">0 Bills Today</p>
+                </div>
+                <div class="closed-kpi-icon">📅</div>
+              </div>
+            </div>
+
+            <div class="closed-kpi-card">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                  <p class="closed-kpi-title">Delivered vs Cancelled</p>
+                  <p class="closed-kpi-val" id="closed-kpi-delivered-ratio">0 / 0</p>
+                  <p class="closed-kpi-sub" id="closed-kpi-cancel-loss">Cancelled: ₹0.00</p>
+                </div>
+                <div class="closed-kpi-icon">⚖️</div>
+              </div>
+            </div>
+
+            <div class="closed-kpi-card">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                  <p class="closed-kpi-title">Average Order Value (AOV)</p>
+                  <p class="closed-kpi-val" id="closed-kpi-aov">₹0.00</p>
+                  <p class="closed-kpi-sub">Per settled bill</p>
+                </div>
+                <div class="closed-kpi-icon">📊</div>
+              </div>
             </div>
           </div>
 
-          <div class="adm-stat" style="border-left:4px solid #06b6d4;">
-            <div>
-              <p class="adm-stat-label">Avg. Order Value (AOV)</p>
-              <p class="adm-stat-value" id="closed-kpi-aov" style="color:#0891b2;">₹0.00</p>
-              <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Per closed bill</p>
-            </div>
-            <div class="adm-stat-icon blue" style="background:#ecfeff;color:#06b6d4;">
-              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-            </div>
-          </div>
-        </div>
+          <!-- Professional Filter & Search Toolbar -->
+          <div class="closed-toolbar" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1rem;margin-bottom:1rem;display:flex;flex-direction:column;gap:.75rem;box-shadow:0 1px 2px rgba(0,0,0,0.02);">
+            <!-- Top Row: Date Presets & Custom Range -->
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;">
+              <div id="closed-date-presets">
+                <button type="button" class="pos-cat-pill active" data-range="all">All Time</button>
+                <button type="button" class="pos-cat-pill" data-range="today">Today</button>
+                <button type="button" class="pos-cat-pill" data-range="yesterday">Yesterday</button>
+                <button type="button" class="pos-cat-pill" data-range="week">This Week</button>
+                <button type="button" class="pos-cat-pill" data-range="month">This Month</button>
+                <button type="button" class="pos-cat-pill" data-range="custom">Custom Range</button>
+              </div>
 
-        <!-- Filter & Search Controls -->
-        <div class="adm-card" style="padding:1rem;margin-bottom:1rem;display:flex;flex-direction:column;gap:.75rem;">
-          <!-- Top Row: Date Presets & Custom Range -->
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;">
-            <div id="closed-date-presets" class="pos-cat-pill-bar" style="margin:0;padding:0;">
-              <button type="button" class="pos-cat-pill active" data-range="all">📅 All Time</button>
-              <button type="button" class="pos-cat-pill" data-range="today">📅 Today</button>
-              <button type="button" class="pos-cat-pill" data-range="yesterday">📅 Yesterday</button>
-              <button type="button" class="pos-cat-pill" data-range="week">📅 This Week</button>
-              <button type="button" class="pos-cat-pill" data-range="month">📅 This Month</button>
-              <button type="button" class="pos-cat-pill" data-range="custom">📅 Custom Range</button>
+              <!-- Custom Date Inputs (hidden by default) -->
+              <div id="closed-custom-date-wrap" style="display:none;align-items:center;gap:.4rem;font-size:.8rem;">
+                <input type="date" id="closed-start-date" class="adm-input" style="padding:.35rem .55rem;font-size:.8rem;border-radius:6px;" />
+                <span style="color:#64748b;font-weight:500;">to</span>
+                <input type="date" id="closed-end-date" class="adm-input" style="padding:.35rem .55rem;font-size:.8rem;border-radius:6px;" />
+                <button type="button" id="closed-apply-custom-date" class="adm-btn adm-btn-primary adm-btn-sm" style="background:#0f172a;border-color:#0f172a;border-radius:6px;font-weight:600;">Apply</button>
+              </div>
             </div>
 
-            <!-- Custom Date Inputs (hidden by default) -->
-            <div id="closed-custom-date-wrap" style="display:none;align-items:center;gap:.4rem;font-size:.8rem;">
-              <input type="date" id="closed-start-date" class="adm-input" style="padding:.3rem .5rem;font-size:.8rem;" />
-              <span style="color:var(--adm-muted);">to</span>
-              <input type="date" id="closed-end-date" class="adm-input" style="padding:.3rem .5rem;font-size:.8rem;" />
-              <button type="button" id="closed-apply-custom-date" class="adm-btn adm-btn-primary adm-btn-sm">Apply</button>
+            <!-- Bottom Row: Search, Type, Status -->
+            <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;">
+              <div style="position:relative;flex:1;min-width:240px;">
+                <input type="search" id="closed-orders-search" class="adm-input" placeholder="Search customer, phone, order #, table #..." style="width:100%;padding-left:2.2rem;border-radius:8px;border-color:#e2e8f0;font-size:.84rem;" />
+                <span style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none;font-size:.85rem;">🔍</span>
+              </div>
+              <select id="closed-orders-type-filter" class="adm-select" style="min-width:140px;border-radius:8px;border-color:#e2e8f0;font-size:.82rem;">
+                <option value="all">All Channels</option>
+                <option value="table">🪑 Dine-in Table</option>
+                <option value="pickup">🥡 Pickup</option>
+                <option value="delivery">🚗 Delivery</option>
+              </select>
+              <select id="closed-orders-status-filter" class="adm-select" style="min-width:140px;border-radius:8px;border-color:#e2e8f0;font-size:.82rem;">
+                <option value="all">All Closed</option>
+                <option value="delivered">✓ Delivered / Paid</option>
+                <option value="cancelled">✕ Cancelled</option>
+              </select>
             </div>
           </div>
 
-          <!-- Bottom Row: Search, Type, Status -->
-          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
-            <input type="search" id="closed-orders-search" class="adm-input" placeholder="🔍 Search customer name, phone, order #, table #..." style="flex:1;min-width:240px;" />
-            <select id="closed-orders-type-filter" class="adm-select" style="min-width:140px;">
-              <option value="all">🍽️ All Types</option>
-              <option value="table">🪑 Dine-in Table</option>
-              <option value="pickup">🥡 Pickup</option>
-              <option value="delivery">🚗 Delivery</option>
-            </select>
-            <select id="closed-orders-status-filter" class="adm-select" style="min-width:140px;">
-              <option value="all">All Closed</option>
-              <option value="delivered">✓ Delivered / Paid</option>
-              <option value="cancelled">✕ Cancelled</option>
-            </select>
+          <!-- Professional Summary Ribbon -->
+          <div id="closed-orders-summary-bar" class="closed-summary-ribbon">
+            <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;">
+              <span><span style="color:#64748b;">Showing:</span> <strong id="closed-orders-count" style="color:#0f172a;font-weight:700;">0 bills</strong></span>
+              <span><span style="color:#64748b;">Total Revenue:</span> <strong id="closed-orders-amount" style="color:#0f172a;font-weight:700;">₹0.00</strong></span>
+              <span><span style="color:#64748b;">Tax (CGST+SGST):</span> <strong id="closed-orders-tax-amt" style="color:#334155;font-weight:600;">₹0.00</strong></span>
+            </div>
+            <span style="font-size:.78rem;color:#64748b;">💡 Tip: Click <strong>✏️ Edit</strong> to adjust dishes or reprint receipts</span>
           </div>
-        </div>
 
-        <!-- Summary Metric Bar -->
-        <div id="closed-orders-summary-bar" style="margin-bottom:1rem;padding:.7rem 1.1rem;background:#fff;border:1px solid var(--adm-border);border-radius:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem;font-size:.85rem;box-shadow:0 1px 3px rgba(0,0,0,.04);">
-          <div style="display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;">
-            <span>Showing: <strong id="closed-orders-count" style="color:var(--adm-text);">0 orders</strong></span>
-            <span>Total Revenue: <strong id="closed-orders-amount" style="color:#059669;font-size:.95rem;">₹0.00</strong></span>
-            <span>Tax (CGST+SGST): <strong id="closed-orders-tax-amt" style="color:#6366f1;">₹0.00</strong></span>
+          <!-- Table Container -->
+          <div class="adm-card adm-table-wrap" style="border-radius:12px;overflow-x:auto;overflow-y:visible;box-shadow:0 1px 2px rgba(0,0,0,.03);border:1px solid #e2e8f0;background:#fff;">
+            <table class="adm-table closed-orders-table" style="min-width:1180px;">
+              <thead>
+                <tr>
+                  <th style="min-width:105px;">Order #</th>
+                  <th style="min-width:140px;">Customer</th>
+                  <th style="min-width:115px;">Type &amp; Table</th>
+                  <th style="min-width:200px;">Dishes</th>
+                  <th style="text-align:right;min-width:95px;">Taxable Base</th>
+                  <th style="text-align:right;min-width:85px;">CGST (2.5%)</th>
+                  <th style="text-align:right;min-width:85px;">SGST (2.5%)</th>
+                  <th style="text-align:right;min-width:95px;">Total GST (5%)</th>
+                  <th style="text-align:right;min-width:105px;">Grand Total</th>
+                  <th style="min-width:125px;">Status &amp; Payment</th>
+                  <th style="min-width:115px;">Date &amp; Time</th>
+                  <th style="text-align:right;min-width:180px;position:sticky;right:0;background:#f8fafc;z-index:2;box-shadow:-4px 0 8px rgba(0,0,0,0.04);">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="closed-orders-table-body"></tbody>
+            </table>
           </div>
-          <span style="font-size:.78rem;color:var(--adm-muted);">Tip: Click <strong>✏️ Edit</strong> to correct wrong builds or item mistakes</span>
-        </div>
-
-        <!-- Table Wrap -->
-        <div class="adm-card adm-table-wrap" style="border-radius:14px;overflow-x:auto;overflow-y:visible;box-shadow:0 1px 3px rgba(0,0,0,.04);border:1px solid var(--adm-border);">
-          <table class="adm-table" style="min-width:1180px;">
-            <thead>
-              <tr>
-                <th style="min-width:110px;">Bill / Order #</th>
-                <th style="min-width:150px;">Customer Details</th>
-                <th style="min-width:110px;">Type &amp; Table</th>
-                <th style="min-width:180px;">Consolidated Dishes</th>
-                <th style="text-align:right;min-width:95px;">Taxable Base</th>
-                <th style="text-align:right;min-width:85px;">CGST (2.5%)</th>
-                <th style="text-align:right;min-width:85px;">SGST (2.5%)</th>
-                <th style="text-align:right;min-width:95px;">Total GST (5%)</th>
-                <th style="text-align:right;min-width:105px;">Grand Total</th>
-                <th style="min-width:120px;">Status &amp; Payment</th>
-                <th style="min-width:120px;">Date &amp; Time</th>
-                <th style="text-align:right;min-width:190px;position:sticky;right:0;background:#fff;z-index:2;box-shadow:-4px 0 8px rgba(0,0,0,0.04);">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="closed-orders-table-body"></tbody>
-          </table>
-        </div>
-      </section>
+        </section>
 
       <!-- Order Detail / Billing -->
       <section id="panel-order-detail" class="adm-panel">
