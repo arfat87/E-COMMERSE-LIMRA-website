@@ -1388,42 +1388,48 @@ async function fetchAllTableRows(table, select = '*', orderCol = 'created_at', a
   return allRows;
 }
 
-async function loadData() {
-  const [fetchedOrders, fetchedItems, bookingsRes, notifsRes, placesRes, combosRes, customDishesRes, overridesRes] = await Promise.all([
-    fetchAllTableRows('orders', '*', 'created_at', false),
-    fetchAllTableRows('order_items', '*', 'created_at', false),
-    insforge.database.from('bookings').select('*').order('created_at', { ascending: false }),
-    insforge.database.from('notifications').select('*').order('created_at', { ascending: false }).limit(50),
-    insforge.database.from('delivery_areas').select('*').order('name', { ascending: true }),
-    getCombos().catch(() => []),
-    getCustomDishes().catch(() => []),
-    getMenuOverrides().catch(() => [])
-  ]);
-  
-  if (bookingsRes.error) throw bookingsRes.error;
-  if (notifsRes.error) throw notifsRes.error;
+let lastSyncTimestamp = null;
+let lastStaticConfigTimestamp = 0;
+const STATIC_CONFIG_TTL_MS = 5 * 60 * 1000; // 5-minute cache for static config
 
-  if (Array.isArray(combosRes)) {
-    adminCombos = combosRes;
+async function loadStaticConfigData(force = false) {
+  const now = Date.now();
+  if (!force && (now - lastStaticConfigTimestamp < STATIC_CONFIG_TTL_MS) && adminPlaces.length > 0) {
+    return;
   }
-  if (Array.isArray(customDishesRes)) {
-    customCreatedFoods = customDishesRes;
-  }
-  if (Array.isArray(overridesRes)) {
-    activeMenuOverrides = overridesRes;
-  }
+  try {
+    const [placesRes, combosRes, customDishesRes, overridesRes] = await Promise.all([
+      insforge.database.from('delivery_areas').select('*').order('name', { ascending: true }),
+      getCombos().catch(() => []),
+      getCustomDishes().catch(() => []),
+      getMenuOverrides().catch(() => [])
+    ]);
 
-  const newOrders = fetchedOrders || [];
-  const newBookings = bookingsRes.data || [];
-  const fetchedNotifs = notifsRes.data || [];
+    if (Array.isArray(combosRes)) adminCombos = combosRes;
+    if (Array.isArray(customDishesRes)) customCreatedFoods = customDishesRes;
+    if (Array.isArray(overridesRes)) activeMenuOverrides = overridesRes;
+    if (placesRes && Array.isArray(placesRes.data)) {
+      adminPlaces = placesRes.data.map(p => ({
+        ...p,
+        id: String(p.id),
+        name: p.name || '',
+        charge: Number(p.delivery_fee ?? p.charge ?? 0),
+        delivery_fee: Number(p.delivery_fee ?? p.charge ?? 0)
+      }));
+    }
+    lastStaticConfigTimestamp = now;
+  } catch (err) {
+    console.warn('[DataSync] Warning loading static config:', err);
+  }
+}
 
-  const isFirstLoad = knownNotificationIds.size === 0 && knownOrderIds.size === 0;
+function processNotificationsAndAlerts(incomingNotifs, currentAllOrders, newlyArrivedOrders, isFirstLoad) {
   let newUnreadDetected = false;
   let newTableRoundEvent = null; // { roundNumber, tableNumber, order }
   const announcedOrderIds = new Set();
 
   // 1. Process notifications in chronological order (oldest first) so they arrive correctly
-  const reversedNotifs = [...fetchedNotifs].reverse();
+  const reversedNotifs = [...(incomingNotifs || [])].reverse();
   reversedNotifs.forEach(n => {
     if (!knownNotificationIds.has(n.id)) {
       knownNotificationIds.add(n.id);
@@ -1431,7 +1437,7 @@ async function loadData() {
       // If it's a new unread notification (and not the very first load of the dashboard)
       if (!isFirstLoad && !n.is_read) {
         const targetOrderId = n.item_id || n.order_id;
-        const linkedOrder = newOrders.find(o => String(o.id) === String(targetOrderId));
+        const linkedOrder = currentAllOrders.find(o => String(o.id) === String(targetOrderId));
 
         // If linked order is already closed/settled/cancelled, don't trigger sound or toasts and auto-mark read
         if (linkedOrder && (linkedOrder.status === 'delivered' || linkedOrder.status === 'completed' || linkedOrder.status === 'closed' || linkedOrder.status === 'cancelled' || linkedOrder.payment_status === 'paid')) {
@@ -1445,14 +1451,14 @@ async function loadData() {
         
         // Show dynamic toast depending on the type
         if (n.type === 'order') {
-          const order = linkedOrder || newOrders.find(o => o.id === targetOrderId);
+          const order = linkedOrder || currentAllOrders.find(o => o.id === targetOrderId);
           let isTableRoundNotif = false;
           let tableNum = '—';
           let roundNum = 1;
 
           if (order) {
             const meta = parseNotesMetadata(order.notes, order);
-            const roundInfo = getOrderRoundInfo(order, newOrders);
+            const roundInfo = getOrderRoundInfo(order, currentAllOrders);
             const isTable = meta.type === 'table' || order.order_type === 'table' || Boolean(meta.tableNumber || order.table_number);
             tableNum = meta.tableNumber || order.table_number || '—';
             roundNum = meta.roundNumber || roundInfo.roundNumber || 1;
@@ -1507,8 +1513,7 @@ async function loadData() {
   });
 
   // 2. Direct Order Detection (Guaranteed alert & chime for every new active order or round)
-  // Even if notifications table was blocked/delayed, detect newly arrived order rows immediately!
-  newOrders.forEach(order => {
+  (newlyArrivedOrders || []).forEach(order => {
     if (!knownOrderIds.has(order.id)) {
       knownOrderIds.add(order.id);
 
@@ -1520,7 +1525,7 @@ async function loadData() {
 
         newUnreadDetected = true;
         const meta = parseNotesMetadata(order.notes, order);
-        const roundInfo = getOrderRoundInfo(order, newOrders);
+        const roundInfo = getOrderRoundInfo(order, currentAllOrders);
         const isTable = meta.type === 'table' || order.order_type === 'table' || Boolean(meta.tableNumber || order.table_number);
         const tableNum = meta.tableNumber || order.table_number || '—';
         const roundNum = meta.roundNumber || roundInfo.roundNumber || 1;
@@ -1555,20 +1560,112 @@ async function loadData() {
   } else if (newUnreadDetected) {
     playNotificationChime();
   }
+}
+
+async function loadData(isManual = false) {
+  const isFirstLoad = !lastSyncTimestamp || isManual || (knownNotificationIds.size === 0 && knownOrderIds.size === 0);
+
+  // A. FULL BASELINE LOAD (On initial page boot or manual force-sync)
+  if (isFirstLoad) {
+    const fetchStartTime = new Date(Date.now() - 10000).toISOString();
+
+    const [fetchedOrders, fetchedItems, bookingsRes, notifsRes] = await Promise.all([
+      fetchAllTableRows('orders', '*', 'created_at', false),
+      fetchAllTableRows('order_items', '*', 'created_at', false),
+      insforge.database.from('bookings').select('*').order('created_at', { ascending: false }),
+      insforge.database.from('notifications').select('*').order('created_at', { ascending: false }).limit(35),
+      loadStaticConfigData(isManual)
+    ]);
+
+    if (bookingsRes && bookingsRes.error) throw bookingsRes.error;
+    if (notifsRes && notifsRes.error) throw notifsRes.error;
+
+    orders = fetchedOrders || [];
+    orderItems = fetchedItems || [];
+    bookings = (bookingsRes && bookingsRes.data) || [];
+    const fetchedNotifs = (notifsRes && notifsRes.data) || [];
+
+    processNotificationsAndAlerts(fetchedNotifs, orders, orders, true);
+
+    activeNotifications = fetchedNotifs;
+    renderNotifications();
+    lastSyncTimestamp = fetchStartTime;
+    $('last-updated').textContent = `Updated ${new Date().toLocaleTimeString('en-IN')}`;
+    return;
+  }
+
+  // B. ULTRA-LIGHTWEIGHT INCREMENTAL DELTA SYNC (Runs every 10s background interval)
+  const syncSince = lastSyncTimestamp;
+  const nextSyncTime = new Date(Date.now() - 10000).toISOString();
+
+  const [deltaOrdersRes, deltaBookingsRes, notifsRes] = await Promise.all([
+    insforge.database
+      .from('orders')
+      .select('*')
+      .or(`updated_at.gte.${syncSince},created_at.gte.${syncSince}`)
+      .order('created_at', { ascending: false }),
+    insforge.database
+      .from('bookings')
+      .select('*')
+      .or(`updated_at.gte.${syncSince},created_at.gte.${syncSince}`)
+      .order('created_at', { ascending: false }),
+    insforge.database
+      .from('notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(25),
+    loadStaticConfigData(false)
+  ]);
+
+  if (deltaOrdersRes && deltaOrdersRes.error) throw deltaOrdersRes.error;
+  if (deltaBookingsRes && deltaBookingsRes.error) throw deltaBookingsRes.error;
+  if (notifsRes && notifsRes.error) throw notifsRes.error;
+
+  const deltaOrders = (deltaOrdersRes && deltaOrdersRes.data) || [];
+  const deltaBookings = (deltaBookingsRes && deltaBookingsRes.data) || [];
+  const fetchedNotifs = (notifsRes && notifsRes.data) || [];
+
+  // Fetch order_items ONLY if orders were added or modified
+  let deltaItems = [];
+  if (deltaOrders.length > 0) {
+    const changedOrderIds = deltaOrders.map(o => o.id);
+    const { data: fetchedDeltaItems, error: itemsErr } = await insforge.database
+      .from('order_items')
+      .select('*')
+      .in('order_id', changedOrderIds);
+    if (!itemsErr && Array.isArray(fetchedDeltaItems)) {
+      deltaItems = fetchedDeltaItems;
+    }
+  }
+
+  // Merge delta orders into memory
+  if (deltaOrders.length > 0) {
+    const orderMap = new Map();
+    orders.forEach(o => orderMap.set(String(o.id), o));
+    deltaOrders.forEach(o => orderMap.set(String(o.id), o));
+    orders = Array.from(orderMap.values()).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  }
+
+  // Merge delta order_items into memory
+  if (deltaOrders.length > 0) {
+    const changedIdsSet = new Set(deltaOrders.map(o => String(o.id)));
+    orderItems = orderItems.filter(item => !changedIdsSet.has(String(item.order_id))).concat(deltaItems);
+  }
+
+  // Merge delta bookings into memory
+  if (deltaBookings.length > 0) {
+    const bookingMap = new Map();
+    bookings.forEach(b => bookingMap.set(String(b.id), b));
+    deltaBookings.forEach(b => bookingMap.set(String(b.id), b));
+    bookings = Array.from(bookingMap.values()).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  }
+
+  // Process notifications and alerts for new arrivals
+  processNotificationsAndAlerts(fetchedNotifs, orders, deltaOrders, false);
 
   activeNotifications = fetchedNotifs;
   renderNotifications();
-
-  orders = newOrders;
-  orderItems = fetchedItems || [];
-  bookings = newBookings;
-  adminPlaces = ((placesRes && placesRes.data) || []).map(p => ({
-    ...p,
-    id: String(p.id),
-    name: p.name || '',
-    charge: Number(p.delivery_fee ?? p.charge ?? 0),
-    delivery_fee: Number(p.delivery_fee ?? p.charge ?? 0)
-  }));
+  lastSyncTimestamp = nextSyncTime;
   $('last-updated').textContent = `Updated ${new Date().toLocaleTimeString('en-IN')}`;
 }
 
@@ -7759,7 +7856,7 @@ async function refreshDashboard(isManual = false) {
   }
   
   try {
-    await loadData();
+    await loadData(isManual);
     renderAll();
     
     if (syncIndicator && isManual) {
@@ -8053,6 +8150,15 @@ function initDashboardUI() {
 
   // Auto-refresh every 10 seconds for real-time notifications
   setInterval(() => refreshDashboard(false), 10000);
+
+  // Immediate delta sync when returning to the tab from background
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        refreshDashboard(false);
+      }
+    });
+  }
 
   // Setup modal listeners for menu editor, coupon manager, and combo manager
   setupEditModalListeners();
