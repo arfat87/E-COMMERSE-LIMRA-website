@@ -231,27 +231,47 @@ export async function saveTableRound({
   } catch (e) {}
 
   // Fallback to /api/db rpc
-  const res = await fetch("/api/db", {
+  try {
+    const res = await fetch("/api/db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "rpc",
+        rpc: "place_table_round",
+        params: {
+          p_table_number: Number(tableNumber) || 1,
+          p_customer_name: (customerName || "Table Customer").trim(),
+          p_customer_phone: (customerPhone || "").trim(),
+          p_table_zone: tableZone,
+          p_round_number: Number(roundNumber) || 1,
+          p_notes: notes ? notes.trim() : "",
+          p_items: p_items
+        }
+      })
+    });
+
+    const json = await res.json();
+    if (json.data) return json.data;
+  } catch (e) {}
+
+  // Fallback to /api/orders backend endpoint
+  const res2 = await fetch("/api/orders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      action: "rpc",
-      rpc: "place_table_round",
-      params: {
-        p_table_number: Number(tableNumber) || 1,
-        p_customer_name: (customerName || "Table Customer").trim(),
-        p_customer_phone: (customerPhone || "").trim(),
-        p_table_zone: tableZone,
-        p_round_number: Number(roundNumber) || 1,
-        p_notes: notes ? notes.trim() : "",
-        p_items: p_items
-      }
+      customerName: (customerName || "Table Customer").trim(),
+      customerPhone: (customerPhone || "").trim(),
+      items: p_items,
+      notes,
+      orderType: "table",
+      tableNumber: Number(tableNumber) || 1,
+      tableZone: tableZone
     })
   });
 
-  const json = await res.json();
-  if (json.data) return json.data;
-  throw new Error(json.error?.message || "Failed to place table round");
+  const json2 = await res2.json();
+  if (json2.data || json2.success) return json2.data || json2;
+  throw new Error(json2.error || "Failed to place table round");
 }
 
 /**

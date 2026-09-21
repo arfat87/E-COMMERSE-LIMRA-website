@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS public.orders (
   table_number INTEGER,
   table_zone TEXT DEFAULT 'indoor',
   txn_ref TEXT UNIQUE,
+  ticket_status TEXT NOT NULL DEFAULT 'OPEN'
+    CHECK (ticket_status IN ('OPEN', 'HOLD', 'BILLED', 'PAID', 'CLOSED', 'CANCELLED')),
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -50,6 +52,34 @@ CREATE TABLE IF NOT EXISTS public.order_items (
   line_total NUMERIC(10, 2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Trigger: Prevent attaching order items to a CLOSED or CANCELLED ticket
+CREATE OR REPLACE FUNCTION public.check_ticket_not_closed()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_ticket_status text;
+BEGIN
+  SELECT ticket_status INTO v_ticket_status
+  FROM public.orders
+  WHERE id = NEW.order_id;
+
+  IF v_ticket_status IN ('CLOSED', 'CANCELLED') THEN
+    RAISE EXCEPTION 'Cannot attach items to a % ticket (order_id: %)', v_ticket_status, NEW.order_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_ticket_not_closed ON public.order_items;
+CREATE TRIGGER trg_check_ticket_not_closed
+  BEFORE INSERT ON public.order_items
+  FOR EACH ROW
+  EXECUTE FUNCTION public.check_ticket_not_closed();
 
 -- 1.3 BOOKINGS
 CREATE TABLE IF NOT EXISTS public.bookings (
@@ -209,8 +239,14 @@ CREATE TABLE IF NOT EXISTS public.printer_settings (
   bill_bold_items BOOLEAN DEFAULT true,
   bill_bold_headers BOOLEAN DEFAULT true,
   bill_bold_totals BOOLEAN DEFAULT true,
-  bill_compact_header BOOLEAN DEFAULT false,
   bill_qr_size TEXT DEFAULT 'medium',
+  bill_show_review_qr BOOLEAN DEFAULT true,
+  bill_review_url TEXT DEFAULT 'https://g.page/r/CcrqEfWap5zfEBE/review',
+  bill_review_heading TEXT DEFAULT 'LOVE YOUR EXPERIENCE?',
+  bill_review_subtext TEXT DEFAULT 'Scan to leave us a Google Review',
+  direct_print_enabled BOOLEAN DEFAULT true,
+  auto_print_on_settle BOOLEAN DEFAULT true,
+  print_queue_retry_limit INTEGER DEFAULT 3,
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -640,13 +676,13 @@ GRANT EXECUTE ON FUNCTION public.place_order(text, text, text, jsonb, numeric, n
 
 -- 5.2 PLACE TABLE ROUND RPC
 CREATE OR REPLACE FUNCTION public.place_table_round(
-  p_table_number integer,
-  p_table_zone text DEFAULT 'indoor',
-  p_customer_name text DEFAULT 'Dine-in Guest',
-  p_customer_phone text DEFAULT '0000000000',
-  p_items jsonb DEFAULT '[]'::jsonb,
-  p_notes text DEFAULT NULL,
-  p_round_number integer DEFAULT 1
+  p_table_number   integer,
+  p_table_zone     text    DEFAULT 'indoor',
+  p_customer_name  text    DEFAULT 'Dine-in Guest',
+  p_customer_phone text    DEFAULT '0000000000',
+  p_items          jsonb   DEFAULT '[]'::jsonb,
+  p_notes          text    DEFAULT NULL,
+  p_round_number   integer DEFAULT 1
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -654,15 +690,20 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_primary_order public.orders%ROWTYPE;
-  v_new_order public.orders%ROWTYPE;
-  v_item jsonb;
-  v_round_total numeric := 0;
-  v_round_num integer := COALESCE(p_round_number, 1);
-  v_round_notes text;
-  v_notif_msg text;
-  v_dish_count integer;
+  v_active_ticket  public.orders%ROWTYPE;
+  v_new_order      public.orders%ROWTYPE;
+  v_item           jsonb;
+  v_round_total    numeric := 0;
+  v_round_num      integer := 1;
+  v_dish_count     integer;
+  v_notif_title    text;
+  v_notif_msg      text;
+  v_round_notes    text;
+  v_is_subsequent  boolean := false;
+  v_parent_id      uuid    := NULL;
+  v_order_num      integer;
 BEGIN
+  -- 1. Validate input
   IF p_table_number IS NULL OR p_table_number < 1 THEN
     RAISE EXCEPTION 'Invalid table number';
   END IF;
@@ -670,57 +711,119 @@ BEGIN
     RAISE EXCEPTION 'Order must have at least one item';
   END IF;
 
+  -- 2. Compute total amount
   FOR v_item IN SELECT value FROM jsonb_array_elements(p_items)
   LOOP
     v_round_total := v_round_total + COALESCE((v_item->>'line_total')::numeric, 0);
   END LOOP;
 
-  -- Find existing primary session for this table
-  SELECT o.* INTO v_primary_order
-  FROM public.orders o
-  WHERE o.order_type = 'table'
-    AND o.table_number = p_table_number
-    AND o.status IN ('pending', 'confirmed', 'preparing', 'ready', 'hold')
-    AND o.created_at >= now() - interval '12 hours'
-  ORDER BY o.created_at ASC
-  LIMIT 1;
+  -- 3. Query for active unbilled ticket at this table (OPEN or HOLD)
+  SELECT *
+    INTO v_active_ticket
+    FROM public.orders
+   WHERE order_type = 'table'
+     AND table_number = p_table_number
+     AND ticket_status IN ('OPEN', 'HOLD')
+     AND created_at >= (now() - interval '12 hours')
+   ORDER BY created_at ASC
+   LIMIT 1
+     FOR UPDATE SKIP LOCKED;
 
-  IF NOT FOUND OR v_primary_order.id IS NULL THEN
-    v_round_num := 1;
+  -- 4. Decision Logic
+  IF FOUND AND v_active_ticket.id IS NOT NULL THEN
+    -- Table has an active ticket -> Attach as next round
+    v_is_subsequent := true;
+    v_parent_id     := v_active_ticket.id;
+    v_order_num     := v_active_ticket.order_number;
+
+    -- Calculate round number based on existing orders in this active ticket session
+    SELECT COALESCE(MAX(
+      CASE
+        WHEN o.notes ~ '\[ROUND:\s*(\d+)\]'
+        THEN (regexp_match(o.notes, '\[ROUND:\s*(\d+)\]'))[1]::integer
+        ELSE 1
+      END
+    ), 1) + 1
+    INTO v_round_num
+    FROM public.orders o
+    WHERE o.order_type = 'table'
+      AND o.table_number = p_table_number
+      AND (o.id = v_active_ticket.id OR o.notes LIKE '%[PARENT_ORDER_ID: ' || v_active_ticket.id || '%');
+
+    v_round_notes := '[ROUND: ' || v_round_num
+                  || '] [PARENT_ORDER_ID: ' || v_active_ticket.id
+                  || '] [TABLE: ' || p_table_number || ']';
+    IF p_notes IS NOT NULL AND trim(p_notes) <> '' THEN
+      v_round_notes := v_round_notes || ' ' || trim(p_notes);
+    END IF;
+
+    v_dish_count  := jsonb_array_length(p_items);
+    v_notif_title := '🍽️ Table ' || p_table_number || ' - Round ' || v_round_num;
+    v_notif_msg   := 'Table ' || p_table_number || ' placed Round ' || v_round_num
+                  || ' (' || v_dish_count || ' item' || CASE WHEN v_dish_count > 1 THEN 's' ELSE '' END || ')';
+
   ELSE
-    v_round_num := GREATEST(v_round_num, 2);
+    -- No active ticket (or previous ticket was BILLED/PAID/CLOSED/CANCELLED) -> Brand new ticket
+    v_is_subsequent := false;
+    v_parent_id     := NULL;
+    v_round_num     := 1;
+    v_order_num     := (SELECT COALESCE(MAX(order_number), 1000) + 1 FROM public.orders);
+
+    v_round_notes := '[ROUND: 1] [TABLE: ' || p_table_number || ']';
+    IF p_notes IS NOT NULL AND trim(p_notes) <> '' THEN
+      v_round_notes := v_round_notes || ' ' || trim(p_notes);
+    END IF;
+
+    v_dish_count  := jsonb_array_length(p_items);
+    v_notif_title := '🍽️ Table ' || p_table_number || ' - New Order';
+    v_notif_msg   := 'New Dine-In Order received for ₹' || v_round_total
+                  || ' at Table ' || p_table_number;
   END IF;
 
-  v_round_notes := '[ROUND: ' || v_round_num || '] [TABLE: ' || p_table_number || ']';
-  IF p_notes IS NOT NULL AND trim(p_notes) <> '' THEN
-    v_round_notes := v_round_notes || ' ' || trim(p_notes);
-  END IF;
-
+  -- 5. Insert order record
   INSERT INTO public.orders (
-    order_number, customer_name, customer_phone, order_type, table_number, table_zone,
-    total_amount, status, payment_status, notes
+    order_number,
+    customer_name,
+    customer_phone,
+    order_type,
+    table_number,
+    table_zone,
+    total_amount,
+    status,
+    payment_status,
+    ticket_status,
+    notes
   )
   VALUES (
-    COALESCE(v_primary_order.order_number, (SELECT COALESCE(MAX(order_number), 1000) + 1 FROM public.orders)),
-    COALESCE(NULLIF(trim(p_customer_name), ''), v_primary_order.customer_name, 'Dine-in Guest'),
-    COALESCE(NULLIF(trim(p_customer_phone), ''), v_primary_order.customer_phone, '0000000000'),
+    v_order_num,
+    COALESCE(NULLIF(trim(p_customer_name), ''), CASE WHEN v_active_ticket.customer_name IS NOT NULL THEN v_active_ticket.customer_name ELSE 'Dine-in Guest' END),
+    COALESCE(NULLIF(trim(p_customer_phone), ''), CASE WHEN v_active_ticket.customer_phone IS NOT NULL THEN v_active_ticket.customer_phone ELSE '0000000000' END),
     'table',
     p_table_number,
-    COALESCE(NULLIF(trim(p_table_zone), ''), v_primary_order.table_zone, 'indoor'),
+    COALESCE(NULLIF(trim(p_table_zone), ''), CASE WHEN v_active_ticket.table_zone IS NOT NULL THEN v_active_ticket.table_zone ELSE 'indoor' END),
     v_round_total,
     'pending',
     'unpaid',
+    'OPEN',
     v_round_notes
   )
   RETURNING * INTO v_new_order;
 
+  -- 6. Insert order items
   FOR v_item IN SELECT value FROM jsonb_array_elements(p_items)
   LOOP
-    INSERT INTO public.order_items (order_id, menu_item_id, item_name, quantity, unit_price, line_total)
+    INSERT INTO public.order_items (
+      order_id,
+      menu_item_id,
+      item_name,
+      quantity,
+      unit_price,
+      line_total
+    )
     VALUES (
       v_new_order.id,
       CASE WHEN v_item ? 'menu_item_id' AND v_item->>'menu_item_id' IS NOT NULL
-        THEN (v_item->>'menu_item_id')::integer ELSE NULL END,
+           THEN (v_item->>'menu_item_id')::integer ELSE NULL END,
       v_item->>'item_name',
       GREATEST(COALESCE((v_item->>'quantity')::integer, (v_item->>'qty')::integer, 1), 1),
       COALESCE((v_item->>'unit_price')::numeric, (v_item->>'price')::numeric, 0),
@@ -728,15 +831,20 @@ BEGIN
     );
   END LOOP;
 
-  v_dish_count := jsonb_array_length(p_items);
-  v_notif_msg := 'Table ' || p_table_number || ' placed Round ' || v_round_num || ' (' || v_dish_count || ' items)';
-
+  -- 7. Insert staff notification
   INSERT INTO public.notifications (
-    type, title, message, description, order_id, item_id, customer_phone, is_read
+    type,
+    title,
+    message,
+    description,
+    order_id,
+    item_id,
+    customer_phone,
+    is_read
   )
   VALUES (
     'order',
-    '🍽️ Table ' || p_table_number || ' - Round ' || v_round_num,
+    v_notif_title,
     v_notif_msg,
     v_notif_msg,
     v_new_order.id,
@@ -745,18 +853,22 @@ BEGIN
     false
   );
 
+  -- 8. Return structured response
   RETURN jsonb_build_object(
-    'id', v_new_order.id,
-    'order_number', v_new_order.order_number,
-    'total_amount', v_new_order.total_amount,
-    'status', v_new_order.status,
-    'round_number', v_round_num,
-    'parent_order_id', v_primary_order.id
+    'id',                  v_new_order.id,
+    'order_number',        v_new_order.order_number,
+    'total_amount',        v_new_order.total_amount,
+    'status',              v_new_order.status,
+    'ticket_status',       v_new_order.ticket_status,
+    'round_number',        v_round_num,
+    'parent_order_id',     v_parent_id,
+    'is_subsequent_round', v_is_subsequent
   );
 END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.place_table_round(integer, text, text, text, jsonb, text, integer) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.place_table_round(integer, text, text, text, jsonb, text) TO anon, authenticated;
 
 -- 5.3 PLACE BOOKING RPC
 CREATE OR REPLACE FUNCTION public.place_booking(
@@ -1064,6 +1176,253 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.verify_upi_payment(numeric, text, text) TO anon, authenticated;
+
+-- 5.7 STOCK MANAGEMENT RPCs
+CREATE OR REPLACE FUNCTION public.record_stock_out(
+  p_item_id uuid,
+  p_qty numeric,
+  p_reason text DEFAULT 'Kitchen Prep',
+  p_used_by text DEFAULT NULL,
+  p_notes text DEFAULT NULL,
+  p_allow_negative boolean DEFAULT false
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_item public.stock_items%ROWTYPE;
+  v_new_qty numeric;
+  v_out_id uuid := gen_random_uuid();
+  v_log_id uuid := gen_random_uuid();
+  v_is_override boolean := false;
+  v_details text;
+BEGIN
+  IF p_item_id IS NULL THEN
+    RAISE EXCEPTION 'Item ID is required';
+  END IF;
+  IF p_qty IS NULL OR p_qty <= 0 THEN
+    RAISE EXCEPTION 'Stock out quantity must be greater than 0';
+  END IF;
+
+  -- Lock item row for update to prevent concurrent race conditions
+  SELECT * INTO v_item
+  FROM public.stock_items
+  WHERE id = p_item_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Stock item not found';
+  END IF;
+
+  -- Hard balance validation
+  IF (COALESCE(v_item.qty, 0) - p_qty) < 0 THEN
+    IF NOT p_allow_negative THEN
+      RAISE EXCEPTION 'INSUFFICIENT_STOCK: Available balance is % %, cannot deduct % % without authorized override.',
+        COALESCE(v_item.qty, 0), COALESCE(v_item.unit, 'pcs'), p_qty, COALESCE(v_item.unit, 'pcs');
+    ELSE
+      v_is_override := true;
+    END IF;
+  END IF;
+
+  v_new_qty := COALESCE(v_item.qty, 0) - p_qty;
+
+  -- Update item quantity
+  UPDATE public.stock_items
+  SET qty = v_new_qty,
+      updated_at = now()
+  WHERE id = p_item_id;
+
+  -- Insert stock_out entry
+  INSERT INTO public.stock_out (
+    id, item_sku, item_name, unit, qty, date, used_by, notes, created_at
+  )
+  VALUES (
+    v_out_id,
+    COALESCE(v_item.sku, ''),
+    v_item.name,
+    COALESCE(v_item.unit, 'pcs'),
+    p_qty,
+    to_char(now(), 'DD-MM-YYYY'),
+    COALESCE(p_used_by, 'Kitchen Staff'),
+    p_notes,
+    now()
+  );
+
+  -- Log action
+  v_details := 'Deducted ' || p_qty || ' ' || COALESCE(v_item.unit, 'pcs') || ' of ' || v_item.name
+            || ' (Reason: ' || COALESCE(p_reason, 'Kitchen Prep') || ', Balance: ' || v_new_qty || ')';
+  IF v_is_override THEN
+    v_details := '[OVERRIDE: Negative Stock Allowed] ' || v_details;
+  END IF;
+
+  INSERT INTO public.stock_logs (
+    id, action, details, created_at
+  )
+  VALUES (
+    v_log_id,
+    CASE WHEN v_is_override THEN 'STOCK_OUT_OVERRIDE' ELSE 'STOCK_OUT' END,
+    v_details,
+    now()
+  );
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'item_id', v_item.id,
+    'item_name', v_item.name,
+    'previous_qty', v_item.qty,
+    'deducted_qty', p_qty,
+    'new_qty', v_new_qty,
+    'unit', v_item.unit,
+    'is_override', v_is_override
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.record_stock_out(uuid, numeric, text, text, text, boolean) TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.record_stock_in(
+  p_item_id uuid,
+  p_qty numeric,
+  p_cost_price numeric DEFAULT NULL,
+  p_supplier text DEFAULT NULL,
+  p_notes text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_item public.stock_items%ROWTYPE;
+  v_new_qty numeric;
+  v_in_id uuid := gen_random_uuid();
+  v_log_id uuid := gen_random_uuid();
+BEGIN
+  IF p_item_id IS NULL THEN
+    RAISE EXCEPTION 'Item ID is required';
+  END IF;
+  IF p_qty IS NULL OR p_qty <= 0 THEN
+    RAISE EXCEPTION 'Stock in quantity must be greater than 0';
+  END IF;
+
+  SELECT * INTO v_item
+  FROM public.stock_items
+  WHERE id = p_item_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Stock item not found';
+  END IF;
+
+  v_new_qty := COALESCE(v_item.qty, 0) + p_qty;
+
+  -- Update item quantity & optionally cost price
+  UPDATE public.stock_items
+  SET qty = v_new_qty,
+      cost_price = COALESCE(p_cost_price, v_item.cost_price),
+      supplier = COALESCE(NULLIF(trim(p_supplier), ''), v_item.supplier),
+      updated_at = now()
+  WHERE id = p_item_id;
+
+  -- Insert stock_in entry
+  INSERT INTO public.stock_in (
+    id, item_sku, item_name, unit, qty, cost_price, supplier, date, notes, created_at
+  )
+  VALUES (
+    v_in_id,
+    COALESCE(v_item.sku, ''),
+    v_item.name,
+    COALESCE(v_item.unit, 'pcs'),
+    p_qty,
+    COALESCE(p_cost_price, v_item.cost_price, 0),
+    COALESCE(p_supplier, v_item.supplier, ''),
+    to_char(now(), 'DD-MM-YYYY'),
+    p_notes,
+    now()
+  );
+
+  -- Log action
+  INSERT INTO public.stock_logs (
+    id, action, details, created_at
+  )
+  VALUES (
+    v_log_id,
+    'STOCK_IN',
+    'Added ' || p_qty || ' ' || COALESCE(v_item.unit, 'pcs') || ' of ' || v_item.name
+    || ' (New Balance: ' || v_new_qty || ')',
+    now()
+  );
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'item_id', v_item.id,
+    'item_name', v_item.name,
+    'previous_qty', v_item.qty,
+    'added_qty', p_qty,
+    'new_qty', v_new_qty,
+    'unit', v_item.unit
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.record_stock_in(uuid, numeric, numeric, text, text) TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.get_stock_daily_summary(
+  p_date date DEFAULT CURRENT_DATE
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_start_of_day timestamptz := p_date::timestamptz;
+  v_end_of_day   timestamptz := (p_date + interval '1 day')::timestamptz;
+  v_total_items  integer := 0;
+  v_low_stock    integer := 0;
+  v_in_today     numeric := 0;
+  v_out_today    numeric := 0;
+  v_current_total numeric := 0;
+  v_opening_total numeric := 0;
+BEGIN
+  -- Total items and current balance sum
+  SELECT COUNT(*),
+         COUNT(*) FILTER (WHERE COALESCE(qty, 0) <= COALESCE(min_qty, 5)),
+         COALESCE(SUM(COALESCE(qty, 0)), 0)
+    INTO v_total_items, v_low_stock, v_current_total
+    FROM public.stock_items;
+
+  -- Stock in today
+  SELECT COALESCE(SUM(COALESCE(qty, 0)), 0)
+    INTO v_in_today
+    FROM public.stock_in
+   WHERE created_at >= v_start_of_day AND created_at < v_end_of_day;
+
+  -- Stock out today
+  SELECT COALESCE(SUM(COALESCE(qty, 0)), 0)
+    INTO v_out_today
+    FROM public.stock_out
+   WHERE created_at >= v_start_of_day AND created_at < v_end_of_day;
+
+  -- Calculated opening balance = current - in_today + out_today
+  v_opening_total := v_current_total - v_in_today + v_out_today;
+
+  RETURN jsonb_build_object(
+    'date',             p_date,
+    'total_items',      v_total_items,
+    'low_stock_count',  v_low_stock,
+    'opening_balance',  v_opening_total,
+    'stock_in_today',   v_in_today,
+    'stock_out_today',  v_out_today,
+    'adjustments',      0,
+    'current_balance',  v_current_total
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_stock_daily_summary(date) TO anon, authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 6. ROW LEVEL SECURITY (RLS) POLICIES

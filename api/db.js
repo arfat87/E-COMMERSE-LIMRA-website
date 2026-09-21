@@ -100,25 +100,26 @@ export default async function handler(req, res) {
           "arfatalis451@gmail.com",
           "admin@limra.com",
           "orkiya220@gmail.com",
-          "arifsk78637@gmail.com",
-          "admin@example.com"
+          "arifsk78637@gmail.com"
         ];
 
-        if (knownAdmins.includes(cleanEmail) || cleanEmail.includes("admin") || cleanEmail.endsWith("@limra.com")) {
+        if (cleanEmail && knownAdmins.includes(cleanEmail)) {
           return res.status(200).json({ data: { email: cleanEmail, role: "admin" }, error: null });
         }
 
-        const { data: adminList } = await supabase
-          .from("admin_users")
-          .select("*")
-          .eq("email", cleanEmail)
-          .limit(1);
+        if (cleanEmail) {
+          const { data: adminList } = await supabase
+            .from("admin_users")
+            .select("*")
+            .eq("email", cleanEmail)
+            .limit(1);
 
-        if (adminList && adminList.length > 0) {
-          return res.status(200).json({
-            data: { email: adminList[0].email, user_id: adminList[0].user_id, role: "admin" },
-            error: null
-          });
+          if (adminList && adminList.length > 0) {
+            return res.status(200).json({
+              data: { email: adminList[0].email, user_id: adminList[0].user_id, role: "admin" },
+              error: null
+            });
+          }
         }
 
         return res.status(200).json({ data: null, error: null });
@@ -127,6 +128,9 @@ export default async function handler(req, res) {
       // 2.2 Sign In With Password
       if (authType === "signInWithPassword" || authType === "login") {
         const { password } = parsedBody;
+        if (!cleanEmail || !password) {
+          return res.status(400).json({ data: null, error: { message: "Email and password are required" } });
+        }
         try {
           const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
             email: cleanEmail,
@@ -135,31 +139,11 @@ export default async function handler(req, res) {
           if (!authErr && authData?.user) {
             return res.status(200).json({ data: authData, error: null });
           }
-        } catch (e) {}
-
-        const isMasterAdmin =
-          cleanEmail.includes("admin") ||
-          cleanEmail.includes("arfatalis451") ||
-          cleanEmail.includes("orkiya220") ||
-          cleanEmail.includes("arifsk78637");
-
-        if (isMasterAdmin) {
-          const userObj = {
-            id: "41ca054d-f793-4d2a-bfde-3101c08b0eb4",
-            email: cleanEmail,
-            role: "admin",
-            emailVerified: true
-          };
-          return res.status(200).json({
-            data: {
-              user: userObj,
-              session: {
-                access_token: "supabase-admin-session-" + Date.now(),
-                user: userObj
-              }
-            },
-            error: null
-          });
+          if (authErr) {
+            return res.status(401).json({ data: null, error: { message: authErr.message || "Invalid credentials" } });
+          }
+        } catch (e) {
+          return res.status(401).json({ data: null, error: { message: e.message || "Authentication failed" } });
         }
 
         return res.status(401).json({ data: null, error: { message: "Invalid email or password" } });
@@ -182,7 +166,7 @@ export default async function handler(req, res) {
     }
 
     // 3.1 SELECT
-    if (action === "select" || req.method === "GET") {
+    if (action === "select" || (!action && req.method === "GET")) {
       let query = supabase.from(targetTable).select((options && options.select) || "*");
 
       if (filter && typeof filter === "object") {
@@ -212,7 +196,7 @@ export default async function handler(req, res) {
     }
 
     // 3.2 INSERT
-    if (action === "insert" || req.method === "POST") {
+    if (action === "insert" || (!action && req.method === "POST")) {
       const records = Array.isArray(data) ? data : [data || {}];
       if (records.length === 0) return res.status(200).json({ data: [], error: null });
 
@@ -228,14 +212,15 @@ export default async function handler(req, res) {
     }
 
     // 3.3 UPDATE
-    if (action === "update" || req.method === "PATCH" || req.method === "PUT") {
+    if (action === "update" || (!action && (req.method === "PATCH" || req.method === "PUT"))) {
+      if (!filter || typeof filter !== "object" || Object.keys(filter).length === 0) {
+        return res.status(400).json({ data: null, error: { message: "Filter is required for update operations to prevent accidental mass updates" } });
+      }
       const updateData = updates || data || {};
       let query = supabase.from(targetTable).update(updateData);
 
-      if (filter && typeof filter === "object") {
-        for (const [key, val] of Object.entries(filter)) {
-          query = query.eq(key, val);
-        }
+      for (const [key, val] of Object.entries(filter)) {
+        query = query.eq(key, val);
       }
 
       const { data: updated, error: updateErr } = await query.select();
@@ -246,13 +231,14 @@ export default async function handler(req, res) {
     }
 
     // 3.4 DELETE
-    if (action === "delete" || req.method === "DELETE") {
+    if (action === "delete" || (!action && req.method === "DELETE")) {
+      if (!filter || typeof filter !== "object" || Object.keys(filter).length === 0) {
+        return res.status(400).json({ data: null, error: { message: "Filter is required for delete operations to prevent accidental mass deletion" } });
+      }
       let query = supabase.from(targetTable).delete();
 
-      if (filter && typeof filter === "object") {
-        for (const [key, val] of Object.entries(filter)) {
-          query = query.eq(key, val);
-        }
+      for (const [key, val] of Object.entries(filter)) {
+        query = query.eq(key, val);
       }
 
       const { data: deleted, error: deleteErr } = await query.select();

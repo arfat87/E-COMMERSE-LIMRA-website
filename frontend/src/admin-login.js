@@ -28,8 +28,8 @@ function isEmailVerificationError(error) {
 async function checkAdminAccess(user) {
   if (!user) return false;
   const cleanEmail = (user.email || '').toLowerCase().trim();
-  const knownAdmins = ['arfatalis451@gmail.com', 'admin@limra.com', 'orkiya220@gmail.com', 'arifsk78637@gmail.com', 'admin@example.com'];
-  if (knownAdmins.includes(cleanEmail) || cleanEmail.includes('admin') || cleanEmail.endsWith('@limra.com')) {
+  const knownAdmins = ['arfatalis451@gmail.com', 'admin@limra.com', 'orkiya220@gmail.com', 'arifsk78637@gmail.com'];
+  if (knownAdmins.includes(cleanEmail)) {
     return true;
   }
 
@@ -404,6 +404,19 @@ async function init() {
 
   cleanAuthParams();
   initAuthUI();
+
+  // 3. Localhost developer convenience
+  const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  if (isLocalDev) {
+    const banner = $('dev-quick-login-banner');
+    if (banner) show(banner);
+    const quickBtn = $('btn-dev-quick-login');
+    if (quickBtn) {
+      quickBtn.addEventListener('click', () => {
+        try { localStorage.setItem('limra_dev_admin', 'true'); } catch (e) {}
+      });
+    }
+  }
 }
 
 init();

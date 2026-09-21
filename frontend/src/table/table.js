@@ -1,4 +1,4 @@
-import { insforge, saveOrder, getMenuOverrides, validateCouponCode, redeemCoupon, getCombos, getCustomDishes } from '../lib/insforge.js';
+import { insforge, saveOrder, saveTableRound, getMenuOverrides, validateCouponCode, redeemCoupon, getCombos, getCustomDishes } from '../lib/insforge.js';
 import { menuItems, categoryTabOrder, categoryLabels, categoryEmojis } from '../data/menu.js';
 import { initLanguageSystem, applyTranslations, t, getLanguage, setLanguage } from '../lib/i18n.js';
 
@@ -710,15 +710,15 @@ function setupCartUI() {
       const discountAmt = appliedCoupon ? Math.round(subtotal * (appliedCoupon.discount_pct / 100)) : 0;
       const gst = Math.round((subtotal - discountAmt) * 0.05);
 
-      const roundKey = `limra_table_session_round_${currentTable}`;
-      let currentRoundNum = parseInt(sessionStorage.getItem(roundKey) || '1', 10);
-      if (isNaN(currentRoundNum) || currentRoundNum < 1) currentRoundNum = 1;
+      // Clean up legacy client round storage so browser never forces round 2
+      try {
+        sessionStorage.removeItem(`limra_table_session_round_${currentTable}`);
+      } catch (e) {}
 
       const couponNote = appliedCoupon ? `[COUPON: ${appliedCoupon.code}] [DISCOUNT_PCT: ${appliedCoupon.discount_pct}%] [DISCOUNT_AMT: ${discountAmt}]` : '';
       const taxNote = `[CGST: 2.5%] [SGST: 2.5%]`;
-      const roundNote = `[ROUND: ${currentRoundNum}]`;
       const paymentNote = `[PAYMENT: ${payment}] | [PAYMENT_STATUS: ${payment === 'upi' ? 'PAID' : 'PENDING'}]`;
-      const combinedNotes = [`[TABLE: ${currentTable}]`, roundNote, paymentNote, taxNote, couponNote, instruction].filter(Boolean).join(' | ');
+      const combinedNotes = [paymentNote, taxNote, couponNote, instruction].filter(Boolean).join(' | ');
 
       // Strictly food items and their base prices (no tax/discount pseudo line items)
       const orderItems = cart.map(c => ({
@@ -728,20 +728,15 @@ function setupCartUI() {
         qty: Number(c.quantity)
       }));
 
-      const orderData = await saveOrder({
+      // Server-side authoritative round determination via place_table_round RPC
+      const orderData = await saveTableRound({
+        tableNumber: currentTable,
+        tableZone: zone,
         customerName: name,
         customerPhone: phone,
         items: orderItems,
-        notes: combinedNotes,
-        orderType: 'table',
-        tableNumber: currentTable,
-        tableZone: zone,
-        roundNumber: currentRoundNum,
-        txnRef: txnRef
+        notes: combinedNotes
       });
-
-      // Increment round count for next order in this table session
-      sessionStorage.setItem(roundKey, String(currentRoundNum + 1));
 
       if (appliedCoupon) {
         try {
@@ -1085,9 +1080,11 @@ function openTableDetailDrawer(itemId) {
       isCombo: true,
       items: combo.items || []
     };
+  } else if (String(itemId).startsWith('custom_')) {
+    item = (activeCustomDishes || []).find(i => String(i.id) === String(itemId));
   } else {
     const numId = typeof itemId === 'number' ? itemId : parseInt(itemId, 10);
-    item = menuItems.find(m => m.id === numId);
+    item = menuItems.find(m => m.id === numId) || (activeCustomDishes || []).find(i => String(i.id) === String(itemId));
   }
 
   if (!item) return;

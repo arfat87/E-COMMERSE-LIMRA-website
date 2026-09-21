@@ -6,11 +6,13 @@
   <title>LIMRA Admin — Restaurant Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
   <!-- QZ Tray SDK -->
   <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.min.js" defer></script>
+  <!-- Lucide Icons -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.577.0/dist/umd/lucide.min.js"></script>
   <link rel="stylesheet" href="/src/style.css" />
   <link rel="stylesheet" href="/src/admin.css" />
   <link rel="icon" href="/images/logo.png" type="image/png" />
@@ -75,6 +77,7 @@
     <aside id="sidebar" class="adm-sidebar">
     <div class="adm-sidebar-head">
       <p class="adm-brand" style="display:flex;align-items:center;gap:8px;"><img src="/images/logo.png" alt="LIMRA Logo" style="width:30px;height:30px;border-radius:50%;object-fit:cover;" /><span class="adm-nav-label">LIMRA</span></p>
+      <button type="button" id="sidebar-close-btn" class="adm-sidebar-close" aria-label="Close menu">&times;</button>
     </div>
 
     <nav class="adm-nav">
@@ -93,6 +96,15 @@
       <button data-panel="order-detail" class="adm-nav-item">
         <span class="adm-nav-icon"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg></span>
         <span class="adm-nav-label">Billing</span>
+      </button>
+      <button data-panel="tables" class="adm-nav-item">
+        <span class="adm-nav-icon"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18M10 3v18M14 3v18"/></svg></span>
+        <span class="adm-nav-label">Tables (1-19)</span>
+      </button>
+      <button data-panel="kitchen" class="adm-nav-item">
+        <span class="adm-nav-icon"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span>
+        <span class="adm-nav-label">Kitchen / KOT</span>
+        <span id="pending-kitchen-badge" class="adm-nav-badge adm-hidden">0</span>
       </button>
       <button data-panel="hold-orders" class="adm-nav-item">
         <span class="adm-nav-icon"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span>
@@ -192,6 +204,11 @@
         <span id="printer-status" style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.65rem; border-radius: 8px; margin-right: 0.25rem; background: rgba(239, 68, 68, 0.12); color: #ff5b5b; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to search / reconnect printer">
           🔌 Printer Off
         </span>
+        <!-- Print Queue & Retry Hub -->
+        <button type="button" id="btn-print-queue" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:0.75rem;padding:0.25rem 0.55rem;border-radius:8px;background:#f8fafc;display:inline-flex;align-items:center;gap:4px;margin-right:0.25rem;cursor:pointer;" title="View Print Queue & Retry Jobs">
+          <span>🗂️ Queue</span>
+          <span id="print-queue-badge" class="adm-hidden" style="background:#ef4444;color:#fff;border-radius:999px;font-size:0.65rem;font-weight:800;padding:1px 5px;">0</span>
+        </button>
         <!-- Quick Bill Size & Boldness Adjuster Button -->
         <button type="button" id="btn-quick-bill-adjust" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:0.75rem;padding:0.25rem 0.55rem;border-radius:8px;background:#f8fafc;color:#4f46e5;border-color:#c7d2fe;font-weight:700;display:inline-flex;align-items:center;gap:4px;margin-right:0.25rem;cursor:pointer;" title="Manually change bill text size, font boldness, and reduce receipt paper size">
           <span>🎛️</span> Adjust Bill Size
@@ -243,26 +260,89 @@
       </div>
     </header>
 
+    <!-- Print Queue Failure Alert Banner -->
+    <div id="adm-print-alert-bar" class="adm-hidden" style="background:#fef2f2;border-bottom:2px solid #ef4444;padding:0.6rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;color:#991b1b;font-size:0.82rem;font-weight:700;z-index:30;">
+      <div style="display:flex;align-items:center;gap:0.5rem;">
+        <span style="font-size:1.1rem;">⚠️</span>
+        <span id="adm-print-alert-msg">Print job failed for Order #1024</span>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <button type="button" id="adm-print-alert-retry-btn" class="adm-btn adm-btn-sm" style="background:#ef4444;color:#fff;border:none;border-radius:6px;font-weight:800;cursor:pointer;padding:0.25rem 0.75rem;">
+          🔄 Retry Print
+        </button>
+        <button type="button" id="adm-print-alert-dismiss-btn" style="background:none;border:none;color:#991b1b;cursor:pointer;font-size:1.1rem;padding:0 4px;" title="Dismiss">&times;</button>
+      </div>
+    </div>
+
     <div class="adm-content" id="adm-content">
       <!-- Dashboard -->
       <section id="panel-dashboard" class="adm-panel active">
         <div class="adm-page-head">
           <div>
-            <h1 class="adm-page-title">🍽️ Executive Command Center</h1>
+            <h1 class="adm-page-title">Executive Command Centre</h1>
             <p class="adm-page-sub" id="last-updated">Real-time restaurant operations, daily revenue, sales trends, and tax reporting</p>
           </div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-            <button type="button" id="dash-quick-pos-btn" class="adm-btn adm-btn-primary" style="display:inline-flex;align-items:center;gap:0.35rem;font-weight:700;">
-              <span>🧾</span> + New POS Bill
+            <button type="button" id="dash-quick-pos-btn" class="adm-btn adm-btn-primary" style="display:inline-flex;align-items:center;gap:0.35rem;">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg> New POS Bill
             </button>
-            <button type="button" id="dash-quick-tables-btn" class="adm-btn adm-btn-outline" style="background:#fff;display:inline-flex;align-items:center;gap:0.35rem;">
-              <span>🪑</span> Floor &amp; Tables
+            <button type="button" id="dash-quick-tables-btn" class="adm-btn adm-btn-outline" style="display:inline-flex;align-items:center;gap:0.35rem;">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18M10 3v18M14 3v18"/></svg> Tables
             </button>
-            <button type="button" id="dash-quick-sync-btn" class="adm-btn adm-btn-outline" style="background:#fff;display:inline-flex;align-items:center;gap:0.35rem;" title="Sync database data">
-              <span>🔄</span> Sync Data
+            <button type="button" id="dash-quick-sync-btn" class="adm-btn adm-btn-outline" style="display:inline-flex;align-items:center;gap:0.35rem;" title="Sync database data">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Sync
             </button>
-            <button type="button" id="dash-quick-export-today-btn" class="adm-btn adm-btn-outline" style="background:#f0fdf4;border-color:#bbf7d0;color:#15803d;display:inline-flex;align-items:center;gap:0.35rem;font-weight:700;">
-              <span>📥</span> Export Today (.csv)
+            <button type="button" id="dash-quick-export-today-btn" class="adm-btn adm-btn-outline" style="display:inline-flex;align-items:center;gap:0.35rem;color:#15803d;border-color:#bbf7d0;background:#f0fdf4;">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Export Today
+            </button>
+          </div>
+        </div>
+
+        <!-- POS HOME 9-HUB QUICK NAVIGATION GRID (1-2 taps from home) -->
+        <div class="pos-home-hub-section" style="margin-bottom:1.5rem;background:var(--adm-card);border:1px solid var(--adm-border);border-radius:16px;padding:1.15rem;box-shadow:0 3px 10px rgba(32,35,34,0.035);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.85rem;">
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+              <i data-lucide="zap" style="width:18px;height:18px;color:#6366f1;"></i>
+              <h2 style="font-family:'Fraunces',Georgia,serif;font-size:1rem;font-weight:700;color:var(--adm-text);margin:0;letter-spacing:-0.02em;">Quick Navigation</h2>
+            </div>
+            <span style="font-size:0.72rem;color:var(--adm-muted);font-weight:600;">LIMRA POS</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:0.65rem;" id="pos-home-hub-tiles">
+            <button type="button" class="pos-hub-tile" data-hub="new-order">
+              <i data-lucide="shopping-cart"></i>
+              <span>New Order</span>
+            </button>
+            <button type="button" class="pos-hub-tile" data-hub="tables">
+              <i data-lucide="armchair"></i>
+              <span>Tables</span>
+            </button>
+            <button type="button" class="pos-hub-tile" data-hub="hold-orders">
+              <i data-lucide="pause-circle"></i>
+              <span>Hold Orders</span>
+            </button>
+            <button type="button" class="pos-hub-tile" data-hub="kitchen">
+              <i data-lucide="chef-hat"></i>
+              <span>Kitchen / KOT</span>
+            </button>
+            <button type="button" class="pos-hub-tile" data-hub="order-detail">
+              <i data-lucide="receipt"></i>
+              <span>Billing</span>
+            </button>
+            <button type="button" class="pos-hub-tile" data-hub="payments">
+              <i data-lucide="credit-card"></i>
+              <span>Payments</span>
+            </button>
+            <button type="button" class="pos-hub-tile" data-hub="closed-orders">
+              <i data-lucide="check-circle-2"></i>
+              <span>Closed Orders</span>
+            </button>
+            <a href="/stock-manager/index.html" class="pos-hub-tile">
+              <i data-lucide="package"></i>
+              <span>Stock</span>
+            </a>
+            <button type="button" class="pos-hub-tile" data-hub="analytics">
+              <i data-lucide="bar-chart-3"></i>
+              <span>Reports</span>
             </button>
           </div>
         </div>
@@ -685,6 +765,106 @@
         <div id="orders-pagination" class="adm-pagination" style="margin-top:1rem;"></div>
       </section>
 
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- TABLES SCREEN: VISUAL LIVE STATUS GRID (TABLES 1-19)           -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <section id="panel-tables" class="adm-panel">
+        <div class="adm-page-head">
+          <div>
+            <h1 class="adm-page-title">🪑 Tables 1–19 Live Floor Plan</h1>
+            <p class="adm-page-sub">Live seating overview, active ticket rounds, table orders, and 1-tap billing</p>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <button type="button" id="btn-tables-refresh" class="adm-btn adm-btn-outline" style="background:#fff;">
+              <span>🔄</span> Refresh Tables
+            </button>
+            <button type="button" id="btn-tables-new-order" class="adm-btn adm-btn-primary" style="font-weight:700;">
+              <span>+</span> New Table Order
+            </button>
+          </div>
+        </div>
+
+        <!-- Tables Stat Summary Strip -->
+        <div class="adm-stats" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));margin-bottom:1.25rem;">
+          <div class="adm-stat" style="border-left:4px solid #10b981;">
+            <div>
+              <p class="adm-stat-label">🟢 Free / Available</p>
+              <p class="adm-stat-value" id="tables-stat-free" style="color:#059669;">19</p>
+            </div>
+          </div>
+          <div class="adm-stat" style="border-left:4px solid #eab308;">
+            <div>
+              <p class="adm-stat-label">🟡 Occupied / Dining</p>
+              <p class="adm-stat-value" id="tables-stat-occupied" style="color:#ca8a04;">0</p>
+            </div>
+          </div>
+          <div class="adm-stat" style="border-left:4px solid #3b82f6;">
+            <div>
+              <p class="adm-stat-label">🔵 Billed (Pending Pay)</p>
+              <p class="adm-stat-value" id="tables-stat-billed" style="color:#2563eb;">0</p>
+            </div>
+          </div>
+          <div class="adm-stat" style="border-left:4px solid #f97316;">
+            <div>
+              <p class="adm-stat-label">🟠 On Hold</p>
+              <p class="adm-stat-value" id="tables-stat-hold" style="color:#c2410c;">0</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter & Search Toolbar -->
+        <div class="adm-filters" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:1.25rem;">
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap;" id="tables-filter-pills">
+            <button type="button" class="pos-cat-pill active" data-filter="all">All Tables (19)</button>
+            <button type="button" class="pos-cat-pill" data-filter="free">🟢 Free</button>
+            <button type="button" class="pos-cat-pill" data-filter="occupied">🟡 Occupied</button>
+            <button type="button" class="pos-cat-pill" data-filter="billed">🔵 Billed</button>
+            <button type="button" class="pos-cat-pill" data-filter="hold">🟠 Hold</button>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            <input type="search" id="tables-search" class="adm-input" placeholder="Search table #, customer, phone..." style="max-width:260px;" />
+          </div>
+        </div>
+
+        <!-- Visual 1-19 Grid Container -->
+        <div id="tables-grid-container" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;">
+          <!-- 19 Table Cards populated dynamically by renderTablesPanel() -->
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- KITCHEN / KOT SCREEN: LIVE PREP WORKFLOW                       -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <section id="panel-kitchen" class="adm-panel">
+        <div class="adm-page-head">
+          <div>
+            <h1 class="adm-page-title">👨‍🍳 Kitchen / KOT Display System</h1>
+            <p class="adm-page-sub">Live order tickets, elapsed prep timers, dish checklists, and 1-tap bump bar</p>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <span id="kitchen-active-badge" style="font-size:0.8rem;font-weight:700;padding:0.3rem 0.75rem;border-radius:999px;background:#fef3c7;color:#b45309;">
+              0 Active KOTs
+            </span>
+            <button type="button" id="btn-kitchen-refresh" class="adm-btn adm-btn-outline" style="background:#fff;">
+              <span>🔄</span> Refresh KOTs
+            </button>
+          </div>
+        </div>
+
+        <!-- Kitchen Filter Tabs -->
+        <div class="adm-filters" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:1.25rem;" id="kitchen-filter-pills">
+          <button type="button" class="pos-cat-pill active" data-kitchen-filter="all">All Active KOTs</button>
+          <button type="button" class="pos-cat-pill" data-kitchen-filter="pending">⏳ New / Pending</button>
+          <button type="button" class="pos-cat-pill" data-kitchen-filter="preparing">🔥 In Prep / Cooking</button>
+          <button type="button" class="pos-cat-pill" data-kitchen-filter="ready">🍽️ Ready to Serve</button>
+        </div>
+
+        <!-- Kitchen KOT Cards Grid -->
+        <div id="kitchen-kot-container" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem;">
+          <!-- KOT Cards populated dynamically by renderKitchenPanel() -->
+        </div>
+      </section>
+
       <!-- Hold Orders -->
       <section id="panel-hold-orders" class="adm-panel">
         <div class="adm-page-head">
@@ -879,7 +1059,7 @@
         <div class="adm-page-head">
           <div>
             <h1 class="adm-page-title">🧾 Billing &amp; POS</h1>
-            <p class="adm-page-sub">Create bills, manage running tables, print KOT, and track total bills</p>
+            <p class="adm-page-sub">Create bills, manage running tables, and settle transactions</p>
           </div>
           <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;">
             <button id="billing-new-btn" class="adm-btn adm-btn-primary" style="font-weight:700;display:inline-flex;align-items:center;gap:.4rem;">
@@ -888,47 +1068,6 @@
             <select id="billing-order-picker" class="adm-select" style="min-width:220px;">
               <option value="">— View existing order —</option>
             </select>
-          </div>
-        </div>
-
-        <!-- TOP QUICK NAVIGATION CARDS (HOLD & CLOSE) -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin-bottom:1.5rem;">
-          <!-- HOLD Orders Card (Redirects to Hold Orders Panel) -->
-          <div id="billing-hold-card" class="billing-quick-card" style="cursor:pointer;background:#fff;border:1px solid #fed7aa;border-left:5px solid #f59e0b;border-radius:14px;padding:1.15rem 1.35rem;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-            <div>
-              <div style="display:flex;align-items:center;gap:.45rem;">
-                <span style="font-size:1.25rem;">⏳</span>
-                <span style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#b45309;">HOLD ORDERS</span>
-                <span style="background:#fef3c7;color:#b45309;font-size:.7rem;font-weight:700;padding:.1rem .45rem;border-radius:999px;">Active</span>
-              </div>
-              <div style="margin-top:.4rem;">
-                <span id="billing-hold-count" style="font-size:1.45rem;font-weight:800;color:#111827;">0 Orders</span>
-                <span id="billing-hold-total" style="font-size:.88rem;font-weight:700;color:#f59e0b;margin-left:.45rem;">(₹0.00)</span>
-              </div>
-              <p style="font-size:.75rem;color:#78350f;margin:.3rem 0 0 0;font-weight:500;">Tap to open Running Table &amp; Hold Orders →</p>
-            </div>
-            <div style="background:#fef3c7;color:#b45309;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.15rem;font-weight:800;">
-              ➔
-            </div>
-          </div>
-
-          <!-- CLOSE Orders Card (Redirects to Closed Orders Panel) -->
-          <div id="billing-close-card" class="billing-quick-card" style="cursor:pointer;background:#fff;border:1px solid #a7f3d0;border-left:5px solid #10b981;border-radius:14px;padding:1.15rem 1.35rem;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-            <div>
-              <div style="display:flex;align-items:center;gap:.45rem;">
-                <span style="font-size:1.25rem;">🏁</span>
-                <span style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#047857;">CLOSED BILLS</span>
-                <span style="background:#ecfdf5;color:#047857;font-size:.7rem;font-weight:700;padding:.1rem .45rem;border-radius:999px;">Settled</span>
-              </div>
-              <div style="margin-top:.4rem;">
-                <span id="billing-close-count" style="font-size:1.45rem;font-weight:800;color:#111827;">0 Bills</span>
-                <span id="billing-close-total" style="font-size:.88rem;font-weight:700;color:#10b981;margin-left:.45rem;">(₹0.00)</span>
-              </div>
-              <p style="font-size:.75rem;color:#065f46;margin:.3rem 0 0 0;font-weight:500;">Tap to open Closed &amp; Completed Bills →</p>
-            </div>
-            <div style="background:#ecfdf5;color:#047857;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.15rem;font-weight:800;">
-              ➔
-            </div>
           </div>
         </div>
 
@@ -944,106 +1083,113 @@
             </div>
           </div>
 
-          <div style="display:grid;grid-template-columns:1fr 380px;gap:1.5rem;align-items:start;">
+          <div class="pos-billing-grid">
 
-            <!-- LEFT: Order Builder -->
-            <div style="display:flex;flex-direction:column;gap:1.25rem;">
-
+            <!-- COL 1: Customer Details & Dining Table -->
+            <div class="pos-col-customer" style="display:flex;flex-direction:column;gap:1.25rem;">
               <!-- Mandatory Customer Info -->
               <div class="adm-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem;">
-                  <h3 style="font-size:.92rem;font-weight:700;margin:0;">👤 Customer Information <span style="color:#ef4444;font-size:.8rem;">* Required</span></h3>
-                  <span style="font-size:.75rem;color:var(--adm-muted);">Name &amp; 10-digit mobile required</span>
+                  <h3 style="font-size:.92rem;font-weight:700;margin:0;">👤 Customer Details <span style="color:#ef4444;font-size:.8rem;">* Required</span></h3>
+                  <span style="font-size:.75rem;color:var(--adm-muted);">10-digit mobile</span>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
+                <div style="display:flex;flex-direction:column;gap:.75rem;">
                   <div>
                     <label class="adm-label" style="font-weight:600;">Customer Name <span style="color:#ef4444;">*</span></label>
-                    <input id="pos-customer-name" type="text" class="adm-input" placeholder="e.g. Salim Khan" style="width:100%;" required />
+                    <input id="pos-customer-name" type="text" class="adm-input" placeholder="e.g. Salim Khan" style="width:100%;min-height:42px;" required />
                   </div>
                   <div>
                     <label class="adm-label" style="font-weight:600;">Mobile Number (10 digits) <span style="color:#ef4444;">*</span></label>
-                    <input id="pos-customer-phone" type="tel" class="adm-input" placeholder="e.g. 9876543210" maxlength="14" style="width:100%;" required />
+                    <input id="pos-customer-phone" type="tel" class="adm-input" placeholder="e.g. 9876543210" maxlength="14" style="width:100%;min-height:42px;" required />
                   </div>
                 </div>
 
                 <!-- Order Type Selector -->
-                <div style="margin-top:.9rem;">
+                <div style="margin-top:1rem;">
                   <label class="adm-label" style="font-weight:600;">Order Type <span style="color:#ef4444;">*</span></label>
-                  <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.35rem;">
-                    <button type="button" class="pos-type-btn adm-btn adm-btn-primary" data-type="table">🪑 Dine-in Table *</button>
-                    <button type="button" class="pos-type-btn adm-btn adm-btn-outline" data-type="pickup">🥡 Self Pickup</button>
-                    <button type="button" class="pos-type-btn adm-btn adm-btn-outline" data-type="delivery">🚗 Home Delivery *</button>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;margin-top:.35rem;">
+                    <button type="button" class="pos-type-btn adm-btn adm-btn-primary" data-type="table" style="min-height:44px;padding:0.4rem 0.2rem;font-size:0.8rem;justify-content:center;">🪑 Table</button>
+                    <button type="button" class="pos-type-btn adm-btn adm-btn-outline" data-type="pickup" style="min-height:44px;padding:0.4rem 0.2rem;font-size:0.8rem;justify-content:center;">🥡 Pickup</button>
+                    <button type="button" class="pos-type-btn adm-btn adm-btn-outline" data-type="delivery" style="min-height:44px;padding:0.4rem 0.2rem;font-size:0.8rem;justify-content:center;">🚗 Delivery</button>
                   </div>
                 </div>
 
                 <!-- Conditional mandatory fields -->
-                <div id="pos-table-field" style="margin-top:.85rem;">
-                  <label class="adm-label" style="font-weight:600;">Dining Table Number <span style="color:#ef4444;">* Mandatory for Dine-in</span></label>
-                  <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
-                    <input id="pos-table-number" type="text" class="adm-input" placeholder="e.g. Table 04" style="width:100%;max-width:180px;" />
-                    <div style="display:flex;gap:.3rem;flex-wrap:wrap;">
-                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="1">T-1</button>
-                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="2">T-2</button>
-                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="3">T-3</button>
-                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="4">T-4</button>
-                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="5">T-5</button>
-                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="6">T-6</button>
+                <div id="pos-table-field" style="margin-top:1rem;">
+                  <label class="adm-label" style="font-weight:600;">Dining Table Number (1–19) <span style="color:#ef4444;">*</span></label>
+                  <input id="pos-table-number" type="text" class="adm-input" placeholder="e.g. Table 04" style="width:100%;min-height:42px;margin-bottom:.5rem;" />
+                  <div style="display:flex;flex-direction:column;gap:.35rem;">
+                    <span style="font-size:.72rem;color:var(--adm-muted);font-weight:700;">Indoor AC (1-8):</span>
+                    <div style="display:flex;gap:.25rem;flex-wrap:wrap;">
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="1" style="min-width:38px;padding:.2rem .4rem;">T1</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="2" style="min-width:38px;padding:.2rem .4rem;">T2</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="3" style="min-width:38px;padding:.2rem .4rem;">T3</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="4" style="min-width:38px;padding:.2rem .4rem;">T4</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="5" style="min-width:38px;padding:.2rem .4rem;">T5</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="6" style="min-width:38px;padding:.2rem .4rem;">T6</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="7" style="min-width:38px;padding:.2rem .4rem;">T7</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="8" style="min-width:38px;padding:.2rem .4rem;">T8</button>
+                    </div>
+                    <span style="font-size:.72rem;color:var(--adm-muted);font-weight:700;margin-top:.2rem;">Family &amp; Garden (9-19):</span>
+                    <div style="display:flex;gap:.25rem;flex-wrap:wrap;">
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="9" style="min-width:38px;padding:.2rem .4rem;">T9</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="10" style="min-width:38px;padding:.2rem .4rem;">T10</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="12" style="min-width:38px;padding:.2rem .4rem;">T12</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="14" style="min-width:38px;padding:.2rem .4rem;">T14</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="16" style="min-width:38px;padding:.2rem .4rem;">T16</button>
+                      <button type="button" class="adm-btn adm-btn-outline adm-btn-sm pos-quick-table-btn" data-tbl="19" style="min-width:38px;padding:.2rem .4rem;">T19</button>
                     </div>
                   </div>
                 </div>
 
-                <div id="pos-delivery-field" style="margin-top:.85rem;display:none;">
-                  <!-- Place Search Bar with Auto-complete & Quick Chips -->
+                <div id="pos-delivery-field" style="margin-top:1rem;display:none;">
                   <div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:.75rem .85rem;margin-bottom:.65rem;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem;">
                       <label class="adm-label" style="font-weight:700;margin:0;color:#1e293b;font-size:.82rem;">
-                        📍 Select Delivery Place / Area <span style="color:#ef4444;">*</span>
+                        📍 Delivery Place / Area <span style="color:#ef4444;">*</span>
                       </label>
-                      <span style="font-size:.72rem;color:var(--adm-muted);">Search &amp; auto-fills delivery charge</span>
                     </div>
 
                     <div style="position:relative;">
-                      <input id="pos-place-search" type="search" class="adm-input" placeholder="🔍 Type to search place (e.g. Contai, Marishda, Nachinda)..." style="width:100%;font-weight:600;font-size:.85rem;background:#fff;" autocomplete="off" />
-                      <!-- Dropdown suggestions -->
+                      <input id="pos-place-search" type="search" class="adm-input" placeholder="🔍 Search place..." style="width:100%;min-height:42px;font-weight:600;font-size:.85rem;background:#fff;" autocomplete="off" />
                       <div id="pos-place-suggestions" style="position:absolute;top:100%;left:0;right:0;z-index:99;background:#fff;border:1px solid var(--adm-border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;display:none;margin-top:3px;"></div>
                     </div>
 
-                    <!-- Selected Place Badge -->
                     <div id="pos-selected-place-chip" style="display:none;margin-top:.45rem;align-items:center;justify-content:space-between;background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px;padding:.3rem .6rem;">
                       <span style="font-size:.8rem;font-weight:700;color:#4f46e5;" id="pos-selected-place-text">📍 Contai (Charge: ₹30)</span>
                       <button type="button" id="pos-clear-place-btn" style="background:none;border:none;color:#ef4444;font-weight:700;font-size:.75rem;cursor:pointer;padding:2px 6px;">✕ Clear</button>
                     </div>
 
-                    <!-- Quick Place Pills -->
                     <div id="pos-quick-places-pills" style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.5rem;max-height:70px;overflow-y:auto;"></div>
                   </div>
 
-                  <!-- Landmark / House / Street Address -->
                   <div>
-                    <label class="adm-label" style="font-weight:600;font-size:.82rem;">House / Street / Landmark Details</label>
-                    <textarea id="pos-delivery-address" class="adm-input" rows="2" style="width:100%;resize:none;" placeholder="House/Flat No., Street, Landmark (e.g. Near Bus Stand, Opp. SBI Bank)..."></textarea>
+                    <label class="adm-label" style="font-weight:600;font-size:.82rem;">Address / Landmark</label>
+                    <textarea id="pos-delivery-address" class="adm-input" rows="2" style="width:100%;resize:none;" placeholder="House/Flat No., Landmark..."></textarea>
                   </div>
                 </div>
               </div>
+            </div>
 
-              <!-- Visual Food Menu Grid with Pictures -->
+            <!-- COL 2: Visual Food Menu Grid with Pictures -->
+            <div class="pos-col-menu" style="display:flex;flex-direction:column;gap:1.25rem;">
               <div class="adm-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem;">
                   <div>
-                    <h3 style="font-size:.92rem;font-weight:700;margin:0;">🍽️ Menu Items</h3>
-                    <p style="font-size:.75rem;color:var(--adm-muted);margin:.1rem 0 0 0;">Tap any item image to add directly to cart</p>
+                    <h3 style="font-size:.92rem;font-weight:700;margin:0;">🍽️ Menu Catalog</h3>
+                    <p style="font-size:.75rem;color:var(--adm-muted);margin:.1rem 0 0 0;">Tap item photo or + to add to ticket</p>
                   </div>
-                  <button id="pos-food-manual-btn" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:.78rem;padding:.3rem .75rem;">+ Custom Item</button>
+                  <button id="pos-food-manual-btn" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:.78rem;padding:.3rem .75rem;min-height:36px;">+ Custom Item</button>
                 </div>
 
                 <!-- Category filter pills -->
-                <div id="pos-category-pills" style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.75rem;max-height:100px;overflow-y:auto;padding-bottom:2px;"></div>
+                <div id="pos-category-pills" class="pos-cat-pill-bar" style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.75rem;max-height:100px;overflow-y:auto;padding-bottom:2px;"></div>
 
                 <!-- Quick filter input -->
-                <input id="pos-food-search" type="search" class="adm-input" placeholder="🔍 Search dishes by name..." style="width:100%;margin-bottom:.85rem;" />
+                <input id="pos-food-search" type="search" class="adm-input" placeholder="🔍 Search dishes by name, code or category..." style="width:100%;min-height:42px;margin-bottom:.85rem;" />
 
                 <!-- Food Picture Grid -->
-                <div id="pos-food-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:.65rem;max-height:420px;overflow-y:auto;padding-right:4px;">
+                <div id="pos-food-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(135px,1fr));gap:.65rem;max-height:480px;overflow-y:auto;padding-right:4px;">
                   <div style="grid-column:1/-1;text-align:center;color:var(--adm-muted);font-size:.82rem;padding:1.5rem 0;">Loading menu items...</div>
                 </div>
 
@@ -1051,23 +1197,22 @@
                 <div id="pos-manual-row" style="display:none;margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--adm-border);">
                   <p style="font-size:.78rem;font-weight:700;color:#111827;margin-bottom:.45rem;">➕ Add Custom Food Item</p>
                   <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;">
-                    <input id="pos-manual-name" type="text" class="adm-input" placeholder="Item name" style="flex:2;min-width:130px;" />
-                    <input id="pos-manual-price" type="number" class="adm-input" placeholder="Price ₹" min="0" step="0.01" style="width:82px;" />
-                    <input id="pos-manual-qty" type="number" class="adm-input" placeholder="Qty" min="1" value="1" style="width:58px;" />
-                    <button id="pos-manual-add" class="adm-btn adm-btn-primary">Add</button>
+                    <input id="pos-manual-name" type="text" class="adm-input" placeholder="Item name" style="flex:2;min-width:130px;min-height:38px;" />
+                    <input id="pos-manual-price" type="number" class="adm-input" placeholder="Price ₹" min="0" step="0.01" style="width:82px;min-height:38px;" />
+                    <input id="pos-manual-qty" type="number" class="adm-input" placeholder="Qty" min="1" value="1" style="width:58px;min-height:38px;" />
+                    <button id="pos-manual-add" class="adm-btn adm-btn-primary" style="min-height:38px;">Add</button>
                   </div>
                 </div>
               </div>
-
             </div>
 
-            <!-- RIGHT: Side Preview & Summary -->
-            <div style="display:flex;flex-direction:column;gap:1.25rem;position:sticky;top:1.5rem;">
+            <!-- COL 3: Side Preview & Current Order Ticket Tray -->
+            <div class="pos-col-tray" style="display:flex;flex-direction:column;gap:1.25rem;">
 
               <!-- Cart Card -->
               <div class="adm-card" id="pos-cart-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
-                  <h3 style="font-size:.9rem;font-weight:700;margin:0;">🛒 Order Cart</h3>
+                  <h3 style="font-size:.9rem;font-weight:700;margin:0;">🛒 Order Ticket Tray</h3>
                   <button id="pos-cart-clear-btn" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:.72rem;padding:.15rem .5rem;color:#ef4444;border-color:#fca5a5;">Clear</button>
                 </div>
                 <div id="pos-cart-items" style="max-height:220px;overflow-y:auto;padding-right:2px;">
@@ -1095,19 +1240,19 @@
                     <label class="adm-label" style="margin:0;font-weight:600;">Discount (%)</label>
                     <span id="pos-discount-calc-preview" style="font-size:.78rem;color:var(--adm-muted);">-₹0.00</span>
                   </div>
-                  <input id="pos-discount-pct" type="number" class="adm-input" placeholder="0" min="0" max="100" step="0.5" style="width:100%;margin-top:.3rem;" />
+                  <input id="pos-discount-pct" type="number" class="adm-input" placeholder="0" min="0" max="100" step="0.5" style="width:100%;margin-top:.3rem;min-height:38px;" />
                 </div>
 
-                <!-- Delivery Fee (Shown for delivery order type) -->
+                <!-- Delivery Fee -->
                 <div id="pos-delivery-fee-wrap" style="margin-top:.85rem;display:none;">
                   <label class="adm-label" style="font-weight:600;">Delivery Charge (₹)</label>
-                  <input id="pos-delivery-fee" type="number" class="adm-input" placeholder="0" min="0" step="1" value="0" style="width:100%;margin-top:.3rem;" />
+                  <input id="pos-delivery-fee" type="number" class="adm-input" placeholder="0" min="0" step="1" value="0" style="width:100%;margin-top:.3rem;min-height:38px;" />
                 </div>
 
                 <!-- Payment Mode -->
                 <div style="margin-top:.85rem;">
                   <label class="adm-label" style="font-weight:600;">Payment Mode</label>
-                  <select id="pos-payment-mode" class="adm-select" style="width:100%;margin-top:.3rem;">
+                  <select id="pos-payment-mode" class="adm-select" style="width:100%;margin-top:.3rem;min-height:40px;">
                     <option value="cash">💵 Cash</option>
                     <option value="upi">📱 UPI (Auto-fill QR)</option>
                     <option value="card">💳 Card</option>
@@ -1121,11 +1266,22 @@
                   <textarea id="pos-notes" class="adm-input" rows="2" placeholder="e.g. Less spicy, serve hot..." style="width:100%;resize:none;margin-top:.3rem;"></textarea>
                 </div>
 
-                <!-- Action Buttons -->
+                <!-- High Ergonomics Action Buttons: [HOLD] [KOT] [BILL] -->
                 <div style="display:flex;flex-direction:column;gap:.65rem;margin-top:1.25rem;">
-                  <button id="pos-kot-hold-btn" class="adm-btn adm-btn-primary" style="width:100%;font-weight:700;font-size:.9rem;background:#f59e0b;border-color:#f59e0b;">🖨️ KOT + Hold (Save to Hold)</button>
-                  <button id="pos-kot-bill-btn" class="adm-btn adm-btn-primary" style="width:100%;font-weight:700;font-size:.9rem;">🧾 KOT + Final Bill (Settle)</button>
-                  <button id="pos-save-only-btn" class="adm-btn adm-btn-outline" style="width:100%;">💾 Save Only</button>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;">
+                    <button type="button" id="pos-kot-hold-btn" class="pos-action-btn" style="background:#f59e0b;color:#000;border:none;border-radius:10px;box-shadow:0 2px 6px rgba(245,158,11,0.3);">
+                      <span>⏸️</span> HOLD
+                    </button>
+                    <button type="button" id="pos-kot-only-btn" class="pos-action-btn" style="background:#4f46e5;color:#fff;border:none;border-radius:10px;box-shadow:0 2px 6px rgba(79,70,229,0.3);">
+                      <span>🖨️</span> KOT
+                    </button>
+                  </div>
+                  <button type="button" id="pos-kot-bill-btn" class="pos-action-btn adm-btn-primary" style="background:#10b981;border:none;border-radius:10px;font-size:1rem;font-weight:900;box-shadow:0 4px 12px rgba(16,185,129,0.35);">
+                    <span>🧾</span> BILL &amp; SETTLE
+                  </button>
+                  <button type="button" id="pos-save-only-btn" class="adm-btn adm-btn-outline" style="width:100%;min-height:40px;border-radius:8px;font-size:.82rem;font-weight:700;">
+                    💾 Save Draft Only
+                  </button>
                 </div>
               </div>
             </div>
@@ -1134,26 +1290,6 @@
 
         <!-- TOTAL BILLS OVERVIEW SECTION (All Bills Created in Billing / POS) -->
         <div id="billing-total-section">
-          <!-- Metrics Bar -->
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.25rem;">
-            <div class="adm-card" style="padding:1rem;border-left:4px solid #6366f1;">
-              <span style="font-size:.75rem;color:var(--adm-muted);font-weight:600;text-transform:uppercase;">Total Bills</span>
-              <div id="billing-metric-total-count" style="font-size:1.4rem;font-weight:800;color:#111827;margin-top:.2rem;">0</div>
-            </div>
-            <div class="adm-card" style="padding:1rem;border-left:4px solid #10b981;">
-              <span style="font-size:.75rem;color:var(--adm-muted);font-weight:600;text-transform:uppercase;">Total Sales (Revenue)</span>
-              <div id="billing-metric-total-revenue" style="font-size:1.4rem;font-weight:800;color:#059669;margin-top:.2rem;">₹0.00</div>
-            </div>
-            <div class="adm-card" style="padding:1rem;border-left:4px solid #3b82f6;">
-              <span style="font-size:.75rem;color:var(--adm-muted);font-weight:600;text-transform:uppercase;">Dine-in Tables</span>
-              <div id="billing-metric-dinein-count" style="font-size:1.4rem;font-weight:800;color:#2563eb;margin-top:.2rem;">0</div>
-            </div>
-            <div class="adm-card" style="padding:1rem;border-left:4px solid #8b5cf6;">
-              <span style="font-size:.75rem;color:var(--adm-muted);font-weight:600;text-transform:uppercase;">Delivery / Pickup</span>
-              <div id="billing-metric-delivery-count" style="font-size:1.4rem;font-weight:800;color:#7c3aed;margin-top:.2rem;">0</div>
-            </div>
-          </div>
-
           <!-- Total Bills Table Card -->
           <div class="adm-card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.75rem;">
@@ -2396,6 +2532,51 @@
 
 <div id="sidebar-overlay" class="adm-overlay adm-hidden"></div>
 
+<!-- Thermal Print Queue & Retry Modal (Phase 3) -->
+<div id="adm-print-queue-modal" class="adm-edit-modal" style="display:none;">
+  <div class="adm-edit-modal-card" style="max-width:680px;background:#fff;border-radius:16px;box-shadow:0 20px 40px rgba(0,0,0,0.25);overflow:hidden;margin:auto;">
+    <div class="adm-edit-modal-head" style="padding:1.1rem 1.25rem;display:flex;justify-content:space-between;align-items:center;background:#0f172a;color:#fff;">
+      <div style="display:flex;align-items:center;gap:0.6rem;">
+        <span style="font-size:1.35rem;">🖨️</span>
+        <div>
+          <h3 style="margin:0;font-size:1.05rem;font-weight:800;color:#fff;">Thermal Print Queue &amp; Retry Hub</h3>
+          <p style="margin:2px 0 0;font-size:0.75rem;color:#94a3b8;">ESC/POS Print Stream, Failure Recovery &amp; Reprint History</p>
+        </div>
+      </div>
+      <button type="button" id="print-queue-modal-close" style="border:none;background:none;color:#94a3b8;font-size:1.4rem;cursor:pointer;line-height:1;">&times;</button>
+    </div>
+    
+    <div style="padding:0.75rem 1.25rem;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border-bottom:1px solid var(--adm-border);flex-wrap:wrap;gap:0.5rem;">
+      <div style="display:flex;gap:1rem;align-items:center;">
+        <span id="queue-kpi-total" style="font-size:0.8rem;font-weight:700;color:#334155;">Total Jobs: 0</span>
+        <span id="queue-kpi-failed" style="font-size:0.8rem;font-weight:800;color:#ef4444;">Failed: 0</span>
+      </div>
+      <div style="display:flex;gap:0.5rem;">
+        <button type="button" id="btn-queue-retry-all" class="adm-btn adm-btn-sm" style="background:#ef4444;color:#fff;border:none;border-radius:6px;font-weight:700;padding:0.25rem 0.65rem;">🔄 Retry All Failed</button>
+        <button type="button" id="btn-queue-clear-printed" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:0.75rem;padding:0.25rem 0.55rem;">Clear Printed</button>
+      </div>
+    </div>
+
+    <div style="max-height:360px;overflow-y:auto;padding:0.75rem 1.25rem;">
+      <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--adm-border);color:var(--adm-muted);text-align:left;">
+            <th style="padding:6px 8px;">Order #</th>
+            <th style="padding:6px 8px;">Type</th>
+            <th style="padding:6px 8px;">Status</th>
+            <th style="padding:6px 8px;">Attempts</th>
+            <th style="padding:6px 8px;">Time</th>
+            <th style="padding:6px 8px;text-align:right;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="print-queue-tbody">
+          <tr><td colspan="6" style="text-align:center;padding:1.5rem;color:var(--adm-muted);">No active or recent print jobs in queue</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- Create/Edit Staff Modal -->
 <div id="adm-staff-modal" class="adm-edit-modal">
   <div class="adm-edit-modal-content" style="max-width:480px">
@@ -3157,8 +3338,6 @@
   </div>
 </div>
 
-<script type="module" src="/src/admin.js"></script>
-
 <!-- ═══ PRINTER & KOT STUDIO PANEL ═══ -->
 <template id="panel-printer-content">
   <section id="panel-printer" class="adm-panel">
@@ -3572,6 +3751,45 @@
                 </div>
               </div>
 
+              <!-- 🌟 Google 5-Star Review QR & Direct Print Automation (Phase 3) -->
+              <div style="grid-column:1 / -1;padding:.75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem;">
+                  <div style="display:flex;align-items:center;gap:.5rem;">
+                    <span style="font-size:1.15rem;">⭐</span>
+                    <strong style="font-size:.85rem;color:#92400e;">Google Review QR &amp; Direct Print Automation</strong>
+                  </div>
+                  <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.8rem;font-weight:700;color:#b45309;">
+                    <input type="checkbox" id="bill-toggle-review-qr" checked class="accent-amber-600" />
+                    <span>Print Google Review QR on Bill</span>
+                  </label>
+                </div>
+                <p style="font-size:.78rem;color:#b45309;margin:0 0 .6rem 0;">Embeds a 5-star review request and QR code directly at the bottom of the customer receipt (no second manual print step).</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.6rem;">
+                  <div style="grid-column:1 / -1;">
+                    <label class="adm-label" style="color:#92400e;">Google Review Link / Maps URL</label>
+                    <input type="url" id="bill-review-url" class="adm-input" placeholder="https://g.page/r/.../review" value="https://g.page/r/CcrqEfWap5zfEBE/review" style="width:100%;background:#fff;" />
+                  </div>
+                  <div>
+                    <label class="adm-label" style="color:#92400e;">Review Heading Text</label>
+                    <input type="text" id="bill-review-heading" class="adm-input" value="LOVE YOUR EXPERIENCE?" style="width:100%;background:#fff;" />
+                  </div>
+                  <div>
+                    <label class="adm-label" style="color:#92400e;">Review Subtext Prompt</label>
+                    <input type="text" id="bill-review-subtext" class="adm-input" value="Scan to leave us a Google Review" style="width:100%;background:#fff;" />
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;padding-top:.5rem;border-top:1px dashed #fcd34d;">
+                  <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.78rem;font-weight:700;color:#92400e;">
+                    <input type="checkbox" id="printer-auto-settle-toggle" checked class="accent-amber-600" />
+                    <span>⚡ Auto-Print Bill on Payment Settle</span>
+                  </label>
+                  <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.78rem;font-weight:700;color:#92400e;">
+                    <input type="checkbox" id="printer-direct-print-toggle" checked class="accent-amber-600" />
+                    <span>🖨️ Direct Fast-Print (Bypass Browser Dialog)</span>
+                  </label>
+                </div>
+              </div>
+
               <div style="grid-column:1 / -1;">
                 <label class="adm-label">Footer Thank-You Message</label>
                 <input type="text" id="bill-footer-msg" class="adm-input" placeholder="Thank you for dining with us! Please visit again." style="width:100%;" />
@@ -3907,7 +4125,7 @@
     </div>
 
     <!-- Modal Body (2 Columns: Controls on Left, Live Thermal Preview on Right) -->
-    <div style="display:grid;grid-template-columns:1.2fr 1fr;flex:1;overflow-y:auto;background:#f8fafc;">
+    <div class="qb-modal-grid" style="display:grid;grid-template-columns:1.2fr 1fr;flex:1;overflow-y:auto;background:#f8fafc;">
       
       <!-- Left Column: Controls -->
       <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem;border-right:1px solid #e2e8f0;overflow-y:auto;">
@@ -4047,5 +4265,15 @@
 
 <iframe id="thermal-native-print-frame" name="thermal-native-print-frame" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;visibility:hidden;"></iframe>
 
+<script type="module" src="/src/admin.js"></script>
+<script>
+  // Initialize Lucide icons after page loads
+  document.addEventListener('DOMContentLoaded', function() {
+    if (window.lucide) { lucide.createIcons(); }
+  });
+  // Also reinitialize after any dynamic panel switches
+  const _origCreateIcons = () => { if (window.lucide) lucide.createIcons(); };
+  document.addEventListener('adminPanelChanged', _origCreateIcons);
+</script>
 </body>
 </html>

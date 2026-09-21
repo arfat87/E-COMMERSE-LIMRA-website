@@ -22,6 +22,17 @@
       <p class="text-sm mt-1" style="color:var(--adm-muted)">Restaurant Admin — Sign In</p>
     </div>
 
+    <!-- Local Dev Quick Access Banner -->
+    <div id="dev-quick-login-banner" class="mb-4 p-3 rounded-2xl border border-emerald-500/30 bg-emerald-950/40 text-center hidden">
+      <p class="text-xs font-bold text-emerald-400 mb-1 flex items-center justify-center gap-1.5">
+        <span>⚡</span> Local Development Mode Detected
+      </p>
+      <p class="text-[11px] text-slate-400 mb-2.5">Skip cloud sign-in to view Phase 2 POS &amp; Admin Dashboard.</p>
+      <a href="/admin.html" id="btn-dev-quick-login" class="adm-btn adm-btn-primary w-full py-2 text-xs font-bold shadow-md inline-block text-center" style="text-decoration:none;">
+        Open POS Dashboard (Instant Access) →
+      </a>
+    </div>
+
     <div id="auth-tabs" class="adm-auth-tabs">
       <button data-auth-tab="login" class="adm-auth-tab active">Login</button>
       <button data-auth-tab="signup" class="adm-auth-tab">Sign Up</button>

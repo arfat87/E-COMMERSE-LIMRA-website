@@ -27,8 +27,12 @@ let stockInEntries = [];
 let stockOutEntries = [];
 let stockLogs = [];
 
+const _initialNow = new Date();
+const _initialYm = `${_initialNow.getFullYear()}-${String(_initialNow.getMonth() + 1).padStart(2, '0')}`;
+const _initialDateStr = `${_initialYm}-${String(_initialNow.getDate()).padStart(2, '0')}`;
+
 let currentAppMode = 'live'; // 'live' or 'monthly'
-let selectedMonthYear = '2026-08'; // Default month (YYYY-MM)
+let selectedMonthYear = _initialYm; // Default month (YYYY-MM)
 let monthlyCategoryFilter = 'all';
 let monthlyActivityFilter = 'all';
 
@@ -41,7 +45,7 @@ let searchQuery = '';
 let viewMode = 'feed'; // 'feed' or 'table'
 let isDatabaseLoading = false;
 let asOnDateEnabled = false;
-let asOnDateValue = '2026-08-01';
+let asOnDateValue = _initialDateStr;
 
 // ═════════════════════════════════════════════════════════════════════
 // ROBUST DATE PARSER & FORMATTING UTILITIES
@@ -890,12 +894,25 @@ function renderKPIs() {
     totalValue += (validQty * safeNum(item.cost, 0));
   });
 
+  // Calculate Out Today (Kitchen Consumption)
+  const todayStr = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const outTodayQty = stockOutEntries
+    .filter(e => {
+      const eDate = (e.date || '').replace(/\//g, '-');
+      const curDateFormatted = todayStr.replace(/\//g, '-');
+      return eDate === curDateFormatted || (e.createdAt && e.createdAt.startsWith(todayIso));
+    })
+    .reduce((sum, e) => sum + safeNum(e.qty, 0), 0);
+
   const totalEl = document.getElementById('kpi-total-items');
   const lowEl = document.getElementById('kpi-low-items');
+  const outTodayEl = document.getElementById('kpi-out-today');
   const valEl = document.getElementById('kpi-total-value');
 
   if (totalEl) totalEl.textContent = totalItems;
   if (lowEl) lowEl.textContent = lowCount;
+  if (outTodayEl) outTodayEl.textContent = `${outTodayQty.toFixed(1)} units`;
   if (valEl) valEl.textContent = '₹ ' + safeMoney(totalValue);
 }
 
@@ -1456,11 +1473,156 @@ function renderMonthlyDashboard() {
   renderMonthlyInOutTables(monthData);
 }
 
+let currentDailyDate = new Date().toISOString().slice(0, 10);
+
+async function renderDailySummaryBlock(dateStr = null) {
+  if (dateStr) currentDailyDate = dateStr;
+  const dateInput = document.getElementById('daily-summary-date');
+  if (dateInput && !dateInput.value) dateInput.value = currentDailyDate;
+
+  const openingEl = document.getElementById('ds-opening-balance');
+  const inEl = document.getElementById('ds-stock-in');
+  const outEl = document.getElementById('ds-stock-out');
+  const adjEl = document.getElementById('ds-adjustments');
+  const curEl = document.getElementById('ds-current-balance');
+  if (!openingEl) return;
+
+  // Try RPC first
+  let summary = null;
+  try {
+    const { data, error } = await insforge.rpc('get_stock_daily_summary', { p_date: currentDailyDate });
+    if (!error && data) {
+      summary = data;
+    }
+  } catch (e) {
+    // fallback
+  }
+
+  if (summary) {
+    openingEl.textContent = `${safeNum(summary.opening_balance, 0).toFixed(1)}`;
+    inEl.textContent = `+${safeNum(summary.stock_in_today, 0).toFixed(1)}`;
+    outEl.textContent = `-${safeNum(summary.stock_out_today, 0).toFixed(1)}`;
+    adjEl.textContent = `${safeNum(summary.adjustments, 0).toFixed(1)}`;
+    curEl.textContent = `${safeNum(summary.current_balance, 0).toFixed(1)}`;
+  } else {
+    // Local fallback calculation for currentDailyDate
+    const targetDate = currentDailyDate;
+    const [y, m, d] = targetDate.split('-');
+    const dateFormatted = `${d}-${m}-${y}`; // DD-MM-YYYY
+    const dateAlt = `${d}/${m}/${y}`;
+
+    const inToday = stockInEntries
+      .filter(e => e.date === dateFormatted || e.date === dateAlt || (e.createdAt && e.createdAt.startsWith(targetDate)))
+      .reduce((sum, e) => sum + safeNum(e.qty, 0), 0);
+
+    const outToday = stockOutEntries
+      .filter(e => e.date === dateFormatted || e.date === dateAlt || (e.createdAt && e.createdAt.startsWith(targetDate)))
+      .reduce((sum, e) => sum + safeNum(e.qty, 0), 0);
+
+    const curBalance = stockItems.reduce((sum, i) => sum + safeNum(i.qty, 0), 0);
+    const openingBalance = curBalance - inToday + outToday;
+
+    openingEl.textContent = `${openingBalance.toFixed(1)}`;
+    inEl.textContent = `+${inToday.toFixed(1)}`;
+    outEl.textContent = `-${outToday.toFixed(1)}`;
+    adjEl.textContent = '0.0';
+    curEl.textContent = `${curBalance.toFixed(1)}`;
+  }
+}
+
+function exportDailySummaryCSV() {
+  const dateStr = currentDailyDate || new Date().toISOString().slice(0, 10);
+  const openVal = document.getElementById('ds-opening-balance')?.textContent || '0';
+  const inVal = document.getElementById('ds-stock-in')?.textContent || '0';
+  const outVal = document.getElementById('ds-stock-out')?.textContent || '0';
+  const adjVal = document.getElementById('ds-adjustments')?.textContent || '0';
+  const curVal = document.getElementById('ds-current-balance')?.textContent || '0';
+
+  let csvContent = "data:text/csv;charset=utf-8,";
+  csvContent += "LIMRA Restaurant - Daily Stock Summary Report\n";
+  csvContent += `Date,${dateStr}\n\n`;
+  csvContent += "Metric,Quantity\n";
+  csvContent += `Opening Balance,${openVal}\n`;
+  csvContent += `Stock In (Purchases),${inVal}\n`;
+  csvContent += `Stock Out (Kitchen Usage),${outVal}\n`;
+  csvContent += `Adjustments,${adjVal}\n`;
+  csvContent += `Current Balance,${curVal}\n\n`;
+  csvContent += "SKU,Item Name,Category,Unit,Current Balance\n";
+
+  stockItems.forEach(i => {
+    csvContent += `"${i.sku}","${(i.name || '').replace(/"/g, '""')}","${i.category}","${i.unit}",${i.qty}\n`;
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", `LIMRA_Daily_Stock_Summary_${dateStr}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast(`Exported Daily Stock Summary (${dateStr}) to CSV`, 'success');
+}
+
+function exportDailySummaryPDF() {
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    return alert('PDF export engine is loading. Please try again.');
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const dateStr = currentDailyDate || new Date().toISOString().slice(0, 10);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text('LIMRA Restaurant — Daily Stock Summary', 14, 18);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Date: ${dateStr} | Generated: ${new Date().toLocaleTimeString('en-IN')}`, 14, 25);
+
+  const openVal = document.getElementById('ds-opening-balance')?.textContent || '0';
+  const inVal = document.getElementById('ds-stock-in')?.textContent || '0';
+  const outVal = document.getElementById('ds-stock-out')?.textContent || '0';
+  const curVal = document.getElementById('ds-current-balance')?.textContent || '0';
+
+  const summaryData = [
+    ['Opening Balance', openVal],
+    ['Stock In (Today)', inVal],
+    ['Stock Out (Today)', outVal],
+    ['Closing / Current Balance', curVal]
+  ];
+
+  if (doc.autoTable) {
+    doc.autoTable({
+      head: [['Inventory Equation (What do I have? What came in? What went out?)', 'Quantity']],
+      body: summaryData,
+      startY: 30,
+      theme: 'grid',
+      headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255] }
+    });
+
+    const itemRows = stockItems.slice(0, 40).map(i => [
+      i.sku, i.name, i.category, i.unit, i.qty, i.qty <= i.min ? 'LOW' : 'GOOD'
+    ]);
+
+    doc.autoTable({
+      head: [['SKU', 'Item Name', 'Category', 'Unit', 'Balance', 'Status']],
+      body: itemRows,
+      startY: doc.lastAutoTable.finalY + 10,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42], textColor: [52, 211, 153], fontSize: 8 },
+      styles: { fontSize: 7, cellPadding: 1.5 }
+    });
+  }
+
+  doc.save(`LIMRA_Daily_Stock_${dateStr}.pdf`);
+  showToast(`Exported Daily Stock Summary (${dateStr}) to PDF`, 'success');
+}
+
 function renderAll() {
   if (currentAppMode === 'monthly') {
     renderMonthlyDashboard();
   } else {
     renderKPIs();
+    renderDailySummaryBlock();
     renderInOutBalanceTables();
     renderCardFeed();
     renderTable();
@@ -1471,7 +1633,7 @@ function renderAll() {
 // ═════════════════════════════════════════════════════════════════════
 // RECORD STOCK IN / OUT ENTRY MODAL WORKFLOW WITH DATABASE PERSISTENCE
 // ═════════════════════════════════════════════════════════════════════
-function openInOutModal(mode = 'IN') {
+function openInOutModal(mode = 'IN', presetItemId = null) {
   const modal = document.getElementById('modal-inout-entry');
   const title = document.getElementById('modal-inout-title');
   const modeInput = document.getElementById('inout-mode');
@@ -1480,38 +1642,101 @@ function openInOutModal(mode = 'IN') {
   const unitDisplay = document.getElementById('inout-unit-display');
   const qtyInput = document.getElementById('inout-qty');
   const submitBtn = document.getElementById('inout-submit-btn');
+  const reasonWrap = document.getElementById('inout-reason-wrap');
+  const inExtraWrap = document.getElementById('inout-in-extra-wrap');
+  const overrideContainer = document.getElementById('inout-override-container');
+  const allowNegativeChk = document.getElementById('inout-allow-negative');
+  const prevBalanceEl = document.getElementById('inout-prev-balance');
+  const afterBalanceEl = document.getElementById('inout-after-balance');
 
   if (!modal || !itemSelect) return;
 
   modeInput.value = mode;
   title.textContent = mode === 'IN' ? '📥 Record Stock IN Entry' : '📤 Record Stock OUT Entry';
-  submitBtn.textContent = mode === 'IN' ? 'Save IN Entry' : 'Save OUT Entry';
+  submitBtn.textContent = mode === 'IN' ? 'Save IN Entry' : 'Confirm Stock OUT';
   submitBtn.className = mode === 'IN'
     ? 'px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl shadow-lg transition-all cursor-pointer'
     : 'px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl shadow-lg transition-all cursor-pointer';
 
   dateInput.value = new Date().toISOString().slice(0, 10);
   qtyInput.value = '';
+  if (allowNegativeChk) allowNegativeChk.checked = false;
+  if (overrideContainer) overrideContainer.classList.add('hidden');
+
+  if (mode === 'IN') {
+    reasonWrap?.classList.add('hidden');
+    inExtraWrap?.classList.remove('hidden');
+  } else {
+    reasonWrap?.classList.remove('hidden');
+    inExtraWrap?.classList.add('hidden');
+  }
 
   // Sort and populate options
   const sorted = [...stockItems].sort((a, b) => (a.sku || '').localeCompare(b.sku || ''));
   itemSelect.innerHTML = sorted.map(item => `
-    <option value="${item.sku}" data-id="${item.id}" data-unit="${item.unit}" data-name="${item.name}">${item.sku} — ${item.name} (${item.category})</option>
+    <option value="${item.sku}" data-id="${item.id}" data-unit="${item.unit}" data-name="${item.name}" data-qty="${item.qty}" ${presetItemId && item.id === presetItemId ? 'selected' : ''}>${item.sku} — ${item.name} (${item.category})</option>
   `).join('');
 
-  // Set unit display for currently selected item
-  const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
-  if (selectedOpt && unitDisplay) {
-    unitDisplay.value = selectedOpt.dataset.unit || 'pcs';
+  function updateLiveBalancePreview() {
+    const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
+    if (!selectedOpt) return;
+    const curQty = safeNum(selectedOpt.dataset.qty, 0);
+    const unit = selectedOpt.dataset.unit || 'pcs';
+    if (unitDisplay) unitDisplay.value = unit;
+    if (prevBalanceEl) prevBalanceEl.textContent = `${curQty} ${unit}`;
+
+    const inputQty = safeNum(qtyInput.value, 0);
+    let afterQty = curQty;
+    if (mode === 'IN') {
+      afterQty = curQty + inputQty;
+    } else {
+      afterQty = curQty - inputQty;
+    }
+
+    if (afterBalanceEl) {
+      afterBalanceEl.textContent = `${parseFloat(afterQty.toFixed(2))} ${unit}`;
+      afterBalanceEl.className = afterQty < 0 ? 'text-rose-400 font-black' : (afterQty <= 5 ? 'text-amber-300 font-bold' : 'text-emerald-400 font-black');
+    }
+
+    if (mode === 'OUT' && afterQty < 0 && inputQty > 0) {
+      if (overrideContainer) overrideContainer.classList.remove('hidden');
+      const overrideMsg = document.getElementById('inout-override-msg');
+      if (overrideMsg) {
+        overrideMsg.textContent = `Insufficient Stock! Available balance is ${curQty} ${unit}. Deducting ${inputQty} ${unit} leaves ${parseFloat(afterQty.toFixed(2))} ${unit}.`;
+      }
+      if (submitBtn && !allowNegativeChk?.checked) {
+        submitBtn.disabled = true;
+        submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
+    } else {
+      if (overrideContainer) overrideContainer.classList.add('hidden');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      }
+    }
   }
 
-  itemSelect.onchange = () => {
-    const opt = itemSelect.options[itemSelect.selectedIndex];
-    if (opt && unitDisplay) {
-      unitDisplay.value = opt.dataset.unit || 'pcs';
+  itemSelect.onchange = updateLiveBalancePreview;
+  qtyInput.oninput = updateLiveBalancePreview;
+  allowNegativeChk?.addEventListener('change', () => {
+    if (submitBtn) {
+      if (allowNegativeChk.checked) {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      } else {
+        const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
+        const curQty = safeNum(selectedOpt?.dataset.qty, 0);
+        const inputQty = safeNum(qtyInput.value, 0);
+        if (mode === 'OUT' && (curQty - inputQty) < 0) {
+          submitBtn.disabled = true;
+          submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+      }
     }
-  };
+  });
 
+  updateLiveBalancePreview();
   modal.classList.remove('hidden');
 }
 
@@ -1530,17 +1755,29 @@ async function handleInOutSubmit(e) {
   const itemId = selectedOpt.dataset.id || '';
   const unit = selectedOpt.dataset.unit || 'pcs';
   const qty = safeNum(document.getElementById('inout-qty').value, 0);
+  const allowNegative = document.getElementById('inout-allow-negative')?.checked || false;
+  const reason = document.getElementById('inout-reason')?.value || 'Kitchen Prep';
+  const costPrice = safeNum(document.getElementById('inout-cost')?.value, 0);
+  const supplier = document.getElementById('inout-supplier')?.value || '';
+  const notes = document.getElementById('inout-notes')?.value || '';
 
   if (qty <= 0) {
     showToast('Please enter a valid quantity greater than 0.', 'error');
     return;
   }
 
-  const targetItem = stockItems.find(i => i.sku === sku) || { id: itemId, cost: 0, supplier: '' };
+  const targetItem = stockItems.find(i => i.sku === sku) || { id: itemId, cost: costPrice, supplier, qty: 0 };
+
+  // Hard negative check on client
+  if (mode === 'OUT' && (safeNum(targetItem.qty, 0) - qty) < 0 && !allowNegative) {
+    showToast(`Insufficient stock! Available balance is ${targetItem.qty} ${unit}. Check admin override to proceed.`, 'error');
+    return;
+  }
 
   const entryId = (mode === 'IN' ? 'in_' : 'out_') + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
   const nowIso = new Date().toISOString();
 
+  // Optimistic local update
   const entryLocal = {
     id: entryId,
     date,
@@ -1548,6 +1785,10 @@ async function handleInOutSubmit(e) {
     description,
     unit,
     qty,
+    costPrice: mode === 'IN' ? (costPrice || targetItem.cost || 0) : targetItem.cost,
+    supplier: mode === 'IN' ? (supplier || targetItem.supplier || '') : targetItem.supplier,
+    usedBy: mode === 'OUT' ? reason : '',
+    notes,
     createdAt: nowIso
   };
 
@@ -1556,7 +1797,7 @@ async function handleInOutSubmit(e) {
     showToast(`Recorded Stock IN: +${qty} ${unit} for "${description}"`, 'success');
   } else {
     stockOutEntries.unshift(entryLocal);
-    showToast(`Recorded Stock OUT: -${qty} ${unit} for "${description}"`, 'warning');
+    showToast(`Recorded Stock OUT: -${qty} ${unit} for "${description}" (${reason})`, 'warning');
   }
 
   recalculateBalances();
@@ -1564,56 +1805,84 @@ async function handleInOutSubmit(e) {
   closeInOutModal();
   renderAll();
 
-  // Async Database Synchronization
+  // Call Server-Side RPC
   try {
-    if (mode === 'IN') {
-      await insforge.database.from('stock_in').insert([{
-        id: entryId,
-        date,
-        item_id: targetItem.id,
-        item_sku: sku,
-        item_name: description,
-        qty,
-        unit,
-        cost_price: targetItem.cost || 0,
-        supplier: targetItem.supplier || '',
-        notes: `Manual Stock IN entry for ${sku}`,
-        created_at: nowIso
-      }]);
-      await addLogToDB(
-        `${description} (Stock IN (+))`,
-        `+${qty} ${unit} | Manual IN entry recorded for ${sku}`
-      );
-    } else {
-      await insforge.database.from('stock_out').insert([{
-        id: entryId,
-        date,
-        item_id: targetItem.id,
-        item_sku: sku,
-        item_name: description,
-        qty,
-        unit,
-        used_by: 'Kitchen / Counter',
-        notes: `Manual Stock OUT entry for ${sku}`,
-        created_at: nowIso
-      }]);
-      await addLogToDB(
-        `${description} (Stock OUT (-))`,
-        `-${qty} ${unit} | Manual OUT entry recorded for ${sku}`
-      );
-    }
+    if (mode === 'OUT') {
+      const { data: rpcData, error: rpcErr } = await insforge.rpc('record_stock_out', {
+        p_item_id: targetItem.id,
+        p_qty: qty,
+        p_reason: reason,
+        p_used_by: 'Kitchen Staff',
+        p_notes: notes,
+        p_allow_negative: allowNegative
+      });
 
-    // Update calculated qty in stock_items table
-    const updatedItem = stockItems.find(i => i.sku === sku);
-    if (updatedItem) {
-      await insforge.database.from('stock_items').update({
-        qty: updatedItem.qty,
-        updated_at: nowIso
-      }).eq('id', updatedItem.id);
+      if (rpcErr) {
+        console.warn('[StockManager] record_stock_out RPC fallback to direct insert:', rpcErr);
+        await insforge.database.from('stock_out').insert([{
+          id: entryId,
+          date,
+          item_id: targetItem.id,
+          item_sku: sku,
+          item_name: description,
+          qty,
+          unit,
+          used_by: reason,
+          notes: notes + (allowNegative ? ' [OVERRIDE: Negative Stock Allowed]' : ''),
+          created_at: nowIso
+        }]);
+        await addLogToDB(
+          `${description} (Stock OUT (-))`,
+          `-${qty} ${unit} | Reason: ${reason} | ${notes}`
+        );
+        const updatedItem = stockItems.find(i => i.sku === sku);
+        if (updatedItem) {
+          await insforge.database.from('stock_items').update({
+            qty: updatedItem.qty,
+            updated_at: nowIso
+          }).eq('id', updatedItem.id);
+        }
+      }
+    } else {
+      const { data: rpcData, error: rpcErr } = await insforge.rpc('record_stock_in', {
+        p_item_id: targetItem.id,
+        p_qty: qty,
+        p_cost_price: costPrice || targetItem.cost || null,
+        p_supplier: supplier || targetItem.supplier || null,
+        p_notes: notes
+      });
+
+      if (rpcErr) {
+        console.warn('[StockManager] record_stock_in RPC fallback to direct insert:', rpcErr);
+        await insforge.database.from('stock_in').insert([{
+          id: entryId,
+          date,
+          item_id: targetItem.id,
+          item_sku: sku,
+          item_name: description,
+          qty,
+          unit,
+          cost_price: costPrice || targetItem.cost || 0,
+          supplier: supplier || targetItem.supplier || '',
+          notes,
+          created_at: nowIso
+        }]);
+        await addLogToDB(
+          `${description} (Stock IN (+))`,
+          `+${qty} ${unit} | ${notes}`
+        );
+        const updatedItem = stockItems.find(i => i.sku === sku);
+        if (updatedItem) {
+          await insforge.database.from('stock_items').update({
+            qty: updatedItem.qty,
+            updated_at: nowIso
+          }).eq('id', updatedItem.id);
+        }
+      }
     }
   } catch (err) {
-    console.error('[StockManager] Error saving IN/OUT entry to DB:', err);
-    showToast('Warning: Entry saved locally, but database sync encountered an issue.', 'warning');
+    console.error('[StockManager] Database sync error:', err);
+    showToast('Entry saved locally, background sync pending.', 'info');
   }
 }
 
@@ -1636,6 +1905,82 @@ function openItemDetailsModal(itemId) {
   document.getElementById('detail-purchase-price').textContent = `₹ ${safeMoney(item.cost)}`;
   document.getElementById('detail-in-stock').textContent = `${item.qty} ${item.unit}`;
   document.getElementById('detail-stock-value').textContent = `₹ ${safeMoney(Math.max(0, item.qty) * item.cost)}`;
+
+  // Status chip
+  const statusChip = document.getElementById('detail-stock-status-chip');
+  if (statusChip) {
+    if (item.qty < 0) {
+      statusChip.textContent = '⚠️ Negative Stock';
+      statusChip.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800';
+    } else if (item.qty === 0) {
+      statusChip.textContent = '⚠️ Out of Stock';
+      statusChip.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800';
+    } else if (item.qty <= item.min) {
+      statusChip.textContent = '⚠️ Low Stock';
+      statusChip.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-800';
+    } else {
+      statusChip.textContent = '✓ Good';
+      statusChip.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800';
+    }
+  }
+
+  // Calculate Last Stock In
+  const itemInEntries = stockInEntries.filter(e => e.sku === item.sku);
+  const lastIn = itemInEntries[0];
+  const lastInQtyEl = document.getElementById('detail-last-in-qty');
+  const lastInSubEl = document.getElementById('detail-last-in-sub');
+  if (lastInQtyEl && lastInSubEl) {
+    if (lastIn) {
+      lastInQtyEl.textContent = `+${lastIn.qty} ${item.unit}`;
+      lastInSubEl.textContent = `Date: ${lastIn.date} · Supplier: ${lastIn.supplier || item.supplier || 'Direct'}`;
+    } else {
+      lastInQtyEl.textContent = 'None recorded';
+      lastInSubEl.textContent = 'No inward stock entries yet';
+    }
+  }
+
+  // Calculate Stock Out Today for this item
+  const todayStr = new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const itemOutToday = stockOutEntries
+    .filter(e => {
+      const eDate = (e.date || '').replace(/\//g, '-');
+      return e.sku === item.sku && (eDate === todayStr || (e.createdAt && e.createdAt.startsWith(todayIso)));
+    })
+    .reduce((s, e) => s + safeNum(e.qty, 0), 0);
+
+  const outTodayQtyEl = document.getElementById('detail-out-today-qty');
+  const outTodaySubEl = document.getElementById('detail-out-today-sub');
+  if (outTodayQtyEl && outTodaySubEl) {
+    outTodayQtyEl.textContent = itemOutToday > 0 ? `-${itemOutToday} ${item.unit}` : '0 units';
+    outTodaySubEl.textContent = itemOutToday > 0 ? "Today's Kitchen Usage" : 'No usage recorded today';
+  }
+
+  // Wire up action buttons: [+ STOCK IN], [- STOCK OUT], [VIEW HISTORY]
+  const btnDetailIn = document.getElementById('btn-detail-stock-in');
+  const btnDetailOut = document.getElementById('btn-detail-stock-out');
+  const btnDetailHist = document.getElementById('btn-detail-history');
+
+  if (btnDetailIn) {
+    btnDetailIn.onclick = () => {
+      closeItemDetailsModal();
+      openInOutModal('IN', item.id);
+    };
+  }
+
+  if (btnDetailOut) {
+    btnDetailOut.onclick = () => {
+      closeItemDetailsModal();
+      openInOutModal('OUT', item.id);
+    };
+  }
+
+  if (btnDetailHist) {
+    btnDetailHist.onclick = () => {
+      const ledgerWrap = document.getElementById('detail-ledger-body');
+      ledgerWrap?.scrollIntoView({ behavior: 'smooth' });
+    };
+  }
 
   // Monthly Balance Gone Analytics for this item
   const monthData = calculateMonthlyInventory(selectedMonthYear);
@@ -2269,7 +2614,7 @@ function setupEventListeners() {
   if (monthPicker) {
     monthPicker.value = selectedMonthYear;
     monthPicker.addEventListener('change', (e) => {
-      selectedMonthYear = e.target.value || '2026-08';
+      selectedMonthYear = e.target.value || _initialYm;
       renderAll();
     });
   }
@@ -2336,6 +2681,24 @@ function setupEventListeners() {
       renderAll();
     }
   });
+  // Daily Summary Block Listeners
+  const dailyDateInput = document.getElementById('daily-summary-date');
+  if (dailyDateInput) {
+    dailyDateInput.value = currentDailyDate;
+    dailyDateInput.addEventListener('change', (e) => {
+      renderDailySummaryBlock(e.target.value);
+    });
+  }
+
+  document.getElementById('btn-daily-today')?.addEventListener('click', () => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (dailyDateInput) dailyDateInput.value = todayIso;
+    renderDailySummaryBlock(todayIso);
+  });
+
+  document.getElementById('btn-export-daily-csv')?.addEventListener('click', exportDailySummaryCSV);
+  document.getElementById('btn-export-daily-pdf')?.addEventListener('click', exportDailySummaryPDF);
+
   // Record IN & OUT Buttons
   document.getElementById('btn-record-in')?.addEventListener('click', () => openInOutModal('IN'));
   document.getElementById('btn-record-out')?.addEventListener('click', () => openInOutModal('OUT'));

@@ -119,6 +119,9 @@
       <a href="#gallery"    class="nav-link" data-i18n="nav_gallery">Gallery</a>
       <a href="#about"      class="nav-link" data-i18n="nav_about">About</a>
       <a href="#visit"      class="nav-link" data-i18n="nav_contact">Visit Us</a>
+      <a href="/admin.html" class="nav-link font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 shadow-xs" title="Open Admin &amp; POS Management">
+        <span>⚡</span> POS &amp; Admin
+      </a>
     </nav>
 
     <!-- Header Actions -->
@@ -217,6 +220,17 @@
       <a href="#about"      class="mobile-nav-link py-2.5 text-sm font-medium border-b" style="color:var(--color-text-secondary); border-color:var(--color-border)" data-i18n="nav_about">ℹ️ About LIMRA</a>
       <a href="#visit"      class="mobile-nav-link py-2.5 text-sm font-medium border-b" style="color:var(--color-text-secondary); border-color:var(--color-border)" data-i18n="nav_contact">📍 Visit Us &amp; Directions</a>
       <a href="#" id="mobile-profile-link" class="mobile-nav-link py-2.5 text-sm font-semibold" style="color:var(--color-accent)" data-i18n="nav_account">👤 My Account</a>
+      <div class="my-2 pt-2 border-t" style="border-color:var(--color-border)">
+        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1.5">Staff &amp; Operations (V2)</p>
+        <a href="/admin.html" class="mobile-nav-link py-2 text-sm font-bold flex items-center justify-between text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 rounded-xl mb-1.5">
+          <span class="flex items-center gap-2"><span>⚡</span> Admin &amp; POS Hub</span>
+          <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-600 text-white font-bold">V2</span>
+        </a>
+        <a href="/stock-manager/index.html" class="mobile-nav-link py-2 text-sm font-bold flex items-center justify-between text-teal-800 bg-teal-50 border border-teal-200 px-3 rounded-xl">
+          <span class="flex items-center gap-2"><span>📦</span> Stock Inventory Manager</span>
+          <span class="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-white font-bold">V2</span>
+        </a>
+      </div>
     </nav>
   </div>
 </header>
@@ -2001,6 +2015,36 @@
 
   </div>
 </div>
+
+<!-- Local Dev Quick Access Dock (Visible on localhost/127.0.0.1) -->
+<div id="dev-floating-dock" class="hidden fixed bottom-5 left-5 z-50 bg-slate-950/95 text-white border border-emerald-500/40 shadow-2xl rounded-2xl p-3 backdrop-blur-md max-w-xs font-sans text-xs">
+  <div class="flex items-center justify-between gap-3 mb-2 pb-1.5 border-b border-slate-800">
+    <div class="flex items-center gap-1.5 font-bold text-emerald-400">
+      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+      <span>V2 Dev Quick Links</span>
+    </div>
+    <button type="button" onclick="document.getElementById('dev-floating-dock').remove()" class="text-slate-400 hover:text-white text-xs px-1 cursor-pointer" title="Dismiss">&times;</button>
+  </div>
+  <div class="grid grid-cols-3 gap-2 text-center text-[11px]">
+    <a href="/admin.html" class="p-2 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 font-bold flex flex-col items-center gap-1 transition-all">
+      <span class="text-sm">🧾</span>
+      <span>POS Admin</span>
+    </a>
+    <a href="/stock-manager/index.html" class="p-2 rounded-xl bg-teal-950/80 hover:bg-teal-900 border border-teal-500/40 text-teal-300 font-bold flex flex-col items-center gap-1 transition-all">
+      <span class="text-sm">📦</span>
+      <span>Stock</span>
+    </a>
+    <a href="/table/index.html?table=1" class="p-2 rounded-xl bg-blue-950/80 hover:bg-blue-900 border border-blue-500/40 text-blue-300 font-bold flex flex-col items-center gap-1 transition-all">
+      <span class="text-sm">🪑</span>
+      <span>Table 1</span>
+    </a>
+  </div>
+</div>
+<script>
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    document.getElementById('dev-floating-dock')?.classList.remove('hidden');
+  }
+</script>
 
 <script type="module" src="/src/main.js"></script>
 </body>
