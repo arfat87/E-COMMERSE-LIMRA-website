@@ -2857,6 +2857,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function startOrderTrackingPolling(orderId) {
     if (orderTrackingPollId) clearInterval(orderTrackingPollId);
     orderTrackingPollId = setInterval(async () => {
+      if (typeof document !== 'undefined' && document.hidden) return; // Skip polling when customer is not looking at tab
       try {
         const { data, error } = await insforge.database.from('orders').select('status').eq('id', orderId).maybeSingle();
         if (!error && data) {
@@ -2871,7 +2872,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (e) {
         console.warn('[RealtimeTracking] Poller error:', e);
       }
-    }, 10000); // Poll every 10 seconds
+    }, 25000); // Poll every 25 seconds instead of 10s
   }
 
   function unsubscribeFromOrderUpdates() {
@@ -4929,8 +4930,9 @@ async function startNotificationListening() {
 function startPollingFallback(phone) {
   if (pollingIntervalId) return; // Already polling
   
-  console.log(`[NotificationCenter] Falling back to polling interval (20 seconds)...`);
+  console.log(`[NotificationCenter] Falling back to polling interval (45 seconds)...`);
   pollingIntervalId = setInterval(async () => {
+    if (typeof document !== 'undefined' && document.hidden) return; // Skip polling when tab is not active
     const activePhone = getActiveCustomerPhone();
     if (!activePhone) {
       clearInterval(pollingIntervalId);
@@ -4960,7 +4962,7 @@ function startPollingFallback(phone) {
     } catch (e) {
       console.warn('[NotificationCenter] Polling error:', e);
     }
-  }, 20000);
+  }, 45000);
 }
 
 // ═══════════════════════════════════════

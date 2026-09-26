@@ -8867,17 +8867,91 @@ function initDashboardUI() {
   // Connect to QZ Tray
   initQZTray();
 
-  // Auto-refresh every 10 seconds for real-time notifications
-  setInterval(() => refreshDashboard(false), 10000);
+  // ════════════════════════════════════════════════════════
+  // 📡 REALTIME WEBSOCKET LISTENER & ADAPTIVE POLLING
+  // Replaces aggressive 10s polling to drop Log Ingestion by >80%
+  // ════════════════════════════════════════════════════════
+  let adminRealtimeSubscription = null;
+  let adminPollingTimer = null;
+  let lastUserActivityTime = Date.now();
+  const NORMAL_POLL_INTERVAL = 35000; // 35 seconds (safety heartbeat)
+  const IDLE_POLL_INTERVAL = 90000;   // 90 seconds when terminal is idle (> 5 min)
+  const IDLE_THRESHOLD = 300000;      // 5 minutes
 
-  // Immediate delta sync when returning to the tab from background
-  if (typeof document !== 'undefined') {
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) {
-        refreshDashboard(false);
-      }
-    });
+  function trackAdminActivity() {
+    lastUserActivityTime = Date.now();
   }
+
+  function initAdminRealtime() {
+    if (adminRealtimeSubscription) return;
+    try {
+      const client = (typeof insforge !== 'undefined' && insforge.channel) ? insforge : (typeof supabase !== 'undefined' ? supabase : null);
+      if (!client || typeof client.channel !== 'function') return;
+
+      adminRealtimeSubscription = client
+        .channel('limra-admin-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+          console.log('[Realtime] Instant order event:', payload.eventType);
+          refreshDashboard(false);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, (payload) => {
+          console.log('[Realtime] Instant notification event:', payload.eventType);
+          refreshDashboard(false);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, (payload) => {
+          console.log('[Realtime] Instant booking event:', payload.eventType);
+          refreshDashboard(false);
+        })
+        .subscribe((status) => {
+          console.log('[Realtime] Admin live event stream status:', status);
+        });
+    } catch (err) {
+      console.warn('[Realtime] Setup error, relying on adaptive heartbeat:', err);
+    }
+  }
+
+  function setupSmartPolling() {
+    if (typeof window !== 'undefined') {
+      ['mousedown', 'keydown', 'touchstart', 'scroll'].forEach(evt => {
+        window.addEventListener(evt, trackAdminActivity, { passive: true });
+      });
+    }
+
+    function scheduleNextPoll() {
+      if (adminPollingTimer) clearTimeout(adminPollingTimer);
+
+      // If browser tab is hidden/minimized, completely pause HTTP polling to save log ingestion
+      if (typeof document !== 'undefined' && document.hidden) {
+        adminPollingTimer = setTimeout(scheduleNextPoll, 20000);
+        return;
+      }
+
+      const isIdle = (Date.now() - lastUserActivityTime) > IDLE_THRESHOLD;
+      const interval = isIdle ? IDLE_POLL_INTERVAL : NORMAL_POLL_INTERVAL;
+
+      adminPollingTimer = setTimeout(async () => {
+        if (typeof document !== 'undefined' && !document.hidden) {
+          await refreshDashboard(false);
+        }
+        scheduleNextPoll();
+      }, interval);
+    }
+
+    scheduleNextPoll();
+
+    // Immediate delta sync when returning to tab from background
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          refreshDashboard(false);
+          scheduleNextPoll();
+        }
+      });
+    }
+  }
+
+  initAdminRealtime();
+  setupSmartPolling();
 
   // Setup modal listeners for menu editor, coupon manager, and combo manager
   setupEditModalListeners();
