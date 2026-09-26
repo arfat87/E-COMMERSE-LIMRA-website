@@ -12,6 +12,8 @@ node_modules/**
 dist
 dist/**
 dist-ssr
+release
+release/**
 .vite
 .vite/**
 *.local

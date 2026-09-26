@@ -1,376 +1,303 @@
-# 🍽️ LIMRA Restaurant — Enterprise Food Service & E-Commerce Platform
+# 🍽️ LIMRA Restaurant — Enterprise Food Service, Dine-In & Multi-Platform POS Platform
 
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)]()
+[![Frontend](https://img.shields.io/badge/Frontend-Vite%208%20%2B%20Tailwind%20CSS-646CFF.svg)]()
+[![Backend](https://img.shields.io/badge/Backend-Node.js%20%2B%20Vercel%20Serverless-000000.svg)]()
 [![Database](https://img.shields.io/badge/Database-Supabase%20PostgreSQL-3ECF8E.svg)]()
+[![Desktop](https://img.shields.io/badge/Desktop-Electron%20Windows%20%26%20macOS-0078D7.svg)]()
+[![Mobile](https://img.shields.io/badge/Mobile-Capacitor%208%20Android%20POS-3DDC84.svg)]()
 [![Hardware](https://img.shields.io/badge/Hardware-ESC%2FPOS%20Thermal%20(80mm%2F58mm)-orange.svg)]()
-[![Security](https://img.shields.io/badge/Security-Strict%20Auth%20%2B%20RLS%20(22%20Tables)-blue.svg)]()
-[![Frontend](https://img.shields.io/badge/Frontend-Vite%208%20%2B%20Tailwind-646CFF.svg)]()
 
-> **Owner / Operator:** SK Arif | LIMRA Restaurant, Egra, Purba Medinipur, West Bengal, India  
-> **Backend BaaS:** Supabase PostgreSQL (`https://ynrtlcasbndkrqeotgzt.supabase.co`)  
-> **Architecture:** Vite Multi-Page Architecture (MPA) + Node.js / Vercel Serverless API + Supabase Realtime & PostgREST
+> **Proprietor & Operator:** SK Arif | LIMRA Restaurant, Egra, Purba Medinipur, West Bengal, India  
+> **Location:** Main Road, Near Bus Stand, Egra, Purba Medinipur, West Bengal — 721429  
+> **Contact:** +91 7501299357 | `arfatalis451@gmail.com`  
+> **Database:** Supabase PostgreSQL (`https://ynrtlcasbndkrqeotgzt.supabase.co`) with Row-Level Security (RLS)  
+> **Monorepo:** `frontend` (Vite 8 SPA/MPA) + `backend` (Node.js API & Server) + `electron` (Desktop) + `android` (Capacitor)  
 
 ---
 
 ## 📖 Executive Summary
 
-**LIMRA Restaurant** is a production-grade, full-stack digital operating system engineered specifically for high-volume modern restaurant environments. It unifies customer online food delivery, QR table-side dining, kitchen order ticketing (KOT), hardware-level thermal printing, inventory recipe deduction, and real-time administrative analytics into a resilient, high-speed monorepo.
+**LIMRA Restaurant Platform** is an enterprise-grade, omnichannel food service operating system custom-engineered for high-volume dining, kitchen automation, contactless table orders, inventory financials, and online food delivery.
+
+Designed with a high-performance, modular architecture:
+- **Zero-Latency Customer Storefront**: Multilingual digital storefront with a 202-dish catalog, real-time search, interactive Leaflet delivery map with dynamic distance fee calculations, and instant Razorpay UPI checkout.
+- **Contactless Dine-In Table Ordering**: Table-side QR code ordering system with order round accumulation, customer item drawer, and intelligent dynamic cross-selling pairings.
+- **All-in-One Admin & Kitchen POS**: Dual-mode kitchen display (KOT), real-time order lifecycle manager, POS billing terminal, live analytics charts, and delivery dispatch.
+- **Integrated Stock Summary & Financials**: Embedded, tabbed warehouse management with 1-click Quick Stock IN/OUT, automated purchase rate variance tracking (`Higher`, `Lower`, `Same Rate`), batch cost impact calculation, and daily/weekly/monthly valuation statements.
+- **Hardware Integration**: Byte-level ESC/POS thermal printing engine supporting 80mm and 58mm paper rolls, cash drawer kick pulses, and dynamic UPI QR generation.
+- **Cross-Platform Deployments**: Single codebase natively deployable to Web (Vercel), Windows/macOS Desktop (`.exe` via Electron), and Android Tablets (`.apk` via Capacitor).
 
 ---
 
-## 🗺️ Portal Sitemap & Routes
+## 🗺️ Application Sitemap & Routes
 
-| Portal | Source Path | Target URL | Primary Function |
+| Module | Source File | Web Route | Key Features & Responsibilities |
 | :--- | :--- | :--- | :--- |
-| **Customer Storefront** | `frontend/index.html` | `/index.html` | Public ordering, 202-dish menu, coupon engine, dynamic delivery fees, and order tracking |
-| **Dine-In Table Ordering** | `frontend/table/index.html` | `/table/index.html?t=1` | Contactless table-side QR ordering, round accumulation, item drawer, and cross-sell pairings |
-| **Table QR Generator** | `frontend/table/qr-admin.html` | `/table/qr-admin.html` | Staff utility for batch-generating print-ready QR codes for Tables 1–19 |
-| **Admin Operations & POS** | `frontend/admin.html` | `/admin.html` | Real-time kitchen display, POS billing, KOT management, thermal printing, and sales reports |
-| **Admin Login Gate** | `frontend/admin-login.html` | `/admin-login.html` | Strict role-verified admin authentication (Email/Password & Google OAuth) |
-| **Stock & Supply Chain** | `frontend/stock-manager/index.html` | `/stock-manager/index.html` | Raw material warehouse, stock in/out audits, monthly balance computation, and alerts |
-| **Privacy Policy** | `frontend/privacy.html` | `/privacy.html` | Customer privacy rights, data retention policies, and restaurant compliance |
+| **Customer Storefront** | `frontend/index.html` | `/index.html` | 202-dish menu, category filters, cart, coupons, Leaflet delivery radius calculator, order tracking, and English/Bengali/Hindi/Odia translation. |
+| **Dine-In Table Ordering** | `frontend/table/index.html` | `/table/index.html?t=1` | Contactless QR ordering for Tables 1–19, round aggregation, item drawer, active orders view, and dynamic cross-sell recommendations. |
+| **Table QR Generator** | `frontend/table/qr-admin.html` | `/table/qr-admin.html` | Staff utility for batch-generating and printing branded QR codes with embedded table parameters. |
+| **Admin Panel & POS** | `frontend/admin.html` | `/admin.html` | Live KOT kitchen monitor, POS billing, orders history, sales analytics (Chart.js), delivery tracking, settings, and embedded Stock Manager. |
+| **Stock Management** | `frontend/admin.html#panel-stock` | `/admin.html` (In-Page) | Live operations, 1-click IN/OUT hero bar, weekly/monthly valuation statements, purchase rate variance analysis, and PostgreSQL sync. |
+| **Standalone Stock Portal** | `frontend/stock-manager/index.html` | `/stock-manager/index.html` | Dedicated fullscreen warehouse audit view with Excel and PDF export capabilities. |
+| **Admin Authentication** | `frontend/admin-login.html` | `/admin-login.html` | Secure role-based staff authentication gate supporting credentials and Google OAuth. |
+| **Customer Privacy Policy**| `frontend/privacy.html` | `/privacy.html` | Data protection notice, customer account rights, payment security terms, and compliance disclosures. |
 
 ---
 
-## ⚡ Key Architectural Capabilities
-
-### 🛒 1. Customer Delivery & Takeaway Portal
-- **202-Dish Multi-Category Menu:** Biryani, Tandoor & Kababs, Chinese (Veg & Non-Veg), Fried Rice, Gravies, Soups, Breads, Desserts, Mocktails, and Platter Combos.
-- **Dynamic Places & Charges Engine:** Real-time distance and location-based delivery charge calculation with minimum order enforcement.
-- **Smart Discount & Coupon System:** Supports percentage discounts, flat bill deductions, maximum discount caps, minimum order rules, and per-user redemption tracking (`coupons` and `coupon_usage` tables).
-- **Flexible Checkout:** UPI QR Pay with UTR verification, Cash on Delivery (COD), Card on Delivery, and Razorpay payment gateway integration.
-- **Real-Time Order Tracking:** WebSocket subscription to order state changes via Supabase Realtime with fallback 10-second polling.
-- **Multilingual Support:** Instant switching between English, Bengali (বাংলা), and Hindi (हिंदी).
-
-### 🍽️ 2. Dine-In Table QR Ordering System
-- **Table Token Tracking:** Tables 1 through 19 identified via query parameter (e.g. `?t=5`).
-- **Multi-Round Ticket Accumulation:** Customers can place supplementary rounds (`place_table_round` RPC); additional items append to the primary open table session without closing the bill.
-- **Interactive Product Detail Drawer:** Modal drawer showing ingredient breakdowns, combo pack contents, high-resolution imagery, and dynamic cross-sell recommendations.
-- **Custom Dish Support:** Dynamic resolution of kitchen daily specials (`activeCustomDishes`) directly in drawer views and cart management.
-- **Google Review Prompt:** Satisfied diners are prompted with a direct review link upon final bill settlement.
-
-### 🖨️ 3. Thermal Printing & KOT Studio
-- **Dual ESC/POS Engine:** Native ESC/POS command generation in [`frontend/src/lib/escpos.js`](./frontend/src/lib/escpos.js) supporting both **80mm (48-column)** and **58mm (32-column)** paper rolls.
-- **Hardware Integration:** Compatible with TVS RP3200 Plus, Epson, Posiflex, and standard USB/Network thermal printers via QZ Tray and silent browser printing.
-- **PrintQueueManager:** Resilient client-side print queue ([`frontend/src/lib/print-queue.js`](./frontend/src/lib/print-queue.js)) with automatic retry, error logging, and offline persistence.
-- **Customizable KOT & Bill Layouts:** Real-time preview studio in Admin with toggles for GSTIN, FSSAI number, UPI Payment QR codes, Google Review QR, and cash drawer kick signals.
-
-### 🏢 4. Admin Control Center & Kitchen POS
-- **Live Kitchen Order Stream:** Incoming orders categorized into `Pending`, `Confirmed`, `Preparing`, `Ready`, `Delivered`, `Hold`, and `Cancelled` with sound alerts.
-- **Table Session Settlement:** Consolidate multiple KOT rounds into a single master tax invoice with CGST and SGST breakdowns.
-- **POS Express Billing:** Manual counter ordering with item search, instant discount override, tax computation, and immediate receipt printing.
-- **Automated Google Sheets Sync:** Auto-syncs closed/delivered orders to Google Sheets spreadsheets in the background.
-- **Sales Analytics:** Chart.js revenue dashboards, hourly ordering heatmaps, top-selling dish reports, and export to CSV/Excel.
-
-### 📦 5. Warehouse & Stock Management
-- **7 Inventory Categories:** Spices & Bhusimal, Dairy Products, Soft Drinks & Beverages, Fresh Vegetables, Ice Cream, Packaging Materials, and Cleaning Supplies.
-- **Idempotent Recipe Deduction:** Automated stock deduction on order fulfillment with deduplication checks against `stock_logs` to eliminate duplicate inventory deductions.
-- **Dynamic Auditing & Summaries:** Real-time computation of opening balances, stock in, stock out, and current stock levels without hardcoded date constraints.
-- **Text-Compatible Database RPCs:** Stored procedures (`record_stock_out`, `record_stock_in`, `get_stock_daily_summary`) supporting both alphanumeric SKU identifiers (`stk_61`) and UUIDs.
-
----
-
-## 🛡️ Security & Reliability Architecture
-
-1. **Strict Admin Authentication Gate:**
-   - Universal removal of loose email checks (`.includes('admin')`). Staff access strictly requires verified equality against authorized administrator records or active `admin_users` table entries.
-2. **Universal Empty Filter Guards:**
-   - `/api/db.js` and `/backend/api/db.js` validate all `update` and `delete` requests; queries missing a filter return HTTP 400 to prevent accidental table wipes.
-   - Fixed dispatcher routing to guarantee `action` property precedence over HTTP verbs.
-3. **Self-Healing Schema Fallbacks:**
-   - Backend order creation and admin billing automatically detect missing schema columns (`ticket_status`, printer flags) and retry gracefully without interrupting operations.
-4. **Row-Level Security (RLS) on 22 Tables:**
-   - Complete RLS enforcement with zero open `USING (true)` policies. Public clients have restricted read/insert rights; administrative actions require `is_admin()` authentication.
-5. **Secure Stored Procedures:**
-   - All `SECURITY DEFINER` functions run with immutable `SET search_path = ''` to prevent search path hijacking.
-
----
-
-## 🗄️ Database Architecture (Supabase PostgreSQL)
+## 🏗️ System Architecture & Data Flow
 
 ```
-                            ┌────────────────────────────────────────┐
-                            │               admin_users              │
-                            └───────────────────┬────────────────────┘
-                                                │ authenticates
-                                                ▼
-┌──────────────────┐        ┌────────────────────────────────────────┐        ┌──────────────────┐
-│  delivery_areas  │        │                 orders                 │        │   stock_items    │
-├──────────────────┤        ├────────────────────────────────────────┤        ├──────────────────┤
-│ - area_name      │        │ - id (uuid)                            │        │ - id (text)      │
-│ - delivery_fee   │        │ - order_number (int)                   │        │ - name (text)    │
-│ - min_order      │        │ - order_type (delivery/takeaway/table) │        │ - qty (numeric)  │
-└──────────────────┘        │ - status & ticket_status               │        │ - min_qty        │
-                            │ - total_amount                         │        └────────┬─────────┘
-┌──────────────────┐        │ - table_number                         │                 │
-│     coupons      │        └───────────────────┬────────────────────┘                 │ tracks
-├──────────────────┤                            │                                      ▼
-│ - code           │                            │ contains                    ┌──────────────────┐
-│ - discount_pct   │                            ▼                             │ stock_in / out   │
-│ - min_bill       │        ┌────────────────────────────────────────┐        │ stock_logs       │
-└──────────────────┘        │              order_items               │        └──────────────────┘
-                            ├────────────────────────────────────────┤
-                            │ - item_name, quantity, unit_price      │
-                            └────────────────────────────────────────┘
+                                 ┌───────────────────────────────────┐
+                                 │       Vercel / Cloud Gateway      │
+                                 │        (HTTPS & CDN Edge)         │
+                                 └─────────────────┬─────────────────┘
+                                                   │
+                         ┌─────────────────────────┴─────────────────────────┐
+                         ▼                                                   ▼
+       ┌───────────────────────────────────┐               ┌───────────────────────────────────┐
+       │         Customer Clients          │               │        Admin & Staff POS          │
+       │  • Online Delivery Storefront     │               │  • Admin Dashboard & KOT Monitor  │
+       │  • Contactless Table QR Ordering  │               │  • Thermal Bill & KOT Printing    │
+       │  • Multi-language Engine (i18n)   │               │  • In-Page Stock & Accounting     │
+       └─────────────────┬─────────────────┘               └─────────────────┬─────────────────┘
+                         │                                                   │
+                         │                   API REST Calls                  │
+                         └─────────────────────────┬─────────────────────────┘
+                                                   ▼
+                                 ┌───────────────────────────────────┐
+                                 │     Backend API Layer (Node.js)   │
+                                 │   • Local Dev Server (server.js)  │
+                                 │   • Vercel Edge Serverless (/api) │
+                                 │   • Orders, Analytics, Payments   │
+                                 └─────────────────┬─────────────────┘
+                                                   │
+                         ┌─────────────────────────┴─────────────────────────┐
+                         ▼                                                   ▼
+       ┌───────────────────────────────────┐               ┌───────────────────────────────────┐
+       │     Supabase PostgreSQL Cloud     │               │     Google Apps Script Web App    │
+       │   • Orders, Items & Bookings      │               │   • google-apps-script/Code.gs    │
+       │   • Stock Items, In/Out & Logs    │               │   • Live Spreadsheet Bookkeeping  │
+       │   • Row-Level Security (RLS)      │               │   • Deduplicated Auditing         │
+       └───────────────────────────────────┘               └───────────────────────────────────┘
 ```
-
-### Relational Tables Overview
-
-| Domain | Table Name | Purpose | Access Control |
-| :--- | :--- | :--- | :--- |
-| **Sales** | `orders` | Central order transactions across all channels | Public Read (by token) / Admin Full |
-| | `order_items` | Individual dish lines with prices and kitchen notes | Public Read / Admin Full |
-| **Catalog** | `delivery_areas` | Delivery zones, fees, and minimum cart amounts | Public Read / Admin Manage |
-| | `menu_overrides` | Custom dishes, live pricing overrides, and availability | Public Read / Admin Manage |
-| | `combos` | Multi-item platter packages | Public Read / Admin Manage |
-| | `coupons` | Promotional vouchers and discount logic | Public Read / Admin Manage |
-| | `coupon_usage` | Per-customer coupon redemption logs | Public Insert / Admin Manage |
-| | `reviews` | Customer ratings and feedback | Public Read & Insert / Admin Manage |
-| **Reservations** | `bookings` | Table, party, and wedding catering reservations | User Read Own / Admin Manage |
-| **Inventory** | `stock_items` | Raw ingredients and godown balances | Admin Only |
-| | `stock_in` | Goods receipt notes (GRN) and vendor purchases | Admin Only |
-| | `stock_in_entries` | Detailed restock item lines | Admin Only |
-| | `stock_out` | Kitchen consumption and wastage records | Admin Only |
-| | `stock_out_entries`| Detailed consumption item lines | Admin Only |
-| | `stock_logs` | Audit trail of inventory updates | Admin Only |
-| **Infrastructure**| `admin_users` | Authorized management personnel | Authenticated Admins Only |
-| | `printer_settings` | Thermal printer layouts, review QR, and margins | Admin Only |
-| | `phone_verifications`| OTP verification records with brute-force rate limits | System / Admin Only |
-| | `security_audit_logs`| Authentication and sensitive event logs | Admin Only |
-| | `verified_payments` | Validated UPI UTR transactions | Admin Only |
-| | `payment_history` | State change log for payment receipts | User Read Own / Admin Manage |
-| | `notifications` | Staff kitchen alerts and customer notices | User Read Own / Admin Manage |
 
 ---
 
-## 📂 Monorepo Organization
+## 📦 Key Functional Modules
+
+### 1. ⚡ Embedded Stock Summary & Warehouse Accounting
+- **In-Page Seamless Navigation**: Accessible directly inside `admin.html` under the **Warm Parchment & Contemporary Indigo** theme with zero browser redirects.
+- **Top Quick-Action Hero Bar**:
+  - `[➕ Quick Stock IN (Purchases & Cost)]` — Record incoming supplies with instant cost calculations.
+  - `[➖ Quick Stock OUT (Kitchen Usage)]` — Log kitchen preparation and wastage in real time.
+  - `[📦 + Add New Item]` — Create new master ingredients with initial stock and unit valuation.
+- **Row-Level 1-Click Operations**: Table 3 (Real-Time Stock Balance) and the Inventory Directory feature direct inline `[+ IN]` and `[- OUT]` buttons for instant logging without searching dropdowns.
+- **Intelligent Purchase Rate Variance**:
+  - Auto-compares incoming rate against the master item purchase cost.
+  - Displays instant badges: `🔺 +₹ X Higher (+Y%)`, `🔻 -₹ X Lower (-Y%)`, or `✅ Same Rate`.
+  - Computes exact batch financial impact (e.g. *⚠️ Higher by ₹5.00/kg! Additional batch cost: ₹100.00*).
+  - Optional checkbox to update master rate in PostgreSQL database (`stock_items.cost_price`).
+- **Comprehensive Statements**:
+  - **Live Stock**: Real-time balances, low-stock warnings, and today's movements.
+  - **Weekly Financial Statement**: Weekly opening valuation, purchases (+), kitchen usage (-), net variance, and closing valuation.
+  - **Monthly Financial Statement**: Complete calendar month-to-date statements with Excel (`.xlsx`) and PDF exports.
+
+### 2. 📱 Contactless Dine-In Table Ordering (`/table/`)
+- **Table-Side QR Integration**: Customers scan table-specific QR codes (`/table/index.html?t=04`) to access live menu ordering without downloading apps.
+- **Dynamic Cross-Selling Engine**: Automatically recommends matching pairings based on cart contents (e.g., suggesting *Butter Naan* or *Cold Drinks* with *Chicken Biryani*).
+- **Rounds Accumulation**: Customers can place multiple order rounds throughout their meal; kitchen KOTs receive newly added items while preserving previous rounds under the active table session.
+
+### 3. 🖨️ Thermal ESC/POS Printing Engine
+- **Byte-Level Formatter (`escpos.js`)**: Generates raw binary ESC/POS escape sequences for **80mm (48-column)** and **58mm (32-column)** paper rolls.
+- **KOT & Customer Bill Printing**: Produces kitchen order tickets, tax invoices with GSTIN/FSSAI headers, dynamic UPI QR codes, review QR links, and cash drawer kick signals.
+- **Multi-Driver Support**: Compatible with direct USB, Bluetooth, network LAN thermal printers, and QZ Tray desktop print spoolers.
+- **Resilient Print Queue (`print-queue.js`)**: Handles print retries, status checks, and offline queuing.
+
+### 4. 🌐 Multilingual Customer Storefront
+- **Language Switcher (`i18n.js`)**: Dynamic localized translation supporting English, Bengali (বাংলা), Hindi (हिन्दी), and Odia (ଓଡ଼ିଆ).
+- **Interactive Delivery Radius Engine**: Integrates Leaflet maps to calculate user distance from LIMRA restaurant and auto-compute tiered delivery fees.
+- **Secure Payments**: Razorpay UPI and card payments integrated alongside traditional Cash on Delivery (COD).
+
+---
+
+## 📂 Repository Structure
 
 ```
 E-COMMERSE LIMRA website/
-├── api/                               # Vercel Serverless API Handlers
-│   ├── lib/
-│   │   └── supabase.js                # Supabase Server Client
-│   ├── analytics.js                   # Sales metrics & business intelligence API
-│   ├── create-order.js                # Payment gateway order initiation
-│   ├── db-status.js                   # Database health check endpoint
-│   ├── db.js                          # Universal CRUD & RPC dispatcher
-│   ├── menu.js                        # Menu overrides API
-│   ├── orders.js                      # Order state management & inventory deduction
-│   └── verify-payment.js              # Payment signature verification
+├── api/                               # Vercel Serverless Function Endpoints
+│   ├── lib/                           # Database & Auth helpers (Supabase, InsForge)
+│   ├── analytics.js                   # Sales reports and metrics API
+│   ├── create-order.js                # Secure order intake endpoint
+│   ├── db-status.js                   # Connectivity health-check
+│   ├── db.js                          # Unified database CRUD gateway
+│   ├── menu.js                        # Live catalog API
+│   ├── orders.js                      # Order state transition handler
+│   └── verify-payment.js              # Razorpay cryptographic signature verification
 │
-├── backend/                           # Local Express Node.js Server
-│   ├── api/                           # Mirrored API routes (synchronized with /api)
-│   ├── server.js                      # Local development server entrypoint
-│   └── package.json                   # Backend package dependencies
+├── backend/                           # Node.js Express / HTTP Local API Server
+│   ├── api/                           # Mirror API controllers for local runtime
+│   ├── .env                           # Backend environment variables
+│   ├── package.json                   # Backend server dependencies
+│   └── server.js                      # Local development proxy & API runner (:3000)
 │
-├── frontend/                          # Vite 8 Multi-Page Frontend
-│   ├── public/                        # Static assets, logos, and sounds
-│   ├── src/
-│   │   ├── data/
-│   │   │   └── menu.js                # Master catalog of 202 dishes
-│   │   ├── lib/
-│   │   │   ├── admin-routes.js        # Protected route redirects
-│   │   │   ├── email-service.js       # Customer confirmation emails
-│   │   │   ├── escpos.js              # ESC/POS 80mm & 58mm raw thermal byte builder
-│   │   │   ├── i18n.js                # Multi-language translation engine
-│   │   │   ├── notifications.js       # In-app push notifications
-│   │   │   ├── payments.js            # UPI QR and payment integrations
-│   │   │   ├── print-queue.js         # Thermal print queue with offline retry
-│   │   │   └── supabase.js            # Frontend Supabase client & RPC bindings
-│   │   ├── stock-manager/             # Stock manager logic & CSS
-│   │   ├── table/                     # Table QR ordering & cart logic
-│   │   ├── admin-login.js             # Admin authentication logic
-│   │   ├── admin.js                   # Kitchen POS and admin management
-│   │   ├── main.js                    # Customer storefront application
-│   │   └── style.css                  # Tailwind styles and custom design system
-│   ├── admin-login.html               # Staff login interface
-│   ├── admin.html                     # Admin & POS dashboard
-│   ├── index.html                     # Customer storefront interface
-│   ├── privacy.html                   # Privacy policy
-│   ├── table/                         # Dine-in table portal & QR admin
-│   └── vite.config.js                 # Multi-page build configuration
+├── frontend/                          # Vite 8 Multi-Page Application
+│   ├── public/                        # Static public assets
+│   │   ├── images/                    # Food menu images, banners, and logos
+│   │   ├── media/                     # Food category cards and photos
+│   │   ├── vendor/                    # Local Leaflet map & Lucide icon libraries
+│   │   └── favicon.ico                # Multi-resolution branding icons
+│   ├── src/                           # Frontend application source
+│   │   ├── data/menu.js               # Master catalog of 202 restaurant dishes
+│   │   ├── lib/                       # Utilities and integrations
+│   │   │   ├── admin-routes.js        # Internal route guard
+│   │   │   ├── email-service.js       # Customer notification dispatcher
+│   │   │   ├── escpos.js              # ESC/POS binary thermal print engine
+│   │   │   ├── i18n.js                # Multilingual translation dictionary
+│   │   │   ├── insforge.js            # InsForge SDK compatibility layer
+│   │   │   ├── notifications.js       # Audio & visual alert manager
+│   │   │   ├── payments.js            # Razorpay checkout script loader
+│   │   │   ├── print-queue.js         # Thermal printer background spooler
+│   │   │   └── supabase.js            # Supabase PostgreSQL client bindings
+│   │   ├── stock-manager/             # Stock summary & inventory engine
+│   │   │   ├── data/initialStockData.js # Baseline inventory fallback dataset
+│   │   │   ├── stock-inpage.css       # Warm Parchment & Indigo theme styles
+│   │   │   ├── stock-manager.css      # Standalone warehouse styling
+│   │   │   └── stock-manager.js       # In-page + standalone inventory controller
+│   │   ├── table/table.js             # Dine-In table QR ordering logic
+│   │   ├── admin-login.js             # Staff authentication script
+│   │   ├── admin-stock.js             # In-page admin stock mounting bridge
+│   │   ├── admin.css                  # Admin dashboard stylesheet
+│   │   ├── admin.js                   # Admin & POS terminal controller
+│   │   ├── main.js                    # Storefront controller
+│   │   └── style.css                  # Storefront stylesheet
+│   ├── admin.html                     # Admin Panel, POS & Stock Management
+│   ├── admin-login.html               # Staff login gate
+│   ├── index.html                     # Customer online ordering storefront
+│   ├── privacy.html                   # Privacy policy page
+│   ├── package.json                   # Frontend build dependencies
+│   ├── vite.config.js                 # Multi-page Vite configuration
+│   ├── stock-manager/index.html       # Standalone warehouse audit view
+│   └── table/                         # Dine-in table ordering portal
+│       ├── index.html                 # Customer table ordering UI
+│       └── qr-admin.html              # Printable Table QR generator
 │
-├── migrations/                        # Versioned PostgreSQL database migrations
+├── electron/                          # Desktop Application Process (Electron 44)
+│   ├── main.cjs                       # Main process + loopback HTTP server
+│   ├── preload.cjs                    # Desktop secure hardware bridge
+│   ├── icon.ico                       # Windows multi-resolution icon
+│   └── icon.png                       # High-res desktop app icon
+│
+├── android/                           # Native Capacitor Android Project
+│   └── app/src/main/AndroidManifest.xml # Permissions (Bluetooth, USB, Cleartext)
+│
+├── google-apps-script/                # Google Sheets Synchronization Backend
+│   └── Code.gs                        # Google Apps Script Web App receiver
+│
+├── migrations/                        # Supabase SQL Migrations History
 │   ├── 20260529184324_create-orders-bookings.sql
+│   ├── 20260612000000_add_table_orders.sql
 │   ├── 20260618000000_harden_backend_security.sql
-│   ├── 20260822000000_place_table_round_rpc.sql
-│   ├── 20260912000000_phase1_security_linter_fixes.sql
-│   ├── 20260912010000_phase2_admin_catalog_rls_hardening.sql
-│   ├── 20260912020000_phase3_orders_bookings_rls_hardening.sql
 │   ├── 20260916210000_add_ticket_status_lifecycle.sql
-│   ├── 20260916220000_stock_rpcs_and_enforcement.sql
-│   └── 20260917020000_printer_settings_review_qr_and_direct_print.sql
+│   └── 20260916220000_stock_rpcs_and_enforcement.sql
 │
-├── scripts/                           # Engineering & automation scripts
-│   ├── generate-menu.mjs              # Menu code generation utility
-│   ├── generate-table-qr.mjs          # Table QR image batch generation
-│   ├── run-dev.mjs                    # Concurrent dev launcher
-│   └── test-phase3-printing.mjs       # ESC/POS & print queue test suite
+├── scripts/                           # Maintenance & Tooling Scripts
+│   ├── generate-app-icons.py          # App icon generator
+│   ├── generate-menu.mjs              # Menu seeder
+│   ├── generate-table-qr.mjs          # Table QR generator utility
+│   ├── migrate-to-supabase.mjs        # Database migrator
+│   ├── run-dev.mjs                    # Concurrent dev runner (Frontend + Backend)
+│   └── test-phase3-printing.mjs       # ESC/POS printer unit test
 │
-├── supabase_schema.sql                # Master PostgreSQL schema definition
-├── package.json                       # Monorepo root scripts & dependencies
-└── README.md                          # Platform documentation
+├── build/                             # Desktop packaging assets (icon.ico, icon.png)
+├── capacitor.config.json              # Capacitor Android app settings
+├── package.json                       # Monorepo root scripts & workspace configuration
+├── supabase_schema.sql                # Complete master PostgreSQL schema
+├── vercel.json                        # Vercel deployment routes and rewrites
+└── README.md                          # Master documentation
 ```
 
 ---
 
-## 🛠️ Quickstart & Development
+## 🚀 Getting Started
 
-### 1. Prerequisites
-- **Node.js**: v18.0.0 or higher (v20+ recommended)
-- **npm**: v9.0.0 or higher
-- A provisioned **Supabase** project
+### Prerequisites
+- **Node.js** (v18.x or v20.x recommended)
+- **npm** (v9.x or v10.x)
+- **Python 3** (Optional, only for generating new app icons)
 
-### 2. Installation
+### Installation
+Clone the repository and install all workspace dependencies:
 ```bash
-# Clone the repository
+# Clone repository
 git clone https://github.com/arfat87/E-COMMERSE-LIMRA-website.git
 cd "E-COMMERSE LIMRA website"
 
-# Install all monorepo dependencies
+# Install all monorepo dependencies (root, frontend, and backend)
 npm install
 ```
 
-### 3. Environment Setup
-Create a `.env` file in the project root:
+### Environment Configuration
+Ensure `.env` exists in the project root (and in `backend/` and `frontend/`):
 ```env
-# Supabase Configuration
-VITE_SUPABASE_URL=https://<your-project>.supabase.co
-VITE_SUPABASE_ANON_KEY=<your-anon-key>
-SUPABASE_URL=https://<your-project>.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+# Supabase Database & Auth
+VITE_SUPABASE_URL=https://ynrtlcasbndkrqeotgzt.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
 
-# Local Server
+# Payment Gateway (Razorpay)
+RAZORPAY_KEY_ID=your_razorpay_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+
+# Server Ports
 PORT=3000
-
-# Payment Gateways (Optional)
-VITE_RAZORPAY_KEY_ID=<your-razorpay-key-id>
-RAZORPAY_KEY_SECRET=<your-razorpay-key-secret>
-```
-
-### 4. Running the Development Servers
-```bash
-# Start both Frontend (Vite) and Backend (Node.js) concurrently
-npm run dev
-
-# Or start frontend only (http://localhost:5173)
-npm run dev:frontend
-
-# Or start backend API server only (http://localhost:3000)
-npm run dev:backend
-```
-
-### 5. Production Compilation
-```bash
-# Compiles frontend assets into dist/
-npm run build
 ```
 
 ---
 
-## ⚡ Supabase Setup & SQL Deployment
+## 🛠️ Developer Commands
 
-To apply the latest database schema and stored procedures, execute the following script in the **[Supabase SQL Editor](https://supabase.com/dashboard/project/ynrtlcasbndkrqeotgzt/sql)**:
-
-```sql
--- 1. Orders table ticket_status lifecycle column
-ALTER TABLE public.orders 
-ADD COLUMN IF NOT EXISTS ticket_status text DEFAULT 'OPEN';
-
-CREATE INDEX IF NOT EXISTS idx_orders_ticket_status 
-ON public.orders (ticket_status);
-
--- 2. Printer Settings configuration extensions
-ALTER TABLE public.printer_settings 
-ADD COLUMN IF NOT EXISTS bill_show_review_qr boolean DEFAULT true,
-ADD COLUMN IF NOT EXISTS direct_print_enabled boolean DEFAULT false;
-
--- 3. Stock Out RPC with text item_id support
-CREATE OR REPLACE FUNCTION public.record_stock_out(
-  p_item_id text,
-  p_qty numeric,
-  p_reason text DEFAULT 'Kitchen Prep',
-  p_used_by text DEFAULT NULL,
-  p_notes text DEFAULT NULL,
-  p_allow_negative boolean DEFAULT false
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-DECLARE
-  v_item public.stock_items%ROWTYPE;
-  v_new_qty numeric;
-  v_out_id text := 'out_' || (extract(epoch from clock_timestamp()) * 1000)::bigint || '_' || substr(md5(random()::text), 1, 4);
-  v_log_id text := 'log_' || (extract(epoch from clock_timestamp()) * 1000)::bigint || '_' || substr(md5(random()::text), 1, 4);
-  v_is_override boolean := false;
-  v_details text;
-BEGIN
-  IF p_item_id IS NULL THEN RAISE EXCEPTION 'Item ID is required'; END IF;
-  IF p_qty IS NULL OR p_qty <= 0 THEN RAISE EXCEPTION 'Stock out quantity must be greater than 0'; END IF;
-
-  SELECT * INTO v_item FROM public.stock_items WHERE id = p_item_id FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Stock item not found'; END IF;
-
-  IF (COALESCE(v_item.qty, 0) - p_qty) < 0 THEN
-    IF NOT p_allow_negative THEN
-      RAISE EXCEPTION 'INSUFFICIENT_STOCK: Available balance is % %, cannot deduct % % without override.',
-        COALESCE(v_item.qty, 0), COALESCE(v_item.unit, 'pcs'), p_qty, COALESCE(v_item.unit, 'pcs');
-    ELSE
-      v_is_override := true;
-    END IF;
-  END IF;
-
-  v_new_qty := COALESCE(v_item.qty, 0) - p_qty;
-
-  UPDATE public.stock_items SET qty = v_new_qty, updated_at = now() WHERE id = p_item_id;
-
-  INSERT INTO public.stock_out (id, item_id, item_sku, item_name, unit, qty, date, used_by, notes, created_at)
-  VALUES (v_out_id, v_item.id, COALESCE(v_item.sku, ''), v_item.name, COALESCE(v_item.unit, 'pcs'), p_qty, to_char(now(), 'YYYY-MM-DD'), COALESCE(p_used_by, 'Kitchen Staff'), p_notes, now());
-
-  v_details := 'Deducted ' || p_qty || ' ' || COALESCE(v_item.unit, 'pcs') || ' of ' || v_item.name || ' (Reason: ' || COALESCE(p_reason, 'Kitchen Prep') || ', Balance: ' || v_new_qty || ')';
-  IF v_is_override THEN v_details := '[OVERRIDE: Negative Stock Allowed] ' || v_details; END IF;
-
-  INSERT INTO public.stock_logs (id, action, details, created_at)
-  VALUES (v_log_id, CASE WHEN v_is_override THEN 'STOCK_OUT_OVERRIDE' ELSE 'STOCK_OUT' END, v_details, now());
-
-  RETURN jsonb_build_object('success', true, 'item_id', v_item.id, 'item_name', v_item.name, 'previous_qty', v_item.qty, 'deducted_qty', p_qty, 'new_qty', v_new_qty, 'unit', v_item.unit, 'is_override', v_is_override);
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION public.record_stock_out(text, numeric, text, text, text, boolean) TO anon, authenticated;
-```
+| Task | Command | Description |
+| :--- | :--- | :--- |
+| **Start Full Development Stack** | `npm run dev` | Runs both Frontend (`:5173`) and Backend (`:3000`) concurrently via `run-dev.mjs`. |
+| **Frontend Dev Only** | `npm run dev:frontend` | Starts Vite dev server directly on `http://localhost:5173`. |
+| **Backend Dev Only** | `npm run dev:backend` | Starts Node.js backend server directly on `http://localhost:3000`. |
+| **Build Web Application** | `npm run build` | Builds optimized frontend bundles with Vite and synchronizes them to `dist/`. |
+| **Run Desktop App (Electron)** | `npm run desktop:dev` | Compiles web assets and opens the native Electron desktop window. |
+| **Package Desktop App (.exe)** | `npm run desktop:dist` | Packages Windows NSIS installer and portable `.exe` using `electron-builder`. |
+| **Sync Android Project** | `npm run cap:sync` | Builds web assets and syncs changes into the `android/` Capacitor project. |
+| **Open Android Studio** | `npm run cap:open` | Opens the native Android project in Android Studio. |
+| **Run Android App** | `npm run cap:run` | Deploys and launches the app directly on an attached Android device or emulator. |
+| **Generate App Icons** | `python scripts/generate-app-icons.py` | Automatically regenerates `.ico`, `.png`, and Android mipmap launcher icons from master logo. |
 
 ---
 
-## 🧪 Automated Verification Suite
+## 🖨️ Hardware & Thermal Printer Setup
 
-Run our automated verification scripts to validate security, inventory, and hardware formatting:
-
-```bash
-# 1. Test Thermal ESC/POS formatting & print queue retry resilience
-node scripts/test-phase3-printing.mjs
-
-# 2. Compile frontend assets with Vite
-npm run build
-```
+1. **Direct USB / Network Printer**:
+   - Connect printer via USB or assign a static IP on the local Wi-Fi router.
+   - Set paper width in Admin Settings (`80mm` or `58mm`).
+   - Browser print dialog or raw ESC/POS commands will format receipts with restaurant branding, itemized order lines, taxes, and dynamic UPI QR codes.
+2. **QZ Tray Integration**:
+   - Install [QZ Tray](https://qz.io/download/) on the billing PC.
+   - Enables background, 0-click silent printing to designated kitchen (KOT) and billing printers without displaying the browser print dialog.
 
 ---
 
-## 📞 Support & Contacts
+## 📞 Support & Business Inquiries
 
-| Contact Information | Details |
+| Property | Information |
 | :--- | :--- |
-| **Establishment** | LIMRA Restaurant |
+| **Restaurant Name** | LIMRA Restaurant |
 | **Proprietor** | SK Arif |
-| **Location** | Main Road, Near Bus Stand, Egra, Purba Medinipur, West Bengal — 721429 |
-| **Telephone** | +91 7501299357 |
-| **Official Email** | arfatalis451@gmail.com |
+| **Address** | Main Road, Near Bus Stand, Egra, Purba Medinipur, West Bengal — 721429 |
+| **Phone** | +91 7501299357 |
+| **Email** | `arfatalis451@gmail.com` |
 
 ---
 
-## 📝 Proprietary License
+## 📜 License
 
-This codebase and associated digital assets are **proprietary software** created for and owned by **SK Arif (LIMRA Restaurant)**.  
-All rights reserved. Reproduction, reverse engineering, unauthorized deployment, or redistribution without express written consent is strictly prohibited.
+This software, digital assets, database structures, and designs are **proprietary software** created for and owned exclusively by **SK Arif (LIMRA Restaurant)**.  
+Unauthorized copying, modification, distribution, or commercial deployment without prior written permission is strictly prohibited.  
+Copyright © 2026 LIMRA Restaurant. All rights reserved.

@@ -1,0 +1,13 @@
+{
+  "appId": "com.limra.pos",
+  "appName": "Limra Restaurant POS",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#f6f4f0"
+  }
+}

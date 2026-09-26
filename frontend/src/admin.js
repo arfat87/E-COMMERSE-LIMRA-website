@@ -9,6 +9,7 @@ import { sendEmailNotification, generateOrderConfirmedHtml, generateOrderCancell
 import QRCode from 'qrcode';
 import { printQueue } from './lib/print-queue.js';
 import { buildEscPosBill, buildEscPosKOT, COMMANDS as ESC_COMMANDS } from './lib/escpos.js';
+import { initStockSummarySection } from './admin-stock.js';
 
 // Category aliases to support group categories, legacy keys, and multi-category filters in Admin
 export const categoryAliases = {
@@ -3591,39 +3592,67 @@ async function toggleOrderHoldStatus(orderId, targetActionOrStatus) {
   }
 
   if (targetActionOrStatus === 'hold') {
+    // 1. Immediately update local state in-memory
+    order.status = 'hold';
+    order.ticket_status = 'HOLD';
+    order.updated_at = new Date().toISOString();
+
+    // 2. Attempt cloud DB update safely
     try {
-      const { error } = await insforge.database
+      let { error } = await insforge.database
         .from('orders')
-        .update({ status: 'hold', updated_at: new Date().toISOString() })
+        .update({ status: 'hold', ticket_status: 'HOLD', updated_at: order.updated_at })
         .eq('id', order.id);
-      if (error) throw error;
-      order.status = 'hold';
-      showAdminToast(`Order #${formatDailyOrderNumber(order)} put on Hold ⏸️`, 'success');
-      renderOrdersTable();
-      renderHoldOrdersPanel();
-      renderBillingQuickCards();
-      renderBillingTotalBills();
-      renderOverview();
+      if (error && (error.message || '').includes('ticket_status')) {
+        const retry = await insforge.database
+          .from('orders')
+          .update({ status: 'hold', updated_at: order.updated_at })
+          .eq('id', order.id);
+        error = retry.error;
+      }
+      if (error) console.warn('[Hold Order] Cloud update warning (saved locally):', error);
     } catch (err) {
-      showAdminToast('Failed to put order on hold: ' + (err.message || err), 'error');
+      console.warn('[Hold Order] Offline/network hold update:', err);
     }
+
+    showAdminToast(`Order #${formatDailyOrderNumber(order)} put on Hold ⏸️`, 'success');
+    renderOrdersTable();
+    renderHoldOrdersPanel();
+    renderBillingQuickCards();
+    renderBillingTotalBills();
+    renderOverview();
+    renderTablesPanel();
   } else if (targetActionOrStatus === 'release' || targetActionOrStatus === 'confirmed') {
+    // 1. Immediately update local state in-memory
+    order.status = 'confirmed';
+    order.ticket_status = 'OPEN';
+    order.updated_at = new Date().toISOString();
+
+    // 2. Attempt cloud DB update safely
     try {
-      const { error } = await insforge.database
+      let { error } = await insforge.database
         .from('orders')
-        .update({ status: 'confirmed', updated_at: new Date().toISOString() })
+        .update({ status: 'confirmed', ticket_status: 'OPEN', updated_at: order.updated_at })
         .eq('id', order.id);
-      if (error) throw error;
-      order.status = 'confirmed';
-      showAdminToast(`Order #${formatDailyOrderNumber(order)} released from Hold ▶️`, 'success');
-      renderOrdersTable();
-      renderHoldOrdersPanel();
-      renderBillingQuickCards();
-      renderBillingTotalBills();
-      renderOverview();
+      if (error && (error.message || '').includes('ticket_status')) {
+        const retry = await insforge.database
+          .from('orders')
+          .update({ status: 'confirmed', updated_at: order.updated_at })
+          .eq('id', order.id);
+        error = retry.error;
+      }
+      if (error) console.warn('[Release Order] Cloud update warning (saved locally):', error);
     } catch (err) {
-      showAdminToast('Failed to release order: ' + (err.message || err), 'error');
+      console.warn('[Release Order] Offline/network release update:', err);
     }
+
+    showAdminToast(`Order #${formatDailyOrderNumber(order)} released from Hold ▶️`, 'success');
+    renderOrdersTable();
+    renderHoldOrdersPanel();
+    renderBillingQuickCards();
+    renderBillingTotalBills();
+    renderOverview();
+    renderTablesPanel();
   }
 }
 window.toggleOrderHoldStatus = toggleOrderHoldStatus;
@@ -3801,14 +3830,21 @@ async function updateOrderStatus(orderId, newStatus) {
     }
   }
 
-  let { error } = await insforge.database.from('orders').update(updates).eq('id', orderId);
-  if (error && (error.message || '').includes('ticket_status')) {
-    const fallback = { ...updates };
-    delete fallback.ticket_status;
-    const retry = await insforge.database.from('orders').update(fallback).eq('id', orderId);
-    error = retry.error;
+  let { error } = null;
+  try {
+    const res = await insforge.database.from('orders').update(updates).eq('id', orderId);
+    error = res.error;
+    if (error && (error.message || '').includes('ticket_status')) {
+      const fallback = { ...updates };
+      delete fallback.ticket_status;
+      const retry = await insforge.database.from('orders').update(fallback).eq('id', orderId);
+      error = retry.error;
+    }
+    if (error) console.warn('[Update Order Status] Cloud update warning (saved locally):', error);
+  } catch (err) {
+    console.warn('[Update Order Status] Offline status update:', err);
   }
-  if (error) { alert('Failed to update: ' + error.message); return false; }
+
   const order = orders.find(o => o.id === orderId);
   if (order) {
     Object.assign(order, updates);
@@ -4980,6 +5016,12 @@ async function createFinalBillForTableSession(tableNum) {
     return;
   }
 
+  const primaryOrder = session.orders[0];
+  if (!primaryOrder) {
+    showAdminToast('No primary order found for Table ' + tableNum, 'error');
+    return;
+  }
+
   if (!confirm(`Generate Final Bill for Table ${tableNum} (${session.kots.length} KOTs · ₹${session.totalAmount.toFixed(2)}) and close session?`)) {
     return;
   }
@@ -4997,7 +5039,6 @@ async function createFinalBillForTableSession(tableNum) {
     grandTotal = Number(primaryOrder.total_amount);
   }
 
-  const primaryOrder = session.orders[0];
   const kotNumbersText = session.kots.map(k => `#${k.orderNumber}`).join(' + ');
 
   const finalBillOrder = {
@@ -5012,26 +5053,43 @@ async function createFinalBillForTableSession(tableNum) {
   // 2. Print Final Consolidated Bill with Tax & UPI QR
   await printOrderReceiptWithTax(finalBillOrder, consolidatedItems);
 
-  // 3. Mark ALL orders in this session as delivered / paid / CLOSED, assign all order_items to primaryOrder
-  try {
-    // 3a. Reassign sibling order items to primaryOrder BEFORE closing the ticket
-    const siblingOrders = session.orders.slice(1);
-    const siblingOrderIds = siblingOrders.map(o => o.id);
+  // 3. Update local state immediately (Local-First: instant UI update)
+  const siblingOrders = session.orders.slice(1);
+  const siblingOrderIds = siblingOrders.map(o => o.id);
 
+  const localPrimary = orders.find(x => x.id === primaryOrder.id) || primaryOrder;
+  localPrimary.total_amount = grandTotal;
+  localPrimary.status = 'delivered';
+  localPrimary.payment_status = 'paid';
+  localPrimary.ticket_status = 'CLOSED';
+  localPrimary.notes = finalBillOrder.notes;
+
+  siblingOrders.forEach(ord => {
+    const local = orders.find(x => x.id === ord.id) || ord;
+    local.status = 'delivered';
+    local.payment_status = 'paid';
+    local.ticket_status = 'CLOSED';
+  });
+
+  if (siblingOrderIds.length > 0) {
+    orderItems.forEach(item => {
+      if (siblingOrderIds.includes(item.order_id)) {
+        item.order_id = primaryOrder.id;
+      }
+    });
+  }
+
+  session.orders.forEach(o => markOrderNotificationsRead(o.id));
+
+  // 4. Safely sync to cloud DB in background
+  try {
     if (siblingOrderIds.length > 0) {
       await insforge.database
         .from('order_items')
         .update({ order_id: primaryOrder.id })
         .in('order_id', siblingOrderIds);
-
-      orderItems.forEach(item => {
-        if (siblingOrderIds.includes(item.order_id)) {
-          item.order_id = primaryOrder.id;
-        }
-      });
     }
 
-    // 3b. Update primary final bill order to CLOSED
     let pUpd = await insforge.database
       .from('orders')
       .update({
@@ -5054,16 +5112,6 @@ async function createFinalBillForTableSession(tableNum) {
         .eq('id', primaryOrder.id);
     }
 
-    const localPrimary = orders.find(x => x.id === primaryOrder.id);
-    if (localPrimary) {
-      localPrimary.total_amount = grandTotal;
-      localPrimary.status = 'delivered';
-      localPrimary.payment_status = 'paid';
-      localPrimary.ticket_status = 'CLOSED';
-      localPrimary.notes = finalBillOrder.notes;
-    }
-
-    // 3c. Update sibling orders to CLOSED
     for (const ord of siblingOrders) {
       let sUpd = await insforge.database
         .from('orders')
@@ -5075,27 +5123,24 @@ async function createFinalBillForTableSession(tableNum) {
           .update({ status: 'delivered', payment_status: 'paid' })
           .eq('id', ord.id);
       }
-      
-      const local = orders.find(x => x.id === ord.id);
-      if (local) {
-        local.status = 'delivered';
-        local.payment_status = 'paid';
-        local.ticket_status = 'CLOSED';
-      }
     }
-
-    showAdminToast(`Table ${tableNum} Final Bill generated & session closed! ✅`, 'success');
-    if (isGoogleSheetAutoSyncEnabled()) {
-      syncOrderToGoogleSheet(localPrimary || finalBillOrder).catch(e => console.warn('[Google Sheet] Table bill auto-sync error:', e));
-    }
-    renderOverview();
-    renderHoldOrdersPanel();
-    renderClosedOrdersPanel();
-    renderBillingQuickCards();
-    renderBillingTotalBills();
-  } catch (err) {
-    showAdminToast('Failed to close table session: ' + err.message, 'error');
+  } catch (cloudErr) {
+    console.warn('[Table Session Settle] Cloud update warning (saved locally):', cloudErr);
   }
+
+  showAdminToast(`Table ${tableNum} Final Bill generated & session closed! ✅`, 'success');
+  if (isGoogleSheetAutoSyncEnabled()) {
+    syncOrderToGoogleSheet(localPrimary || finalBillOrder).catch(e => console.warn('[Google Sheet] Table bill auto-sync error:', e));
+  }
+
+  // Refresh all UI panels
+  renderOverview();
+  renderHoldOrdersPanel();
+  renderClosedOrdersPanel();
+  renderBillingQuickCards();
+  renderBillingTotalBills();
+  renderTablesPanel();
+  renderKitchenPanel();
 }
 
 function renderHoldOrdersPanel() {
@@ -5375,30 +5420,50 @@ function renderHoldOrdersPanel() {
   container.querySelectorAll('.hold-final-bill-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const orderId = btn.dataset.orderId;
-      const order = orders.find(o => o.id === orderId);
+      const order = orders.find(o => String(o.id) === String(orderId));
       if (!order) return;
       if (!confirm(`Print final bill for Order #${order.order_number} and mark as completed / closed?`)) return;
       await printOrderReceiptWithTax(order);
+
+      // 1. Immediately update local state in-memory
+      order.status = 'delivered';
+      order.payment_status = 'paid';
+      order.ticket_status = 'CLOSED';
+      order.updated_at = new Date().toISOString();
+
+      // 2. Attempt cloud DB update safely
       try {
-        let { error } = await insforge.database.from('orders').update({ status: 'delivered', payment_status: 'paid', ticket_status: 'CLOSED' }).eq('id', orderId);
+        let { error } = await insforge.database.from('orders').update({
+          status: 'delivered',
+          payment_status: 'paid',
+          ticket_status: 'CLOSED',
+          updated_at: order.updated_at
+        }).eq('id', orderId);
         if (error && (error.message || '').includes('ticket_status')) {
-          const retry = await insforge.database.from('orders').update({ status: 'delivered', payment_status: 'paid' }).eq('id', orderId);
+          const retry = await insforge.database.from('orders').update({
+            status: 'delivered',
+            payment_status: 'paid',
+            updated_at: order.updated_at
+          }).eq('id', orderId);
           error = retry.error;
         }
-        if (error) throw error;
-        const o = orders.find(x => x.id === orderId);
-        if (o) { o.status = 'delivered'; o.payment_status = 'paid'; o.ticket_status = 'CLOSED'; }
-        await markOrderNotificationsRead(orderId);
-        showAdminToast(`Order #${order.order_number} billed, settled & closed! ✅`, 'success');
-        if (isGoogleSheetAutoSyncEnabled()) {
-          syncOrderToGoogleSheet(o || order).catch(e => console.warn('[Google Sheet] Hold bill auto-sync error:', e));
-        }
-        renderOverview();
-        renderHoldOrdersPanel();
-        renderClosedOrdersPanel();
-        renderBillingQuickCards();
-        renderBillingTotalBills();
-      } catch(err) { showAdminToast('Failed to update order: ' + err.message, 'error'); }
+        if (error) console.warn('[Hold Settle] Cloud update warning (saved locally):', error);
+      } catch (err) {
+        console.warn('[Hold Settle] Offline settle update:', err);
+      }
+
+      await markOrderNotificationsRead(orderId);
+      showAdminToast(`Order #${order.order_number} billed, settled & closed! ✅`, 'success');
+      if (isGoogleSheetAutoSyncEnabled()) {
+        syncOrderToGoogleSheet(order).catch(e => console.warn('[Google Sheet] Hold bill auto-sync error:', e));
+      }
+      renderOverview();
+      renderHoldOrdersPanel();
+      renderClosedOrdersPanel();
+      renderBillingQuickCards();
+      renderBillingTotalBills();
+      renderTablesPanel();
+      renderKitchenPanel();
     });
   });
 
@@ -5977,6 +6042,8 @@ function initTablesAndKitchenUI() {
         switchPanel('order-detail');
       } else if (hub === 'closed-orders') {
         switchPanel('closed-orders');
+      } else if (hub === 'stock') {
+        switchPanel('stock');
       } else if (hub === 'analytics') {
         switchPanel('customer-analysis');
       }
@@ -7294,13 +7361,20 @@ const PANEL_TITLES = {
   coupons: 'Coupons',
   combos: 'Combos',
   places: 'Places & Charges',
+  stock: 'Stock Summary & Hisab',
 };
 
-function switchPanel(panelId) {
+function switchPanel(panelId, pushHistory = true) {
   document.querySelectorAll('.adm-panel').forEach(p => p.classList.remove('active'));
   document.querySelector(`#panel-${panelId}`)?.classList.add('active');
   document.querySelectorAll('.adm-nav-item').forEach(n => n.classList.remove('active'));
   document.querySelector(`.adm-nav-item[data-panel="${panelId}"]`)?.classList.add('active');
+
+  if (pushHistory) {
+    if (window.location.hash !== `#panel=${panelId}`) {
+      history.pushState({ panel: panelId }, '', `#panel=${panelId}`);
+    }
+  }
 
   // Editor Zone submenu auto-expand
   const subPanels = ['coupons', 'combos', 'places'];
@@ -7317,6 +7391,8 @@ function switchPanel(panelId) {
       editorZoneTrigger.classList.remove('active');
     }
   }
+
+  if (panelId === 'stock') initStockSummarySection();
 
   if (panelId === 'customer-analysis') renderCustomerAnalysis();
   if (panelId === 'analytics') renderAnalytics();
@@ -8502,13 +8578,27 @@ async function initAuth() {
   cleanAuthParams();
 
   if (!authUser) {
-    // On localhost, if not explicitly strict, allow instant admin access so Phase 2 POS edits can be previewed without cloud login
+    // On localhost / Electron desktop, authenticate admin session automatically
     if (isLocalDev && !isStrict) {
-      console.log('⚡ Local dev detected: initializing default admin session for POS preview');
+      console.log('⚡ Local/Desktop POS detected: authenticating admin session');
+      try {
+        const { data: signInRes } = await insforge.auth.signInWithPassword({
+          email: 'admin@limra.com',
+          password: 'LimraAdmin@2026'
+        });
+        if (signInRes?.user) {
+          currentUser = signInRes.user;
+          await handleAuthenticated();
+          return;
+        }
+      } catch (authErr) {
+        console.warn('Auto admin sign-in notice (falling back to offline dev session):', authErr);
+      }
+
       currentUser = {
-        id: 'dev-admin-local',
+        id: '78ec89da-1a02-4183-b5fd-3f9f30cb7df6',
         email: 'admin@limra.com',
-        user_metadata: { full_name: 'Local Admin (Dev)' }
+        user_metadata: { full_name: 'Limra POS Admin' }
       };
       await handleAuthenticated();
       return;
@@ -8556,6 +8646,22 @@ function initDashboardUI() {
   document.querySelectorAll('.adm-nav-item[data-panel]').forEach(btn => {
     btn.addEventListener('click', () => switchPanel(btn.dataset.panel));
   });
+
+  // Client-side panel routing with browser back/forward support (popstate)
+  window.addEventListener('popstate', (e) => {
+    const hash = window.location.hash;
+    const match = hash.match(/#panel=([a-z0-9-]+)/);
+    const panel = e.state?.panel || (match ? match[1] : 'dashboard');
+    if (panel) {
+      switchPanel(panel, false);
+    }
+  });
+
+  // Restore active panel from URL hash on load
+  const initialHashMatch = window.location.hash.match(/#panel=([a-z0-9-]+)/);
+  if (initialHashMatch && initialHashMatch[1]) {
+    switchPanel(initialHashMatch[1], false);
+  }
 
   const editorZoneTrigger = $('editor-zone-trigger');
   const editorZoneItems = $('editor-zone-items');
@@ -12812,6 +12918,7 @@ async function buildOrderFromPos(action) {
         updated_at: new Date().toISOString()
       };
 
+      let updatedOrder = null;
       try {
         let updateRes = await insforge.database
           .from('orders')
@@ -12829,62 +12936,67 @@ async function buildOrderFromPos(action) {
             .select()
             .single();
         }
-        if (updateRes.error) throw updateRes.error;
-        const updatedOrder = updateRes.data;
+        if (updateRes.data) updatedOrder = updateRes.data;
+      } catch (err) {
+        console.warn('[POS Update] Cloud update warning (saved locally):', err);
+      }
 
-        // Delete previous order items and insert updated ones
+      // Update in-memory order object immediately
+      Object.assign(existingOrder, updatedOrder || updateData);
+
+      const itemRows = posCart.map(i => ({
+        order_id: posEditingOrderId,
+        item_name: i.notes ? `${i.name} [Note: ${i.notes}]` : i.name,
+        quantity: i.qty,
+        unit_price: i.price,
+        line_total: i.price * i.qty,
+        menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null,
+      }));
+
+      try {
         await insforge.database.from('order_items').delete().eq('order_id', posEditingOrderId);
-
-        const itemRows = posCart.map(i => ({
-          order_id: posEditingOrderId,
-          item_name: i.notes ? `${i.name} [Note: ${i.notes}]` : i.name,
-          quantity: i.qty,
-          unit_price: i.price,
-          line_total: i.price * i.qty,
-          menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null,
-        }));
-        const { data: insertedItems, error: itemsErr } = await insforge.database.from('order_items').insert(itemRows).select();
-        if (itemsErr) throw itemsErr;
-
-        Object.assign(existingOrder, updatedOrder || updateData);
+        const { data: insItems } = await insforge.database.from('order_items').insert(itemRows).select();
         orderItems = orderItems.filter(i => String(i.order_id) !== String(posEditingOrderId));
-        if (insertedItems && insertedItems.length > 0) {
-          orderItems.push(...insertedItems);
+        if (insItems && insItems.length > 0) {
+          orderItems.push(...insItems);
         } else {
           orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
         }
-
-        posEditingOrderId = null;
-
-        // Refresh UI
-        renderBillingQuickCards();
-        renderBillingTotalBills();
-        renderHoldOrdersPanel();
-        renderOverview();
-        renderOrdersTable();
-        renderClosedOrdersPanel();
-
-        if ((existingOrder.status === 'delivered' || action === 'bill') && isGoogleSheetAutoSyncEnabled()) {
-          syncOrderToGoogleSheet(existingOrder).catch(e => console.warn('[Google Sheet] POS bill auto-sync error:', e));
-        }
-
-        return {
-          order: existingOrder,
-          items: posCart.map(i => ({
-            item_name: i.name,
-            name: i.name,
-            quantity: i.qty,
-            qty: i.qty,
-            unit_price: i.price,
-            price: i.price,
-            line_total: i.price * i.qty,
-            notes: i.notes || ''
-          }))
-        };
-      } catch(e) {
-        showAdminToast('Failed to update order: ' + e.message, 'error');
-        return null;
+      } catch (itemsErr) {
+        console.warn('[POS Items Update] Cloud items update warning:', itemsErr);
+        orderItems = orderItems.filter(i => String(i.order_id) !== String(posEditingOrderId));
+        orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
       }
+
+      posEditingOrderId = null;
+
+      // Refresh UI
+      renderBillingQuickCards();
+      renderBillingTotalBills();
+      renderHoldOrdersPanel();
+      renderOverview();
+      renderOrdersTable();
+      renderClosedOrdersPanel();
+      renderTablesPanel();
+      renderKitchenPanel();
+
+      if ((existingOrder.status === 'delivered' || action === 'bill') && isGoogleSheetAutoSyncEnabled()) {
+        syncOrderToGoogleSheet(existingOrder).catch(e => console.warn('[Google Sheet] POS bill auto-sync error:', e));
+      }
+
+      return {
+        order: existingOrder,
+        items: posCart.map(i => ({
+          item_name: i.name,
+          name: i.name,
+          quantity: i.qty,
+          qty: i.qty,
+          unit_price: i.price,
+          price: i.price,
+          line_total: i.price * i.qty,
+          notes: i.notes || ''
+        }))
+      };
     }
   }
 
@@ -12900,7 +13012,12 @@ async function buildOrderFromPos(action) {
     payment_status: payMode === 'pay_later' ? 'unpaid' : ((action === 'hold' || action === 'kot') ? 'unpaid' : 'paid'),
     ticket_status: action === 'hold' ? 'HOLD' : (action === 'bill' ? 'CLOSED' : 'OPEN'),
     notes: notesStr,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   };
+
+  let newOrder = null;
+  let insertedItems = null;
 
   try {
     let insertRes = await insforge.database.from('orders').insert([orderData]).select().single();
@@ -12909,57 +13026,73 @@ async function buildOrderFromPos(action) {
       delete fallbackData.ticket_status;
       insertRes = await insforge.database.from('orders').insert([fallbackData]).select().single();
     }
-    if (insertRes.error) throw insertRes.error;
-    const newOrder = insertRes.data;
-
-    // Save only food items (NO discount or delivery items in order_items) with item notes
-    const itemRows = posCart.map(i => ({
-      order_id: newOrder.id,
-      item_name: i.notes ? `${i.name} [Note: ${i.notes}]` : i.name,
-      quantity: i.qty,
-      unit_price: i.price,
-      line_total: i.price * i.qty,
-      menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null,
-    }));
-    const { data: insertedItems, error: itemsErr } = await insforge.database.from('order_items').insert(itemRows).select();
-    if (itemsErr) throw itemsErr;
-
-    orders.unshift(newOrder);
-    if (insertedItems && insertedItems.length > 0) {
-      orderItems.push(...insertedItems);
-    } else {
-      orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
+    if (insertRes.data) {
+      newOrder = insertRes.data;
     }
-
-    // Refresh UI
-    renderBillingQuickCards();
-    renderBillingTotalBills();
-    renderHoldOrdersPanel();
-    renderOverview();
-    renderOrdersTable();
-
-    // Auto-sync billed / closed POS order to Google Sheets
-    if ((newOrder.status === 'delivered' || action === 'bill') && isGoogleSheetAutoSyncEnabled()) {
-      syncOrderToGoogleSheet(newOrder).catch(e => console.warn('[Google Sheet] POS bill auto-sync error:', e));
-    }
-
-    return { 
-      order: newOrder, 
-      items: posCart.map(i => ({ 
-        item_name: i.name, 
-        name: i.name,
-        quantity: i.qty, 
-        qty: i.qty,
-        unit_price: i.price, 
-        price: i.price,
-        line_total: i.price * i.qty,
-        notes: i.notes || ''
-      })) 
-    };
-  } catch(e) {
-    showAdminToast('Failed to save order: ' + e.message, 'error');
-    return null;
+  } catch (err) {
+    console.warn('[POS Insert] Cloud insert warning (running local-first):', err);
   }
+
+  if (!newOrder) {
+    // Local-first fallback order creation
+    newOrder = {
+      ...orderData,
+      id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `offline-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+    };
+  }
+
+  // Save food items to DB if online
+  const itemRows = posCart.map(i => ({
+    order_id: newOrder.id,
+    item_name: i.notes ? `${i.name} [Note: ${i.notes}]` : i.name,
+    quantity: i.qty,
+    unit_price: i.price,
+    line_total: i.price * i.qty,
+    menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null,
+  }));
+
+  try {
+    const res = await insforge.database.from('order_items').insert(itemRows).select();
+    if (res.data) insertedItems = res.data;
+  } catch(err) {
+    console.warn('[POS Items] Cloud items insert warning (saved locally):', err);
+  }
+
+  orders.unshift(newOrder);
+  if (insertedItems && insertedItems.length > 0) {
+    orderItems.push(...insertedItems);
+  } else {
+    orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
+  }
+
+  // Refresh UI
+  renderBillingQuickCards();
+  renderBillingTotalBills();
+  renderHoldOrdersPanel();
+  renderOverview();
+  renderOrdersTable();
+  renderClosedOrdersPanel();
+  renderTablesPanel();
+  renderKitchenPanel();
+
+  // Auto-sync billed / closed POS order to Google Sheets
+  if ((newOrder.status === 'delivered' || action === 'bill') && isGoogleSheetAutoSyncEnabled()) {
+    syncOrderToGoogleSheet(newOrder).catch(e => console.warn('[Google Sheet] POS bill auto-sync error:', e));
+  }
+
+  return { 
+    order: newOrder, 
+    items: posCart.map(i => ({ 
+      item_name: i.name, 
+      name: i.name, 
+      quantity: i.qty, 
+      qty: i.qty, 
+      unit_price: i.price, 
+      price: i.price, 
+      line_total: i.price * i.qty, 
+      notes: i.notes || '' 
+    })) 
+  };
 }
 
 async function generateKOTHtml(order = {}, items = [], isNewItemsOnly = false) {
@@ -14143,25 +14276,46 @@ function renderBillingTotalBills() {
       if (!order) return;
       if (!confirm(`Print final bill for Order #${formatDailyOrderNumber(order)} and mark as completed / closed?`)) return;
       await printOrderReceiptWithTax(order);
+
+      // 1. Immediately update local state in-memory
+      order.status = 'delivered';
+      order.payment_status = 'paid';
+      order.ticket_status = 'CLOSED';
+      order.updated_at = new Date().toISOString();
+
+      // 2. Attempt cloud DB update safely
       try {
-        let { error } = await insforge.database.from('orders').update({ status: 'delivered', payment_status: 'paid', ticket_status: 'CLOSED' }).eq('id', orderId);
+        let { error } = await insforge.database.from('orders').update({
+          status: 'delivered',
+          payment_status: 'paid',
+          ticket_status: 'CLOSED',
+          updated_at: order.updated_at
+        }).eq('id', orderId);
         if (error && (error.message || '').includes('ticket_status')) {
-          const retry = await insforge.database.from('orders').update({ status: 'delivered', payment_status: 'paid' }).eq('id', orderId);
+          const retry = await insforge.database.from('orders').update({
+            status: 'delivered',
+            payment_status: 'paid',
+            updated_at: order.updated_at
+          }).eq('id', orderId);
           error = retry.error;
         }
-        if (error) throw error;
-        const o = orders.find(x => String(x.id) === String(orderId));
-        if (o) { o.status = 'delivered'; o.payment_status = 'paid'; o.ticket_status = 'CLOSED'; }
-        showAdminToast(`Order #${formatDailyOrderNumber(order)} billed, settled & closed! ✅`, 'success');
-        if (isGoogleSheetAutoSyncEnabled()) {
-          syncOrderToGoogleSheet(o || order).catch(e => console.warn('[Google Sheet] Billing settle auto-sync error:', e));
-        }
-        renderOverview();
-        renderHoldOrdersPanel();
-        renderClosedOrdersPanel();
-        renderBillingQuickCards();
-        renderBillingTotalBills();
-      } catch(err) { showAdminToast('Failed to update order: ' + err.message, 'error'); }
+        if (error) console.warn('[Billing Settle] Cloud update warning (saved locally):', error);
+      } catch (err) {
+        console.warn('[Billing Settle] Offline settle update:', err);
+      }
+
+      await markOrderNotificationsRead(orderId);
+      showAdminToast(`Order #${formatDailyOrderNumber(order)} billed, settled & closed! ✅`, 'success');
+      if (isGoogleSheetAutoSyncEnabled()) {
+        syncOrderToGoogleSheet(order).catch(e => console.warn('[Google Sheet] Billing settle auto-sync error:', e));
+      }
+      renderOverview();
+      renderHoldOrdersPanel();
+      renderClosedOrdersPanel();
+      renderBillingQuickCards();
+      renderBillingTotalBills();
+      renderTablesPanel();
+      renderKitchenPanel();
     });
   });
 

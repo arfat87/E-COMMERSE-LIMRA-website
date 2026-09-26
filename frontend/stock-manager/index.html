@@ -131,23 +131,50 @@
       </button>
     </div>
 
-    <!-- 0. MODE TOGGLE BAR: LIVE SUMMARY vs MONTHLY CALCULATION -->
+    <!-- 0. MODE TOGGLE BAR: LIVE SUMMARY vs WEEKLY STATEMENT vs MONTHLY STATEMENT -->
     <div class="flex items-center justify-between flex-wrap gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-xl stock-no-print">
-      <div class="flex items-center gap-2">
-        <button id="tab-mode-live" class="px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 bg-emerald-500 text-slate-950 shadow-lg cursor-pointer">
-          <span>⚡</span> Live Stock Summary
+      <div class="flex items-center gap-2 flex-wrap">
+        <button id="tab-mode-live" class="px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 bg-emerald-500 text-slate-950 shadow-lg cursor-pointer">
+          <span>⚡</span> Live Stock & Operations
         </button>
-        <button id="tab-mode-monthly" class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 bg-slate-950 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 cursor-pointer">
-          <span>📅</span> Monthly Stock Calculation
+        <button id="tab-mode-weekly" class="px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-slate-950 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 cursor-pointer">
+          <span>🗓️</span> Weekly Financial Statement
+        </button>
+        <button id="tab-mode-monthly" class="px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-slate-950 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 cursor-pointer">
+          <span>📅</span> Monthly Financial Statement
+        </button>
+      </div>
+
+      <!-- Quick Week Navigation Indicator (visible in Weekly Mode) -->
+      <div id="weekly-quick-controls" class="hidden flex items-center gap-2 flex-wrap">
+        <label for="weekly-select-picker" class="text-xs font-bold text-slate-300 flex items-center gap-1">
+          <span>🗓️</span> Week:
+        </label>
+        <input type="date" id="weekly-select-picker" class="bg-slate-950 border border-emerald-600/70 rounded-xl px-2.5 py-1.5 text-xs text-emerald-300 font-bold font-mono focus:outline-none focus:border-emerald-400 shadow-inner" />
+        <span id="weekly-badge-range" class="px-2.5 py-1 bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 font-bold text-xs rounded-xl font-mono">Current Week</span>
+        <button id="btn-week-current" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition-all cursor-pointer">
+          This Week
+        </button>
+        <button id="btn-week-prev" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition-all cursor-pointer" title="Previous Week">
+          ◀ Prev
+        </button>
+        <button id="btn-week-next" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition-all cursor-pointer" title="Next Week">
+          Next ▶
+        </button>
+        <button id="btn-week-excel" class="px-3 py-1.5 bg-emerald-950 hover:bg-emerald-900 border border-emerald-700 text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer" title="Export Week Excel (.xlsx)">
+          📊 Week .xlsx
+        </button>
+        <button id="btn-week-pdf" class="px-3 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-300 rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer" title="Export Week PDF Report">
+          📄 Week PDF
         </button>
       </div>
 
       <!-- Quick Month Navigation Indicator (visible in Monthly Mode) -->
       <div id="monthly-quick-controls" class="hidden flex items-center gap-2 flex-wrap">
         <label for="monthly-select-picker" class="text-xs font-bold text-slate-300 flex items-center gap-1">
-          <span>🗓️</span> Month:
+          <span>📅</span> Month:
         </label>
-        <input type="month" id="monthly-select-picker" value="2026-08" class="bg-slate-950 border border-emerald-600/70 rounded-xl px-3 py-1.5 text-xs text-emerald-300 font-bold font-mono focus:outline-none focus:border-emerald-400 shadow-inner" />
+        <input type="month" id="monthly-select-picker" value="2026-09" class="bg-slate-950 border border-emerald-600/70 rounded-xl px-3 py-1.5 text-xs text-emerald-300 font-bold font-mono focus:outline-none focus:border-emerald-400 shadow-inner" />
         <button id="btn-month-current" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition-all cursor-pointer">
           This Month
         </button>
@@ -291,22 +318,27 @@
           <div class="bg-slate-950/80 border border-slate-800 p-2.5 rounded-xl">
             <span class="text-[10px] uppercase font-bold text-slate-400 block">Opening Balance</span>
             <span id="ds-opening-balance" class="text-sm sm:text-base font-black text-slate-200 font-mono mt-0.5 block">0</span>
+            <span id="ds-opening-val" class="text-[10px] text-slate-400 font-mono block mt-0.5 font-bold">₹ 0.00</span>
           </div>
           <div class="bg-slate-950/80 border border-emerald-800/40 p-2.5 rounded-xl">
             <span class="text-[10px] uppercase font-bold text-emerald-400 block">+ Stock In</span>
             <span id="ds-stock-in" class="text-sm sm:text-base font-black text-emerald-400 font-mono mt-0.5 block">+0</span>
+            <span id="ds-stock-in-val" class="text-[10px] text-emerald-400 font-mono block mt-0.5 font-bold">+₹ 0.00</span>
           </div>
           <div class="bg-slate-950/80 border border-amber-800/40 p-2.5 rounded-xl">
             <span class="text-[10px] uppercase font-bold text-amber-400 block">- Stock Out</span>
             <span id="ds-stock-out" class="text-sm sm:text-base font-black text-amber-400 font-mono mt-0.5 block">-0</span>
+            <span id="ds-stock-out-val" class="text-[10px] text-amber-300 font-mono block mt-0.5 font-bold">-₹ 0.00</span>
           </div>
-          <div class="bg-slate-950/80 border border-slate-800 p-2.5 rounded-xl">
-            <span class="text-[10px] uppercase font-bold text-slate-400 block">± Adjustments</span>
-            <span id="ds-adjustments" class="text-sm sm:text-base font-black text-slate-400 font-mono mt-0.5 block">0</span>
+          <div class="bg-slate-950/80 border border-sky-800/40 p-2.5 rounded-xl">
+            <span class="text-[10px] uppercase font-bold text-sky-400 block">± Day Net Change</span>
+            <span id="ds-adjustments" class="text-sm sm:text-base font-black text-sky-300 font-mono mt-0.5 block">0</span>
+            <span id="ds-net-val" class="text-[10px] text-sky-400 font-mono block mt-0.5 font-bold">±₹ 0.00</span>
           </div>
-          <div class="bg-slate-950/80 border border-sky-800/40 p-2.5 rounded-xl col-span-2 sm:col-span-1">
-            <span class="text-[10px] uppercase font-bold text-sky-300 block">= Current Balance</span>
-            <span id="ds-current-balance" class="text-sm sm:text-base font-black text-sky-300 font-mono mt-0.5 block">0</span>
+          <div class="bg-slate-950/80 border border-teal-800/50 p-2.5 rounded-xl col-span-2 sm:col-span-1">
+            <span class="text-[10px] uppercase font-bold text-teal-300 block">= Closing Balance</span>
+            <span id="ds-current-balance" class="text-sm sm:text-base font-black text-teal-300 font-mono mt-0.5 block">0</span>
+            <span id="ds-current-val" class="text-[10px] text-teal-300 font-mono block mt-0.5 font-bold">₹ 0.00</span>
           </div>
         </div>
       </div>
@@ -318,9 +350,9 @@
         <div class="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h2 class="text-base font-extrabold text-white tracking-tight flex items-center gap-2">
-              <span>📊</span> STOCK IN-OUT & BALANCE
+              <span>📊</span> STOCK IN-OUT &amp; BALANCE
             </h2>
-            <p class="text-xs text-slate-400">Record IN & OUT stock entries. Actual Balance Qty is dynamically calculated (Total IN - Total OUT).</p>
+            <p class="text-xs text-slate-400">Record IN &amp; OUT stock entries. Actual Balance Qty is dynamically calculated (Total IN - Total OUT).</p>
           </div>
           <div class="flex items-center gap-2 stock-no-print">
             <button id="btn-record-in" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1 cursor-pointer active:scale-95">
@@ -351,6 +383,9 @@
                   <th class="py-2 px-2">DESCRIPTION</th>
                   <th class="py-2 px-2">UNIT</th>
                   <th class="py-2 px-2 text-right">QTY</th>
+                  <th class="py-2 px-2 text-right">RATE (₹)</th>
+                  <th class="py-2 px-2 text-center">DIFF</th>
+                  <th class="py-2 px-2 text-right">TOTAL (₹)</th>
                   <th class="py-2 px-1 text-center stock-no-print">DEL</th>
                 </tr>
               </thead>
@@ -374,8 +409,9 @@
                   <th class="py-2 px-2">DATE</th>
                   <th class="py-2 px-2">SKU</th>
                   <th class="py-2 px-2">DESCRIPTION</th>
-                  <th class="py-2 px-2">UNIT</th>
+                  <th class="py-2 px-2">REASON</th>
                   <th class="py-2 px-2 text-right">QTY</th>
+                  <th class="py-2 px-2 text-right">VALUE (₹)</th>
                   <th class="py-2 px-1 text-center stock-no-print">DEL</th>
                 </tr>
               </thead>
@@ -400,8 +436,11 @@
               <tr>
                 <th class="py-2 px-3">SKU</th>
                 <th class="py-2 px-3">DESCRIPTION</th>
-                <th class="py-2 px-3">UNIT</th>
-                <th class="py-2 px-3 text-right">ACTUAL BALANCE QTY</th>
+                <th class="py-2 px-3">CATEGORY</th>
+                <th class="py-2 px-3 text-right">RATE (₹)</th>
+                <th class="py-2 px-3 text-center">ACTUAL BALANCE</th>
+                <th class="py-2 px-3 text-right">VALUATION (₹)</th>
+                <th class="py-2 px-2 text-center">STATUS</th>
               </tr>
             </thead>
             <tbody id="table-balance-body" class="divide-y divide-slate-800/60 text-slate-200">
@@ -536,80 +575,93 @@
     <!-- ═════════════════════════════════════════════════════════════════════ -->
     <div id="view-monthly-container" class="hidden space-y-6">
 
-      <!-- 1. MONTH HEADER & BANNER OVERVIEW -->
+      <!-- 1. PERIOD HEADER & BANNER OVERVIEW -->
       <div class="bg-gradient-to-r from-slate-900 via-emerald-950/40 to-slate-900 border border-emerald-500/30 rounded-2xl p-4 sm:p-6 shadow-2xl flex items-center justify-between flex-wrap gap-4">
         <div>
-          <div class="flex items-center gap-2">
-            <span class="px-2.5 py-0.5 text-[10px] font-extrabold uppercase rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Monthly Inventory Statement</span>
-            <span id="monthly-badge-selected-month" class="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-800 text-slate-300 border border-slate-700">August 2026</span>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span id="period-badge-mode" class="px-2.5 py-0.5 text-[10px] font-extrabold uppercase rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Periodic Statement</span>
+            <span id="monthly-badge-selected-month" class="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-800 text-slate-300 border border-slate-700">Period</span>
           </div>
           <h2 id="monthly-banner-title" class="text-lg sm:text-xl font-extrabold text-white tracking-tight mt-1.5 flex items-center gap-2">
-            <span>📅</span> Stock Calculation — August 2026
+            <span>📅</span> Stock Financial Statement &amp; Valuation
           </h2>
-          <p class="text-xs text-slate-400 mt-0.5">Automated accounting of Opening Inventory, Monthly Inward Purchases, Outward Usage & Closing Balance Valuation.</p>
+          <p id="period-banner-desc" class="text-xs text-slate-400 mt-0.5">Automated accounting of Opening Balance (₹), Inward Purchases (+), Outward Usage (-) &amp; Closing Balance (₹).</p>
         </div>
 
         <div class="flex items-center gap-2 stock-no-print">
           <button id="btn-monthly-export-xls-hero" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1.5 cursor-pointer active:scale-95">
-            <span>📊</span> Export Monthly Excel (.xlsx)
+            <span>📊</span> Export Excel (.xlsx)
           </button>
           <button id="btn-monthly-export-pdf-hero" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1.5 cursor-pointer active:scale-95">
-            <span>📄</span> Export Monthly PDF
+            <span>📄</span> Export PDF
           </button>
         </div>
       </div>
 
-      <!-- 2. MONTHLY FINANCIAL & INVENTORY METRICS KPI CARDS (4-Column Banner) -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+      <!-- 2. TOP 5 FINANCIAL STATEMENT KPI CARDS (Opening Rs, Inward Rs, Outward Rs, Net Rs, Closing Rs) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         
-        <!-- Monthly KPI 1: Inward Stock / Purchases -->
-        <div class="stock-glass-card border border-emerald-500/30 p-4 space-y-1 relative overflow-hidden">
+        <!-- KPI 1: Opening Balance (Initial Stock Valuation) -->
+        <div class="stock-glass-card border border-slate-700/60 p-3.5 space-y-1 relative overflow-hidden">
+          <div class="flex items-center justify-between text-xs text-slate-300 font-bold">
+            <span class="flex items-center gap-1"><span>📦</span> Opening Balance</span>
+            <span id="mkpi-opening-value-chip" class="text-[10px] bg-slate-900 px-2 py-0.5 rounded-full border border-slate-700 font-mono text-slate-400">Start</span>
+          </div>
+          <div class="text-lg sm:text-xl font-black text-slate-200 font-mono" id="pkpi-opening-value">₹ 0.00</div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+            <span>Opening Stock:</span>
+            <span id="pkpi-opening-qty" class="font-extrabold text-slate-300 font-mono">0 units</span>
+          </div>
+        </div>
+
+        <!-- KPI 2: Inward Stock / Purchases (Total Received) -->
+        <div class="stock-glass-card border border-emerald-500/40 p-3.5 space-y-1 relative overflow-hidden">
           <div class="flex items-center justify-between text-xs text-emerald-400 font-bold">
-            <span class="flex items-center gap-1"><span>📥</span> Monthly Inward (Purchases)</span>
+            <span class="flex items-center gap-1"><span>📥</span> Inward (+Purchases)</span>
             <span id="mkpi-in-count" class="text-[10px] bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-700/60 font-mono">0 entries</span>
           </div>
-          <div class="text-xl font-black text-emerald-300 font-mono" id="mkpi-in-qty">+0 units</div>
+          <div class="text-lg sm:text-xl font-black text-emerald-300 font-mono" id="mkpi-in-value">₹ 0.00</div>
           <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-            <span>Total Purchase Spend:</span>
-            <span id="mkpi-in-value" class="font-extrabold text-white font-mono">₹ 0.00</span>
+            <span>Purchased:</span>
+            <span id="mkpi-in-qty" class="font-extrabold text-emerald-400 font-mono">+0 units</span>
           </div>
         </div>
 
-        <!-- Monthly KPI 2: Outward Stock / Consumption -->
-        <div class="stock-glass-card border border-amber-500/30 p-4 space-y-1 relative overflow-hidden">
+        <!-- KPI 3: Outward Stock / Consumption (Total Consumed) -->
+        <div class="stock-glass-card border border-amber-500/40 p-3.5 space-y-1 relative overflow-hidden">
           <div class="flex items-center justify-between text-xs text-amber-400 font-bold">
-            <span class="flex items-center gap-1"><span>📤</span> Monthly Outward (Usage)</span>
+            <span class="flex items-center gap-1"><span>📤</span> Outward (-Usage)</span>
             <span id="mkpi-out-count" class="text-[10px] bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-700/60 font-mono">0 entries</span>
           </div>
-          <div class="text-xl font-black text-amber-300 font-mono" id="mkpi-out-qty">-0 units</div>
+          <div class="text-lg sm:text-xl font-black text-amber-300 font-mono" id="mkpi-out-value">₹ 0.00</div>
           <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-            <span>Kitchen Consumption Cost:</span>
-            <span id="mkpi-out-value" class="font-extrabold text-white font-mono">₹ 0.00</span>
+            <span>Consumed:</span>
+            <span id="mkpi-out-qty" class="font-extrabold text-amber-400 font-mono">-0 units</span>
           </div>
         </div>
 
-        <!-- Monthly KPI 3: Net Movement -->
-        <div class="stock-glass-card border border-sky-500/30 p-4 space-y-1 relative overflow-hidden">
+        <!-- KPI 4: Net Balance Movement (Net Variation) -->
+        <div class="stock-glass-card border border-sky-500/40 p-3.5 space-y-1 relative overflow-hidden">
           <div class="flex items-center justify-between text-xs text-sky-400 font-bold">
-            <span class="flex items-center gap-1"><span>⚖️</span> Monthly Net Movement</span>
-            <span id="mkpi-active-items" class="text-[10px] bg-sky-950/80 px-2 py-0.5 rounded-full border border-sky-700/60 font-mono">0 active SKUs</span>
+            <span class="flex items-center gap-1"><span>⚖️</span> Net Movement</span>
+            <span id="mkpi-active-items" class="text-[10px] bg-sky-950/80 px-2 py-0.5 rounded-full border border-sky-700/60 font-mono">0 SKUs</span>
           </div>
-          <div class="text-xl font-black text-sky-300 font-mono" id="mkpi-net-qty">0 units</div>
+          <div class="text-lg sm:text-xl font-black text-sky-300 font-mono" id="mkpi-net-value">₹ 0.00</div>
           <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-            <span>Net Value Impact:</span>
-            <span id="mkpi-net-value" class="font-extrabold text-white font-mono">₹ 0.00</span>
+            <span>Net Movement:</span>
+            <span id="mkpi-net-qty" class="font-extrabold text-sky-300 font-mono">0 units</span>
           </div>
         </div>
 
-        <!-- Monthly KPI 4: Month-End Closing Valuation -->
-        <div class="stock-glass-card border border-teal-500/30 p-4 space-y-1 relative overflow-hidden">
-          <div class="flex items-center justify-between text-xs text-teal-400 font-bold">
-            <span class="flex items-center gap-1"><span>💰</span> Closing Stock Valuation</span>
-            <span id="mkpi-opening-value-chip" class="text-[10px] bg-slate-900 px-2 py-0.5 rounded-full border border-slate-700 font-mono text-slate-400">Open: ₹ 0</span>
+        <!-- KPI 5: Period Closing Valuation (Ending Stock on Hand) -->
+        <div class="stock-glass-card border border-teal-500/50 p-3.5 space-y-1 relative overflow-hidden">
+          <div class="flex items-center justify-between text-xs text-teal-300 font-bold">
+            <span class="flex items-center gap-1"><span>💰</span> Closing Balance</span>
+            <span class="text-[10px] bg-teal-950 px-2 py-0.5 rounded-full border border-teal-700 font-mono text-teal-300">End</span>
           </div>
-          <div class="text-xl font-black text-teal-300 font-mono" id="mkpi-closing-value">₹ 0.00</div>
+          <div class="text-lg sm:text-xl font-black text-teal-300 font-mono" id="mkpi-closing-value">₹ 0.00</div>
           <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-            <span>Month-End Closing Qty:</span>
+            <span>Closing Stock:</span>
             <span id="mkpi-closing-qty" class="font-extrabold text-white font-mono">0 units</span>
           </div>
         </div>
@@ -839,15 +891,52 @@
           </select>
         </div>
 
-        <!-- Stock IN Extra Fields (Cost Price & Supplier) -->
-        <div id="inout-in-extra-wrap" class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-slate-400 font-semibold mb-1">Cost Price (₹)</label>
-            <input type="number" step="0.01" min="0" id="inout-cost" placeholder="110" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+        <!-- Stock IN Extra Fields (Cost Price, Total Bill & Live Rate Comparison) -->
+        <div id="inout-in-extra-wrap" class="space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-emerald-400 font-bold mb-1">
+                Purchase Rate (₹ / unit) *
+              </label>
+              <input type="number" step="0.01" min="0" id="inout-cost" placeholder="0.00" class="w-full bg-slate-950 border border-emerald-500/50 rounded-xl px-3 py-2 text-emerald-300 font-mono font-bold focus:outline-none focus:border-emerald-400 text-sm" />
+            </div>
+            <div>
+              <label class="block text-slate-300 font-bold mb-1">
+                Total Purchase Cost (₹)
+              </label>
+              <input type="number" step="0.01" min="0" id="inout-total-amount" placeholder="0.00" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono font-bold focus:outline-none focus:border-emerald-500 text-sm" />
+            </div>
           </div>
+
+          <!-- Rate Comparison Card (Previous vs New Rate & Difference) -->
+          <div id="inout-rate-compare-box" class="p-3 bg-slate-950/90 border border-slate-800 rounded-xl space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-400">Previous Rate:</span>
+              <span id="inout-prev-rate-display" class="font-bold text-slate-200 font-mono">₹ 0.00</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-400">New Rate:</span>
+              <span id="inout-new-rate-display" class="font-bold text-white font-mono">₹ 0.00</span>
+            </div>
+            <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-300">Rate Difference (Variance):</span>
+              <span id="inout-rate-diff-badge" class="px-2.5 py-0.5 rounded-full text-xs font-black font-mono bg-slate-900 border border-slate-700 text-slate-400">
+                —
+              </span>
+            </div>
+            <div id="inout-batch-impact-msg" class="text-[11px] text-slate-400 italic pt-0.5"></div>
+          </div>
+
+          <div class="flex items-center justify-between flex-wrap gap-2 pt-1">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="inout-update-master-cost" checked class="w-4 h-4 rounded accent-emerald-500 cursor-pointer" />
+              <span class="text-xs text-slate-300 font-semibold">Update Master Rate (Set as default item cost)</span>
+            </label>
+          </div>
+
           <div>
-            <label class="block text-slate-400 font-semibold mb-1">Supplier</label>
-            <input type="text" id="inout-supplier" placeholder="e.g. Royal Traders" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+            <label class="block text-slate-400 font-semibold mb-1">Supplier / Vendor Name</label>
+            <input type="text" id="inout-supplier" placeholder="e.g. Egra Supplier / Royal Traders" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
           </div>
         </div>
 

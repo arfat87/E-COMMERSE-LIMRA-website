@@ -31,8 +31,9 @@ const _initialNow = new Date();
 const _initialYm = `${_initialNow.getFullYear()}-${String(_initialNow.getMonth() + 1).padStart(2, '0')}`;
 const _initialDateStr = `${_initialYm}-${String(_initialNow.getDate()).padStart(2, '0')}`;
 
-let currentAppMode = 'live'; // 'live' or 'monthly'
+let currentAppMode = 'live'; // 'live', 'weekly' or 'monthly'
 let selectedMonthYear = _initialYm; // Default month (YYYY-MM)
+let selectedWeekDate = _initialDateStr; // Default date within week (YYYY-MM-DD)
 let monthlyCategoryFilter = 'all';
 let monthlyActivityFilter = 'all';
 
@@ -86,6 +87,45 @@ function formatMonthYearLabel(ymKey) {
   ];
   const mIdx = parseInt(month, 10) - 1;
   return `${monthNames[mIdx] || month} ${year}`;
+}
+
+function getISOWeekNumber(d) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+}
+
+function getWeekRange(dateOrStr) {
+  const d = dateOrStr ? parseEntryDate(dateOrStr) : new Date();
+  const day = d.getDay(); // 0 is Sunday, 1 is Monday...
+  const diffToMonday = (day === 0 ? -6 : 1) - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  const formatDateShort = (dt) => {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${dt.getDate()} ${months[dt.getMonth()]} ${dt.getFullYear()}`;
+  };
+
+  const isoWeek = getISOWeekNumber(monday);
+
+  return {
+    start: monday,
+    end: sunday,
+    startDateStr: monday.toISOString().slice(0, 10),
+    endDateStr: sunday.toISOString().slice(0, 10),
+    label: `${formatDateShort(monday)} — ${formatDateShort(sunday)}`,
+    weekNumber: isoWeek,
+    year: monday.getFullYear(),
+    weekKey: `${monday.getFullYear()}-W${String(isoWeek).padStart(2, '0')}`
+  };
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -146,7 +186,7 @@ async function fetchDatabaseState() {
   const statusText = document.getElementById('db-status-text');
 
   if (statusText) statusText.textContent = 'Syncing DB...';
-  if (statusBadge) statusBadge.className = 'px-2.5 py-1 bg-amber-950/80 border border-amber-700/60 text-amber-300 font-bold text-[10px] rounded-xl flex items-center gap-1.5 shadow-sm';
+  if (statusBadge) statusBadge.className = 'stk-db-badge syncing';
 
   isDatabaseLoading = true;
 
@@ -221,13 +261,13 @@ async function fetchDatabaseState() {
     saveLocalCache();
 
     if (statusText) statusText.textContent = 'DB Connected';
-    if (statusBadge) statusBadge.className = 'px-2.5 py-1 bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 font-bold text-[10px] rounded-xl flex items-center gap-1.5 shadow-sm';
+    if (statusBadge) statusBadge.className = 'stk-db-badge connected';
 
     renderAll();
   } catch (err) {
     console.error('[StockManager] Database fetch error:', err);
     if (statusText) statusText.textContent = 'Offline (Cached)';
-    if (statusBadge) statusBadge.className = 'px-2.5 py-1 bg-rose-950/80 border border-rose-700/60 text-rose-300 font-bold text-[10px] rounded-xl flex items-center gap-1.5 shadow-sm';
+    if (statusBadge) statusBadge.className = 'stk-db-badge offline';
   } finally {
     isDatabaseLoading = false;
   }
@@ -267,21 +307,36 @@ function recalculateBalances() {
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// MONTHLY CALCULATION ENGINE: Opening + Month IN - Month OUT = Closing
+// PERIOD CALCULATION ENGINE: Opening + Period IN - Period OUT = Closing
+// Handles both Weekly (Monday-Sunday) and Monthly (1st to Month-End)
 // ═════════════════════════════════════════════════════════════════════
-function calculateMonthlyInventory(yearMonthStr) {
-  const ym = yearMonthStr || selectedMonthYear || '2026-08';
-  const [yearStr, monthStr] = ym.split('-');
-  const year = parseInt(yearStr, 10);
-  const month = parseInt(monthStr, 10); // 1-indexed (e.g. 8 for August)
+function calculatePeriodInventory(type = 'month', param = null) {
+  let startOfPeriod;
+  let endOfPeriod;
+  let periodLabel = '';
+  let periodKey = '';
 
-  const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0);
-  const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+  if (type === 'week') {
+    const weekInfo = getWeekRange(param || selectedWeekDate);
+    startOfPeriod = weekInfo.start;
+    endOfPeriod = weekInfo.end;
+    periodLabel = `Week ${weekInfo.weekNumber} (${weekInfo.label})`;
+    periodKey = weekInfo.weekKey;
+  } else {
+    const ym = param || selectedMonthYear || _initialYm;
+    const [yearStr, monthStr] = ym.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    startOfPeriod = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    endOfPeriod = new Date(year, month, 0, 23, 59, 59, 999);
+    periodLabel = formatMonthYearLabel(ym);
+    periodKey = ym;
+  }
 
   const monthInList = [];
   const monthOutList = [];
 
-  // Map each SKU with prior transactions and current month movements
+  // Map each SKU with prior transactions and current period movements
   const itemMap = {};
   stockItems.forEach(item => {
     itemMap[item.sku] = {
@@ -302,7 +357,9 @@ function calculateMonthlyInventory(yearMonthStr) {
       monthInCount: 0,
       monthOutQty: 0,
       monthOutValue: 0,
-      monthOutCount: 0
+      monthOutCount: 0,
+      latestCost: safeNum(item.cost, 0),
+      latestRateDiff: 0
     };
   });
 
@@ -331,19 +388,23 @@ function calculateMonthlyInventory(yearMonthStr) {
         monthInCount: 0,
         monthOutQty: 0,
         monthOutValue: 0,
-        monthOutCount: 0
+        monthOutCount: 0,
+        latestCost: safeNum(entry.costPrice, 0),
+        latestRateDiff: safeNum(entry.rateDiff, 0)
       };
     }
 
     const qty = safeNum(entry.qty, 0);
     const cost = safeNum(entry.costPrice, itemMap[sku].cost);
 
-    if (entryDate < startOfMonth) {
+    if (entryDate < startOfPeriod) {
       itemMap[sku].priorInQty += qty;
-    } else if (entryDate >= startOfMonth && entryDate <= endOfMonth) {
+    } else if (entryDate >= startOfPeriod && entryDate <= endOfPeriod) {
       itemMap[sku].monthInQty += qty;
       itemMap[sku].monthInValue += (qty * cost);
       itemMap[sku].monthInCount += 1;
+      itemMap[sku].latestCost = cost;
+      if (entry.rateDiff !== undefined) itemMap[sku].latestRateDiff = entry.rateDiff;
       monthInList.push({
         ...entry,
         entryDate,
@@ -377,16 +438,18 @@ function calculateMonthlyInventory(yearMonthStr) {
         monthInCount: 0,
         monthOutQty: 0,
         monthOutValue: 0,
-        monthOutCount: 0
+        monthOutCount: 0,
+        latestCost: 0,
+        latestRateDiff: 0
       };
     }
 
     const qty = safeNum(entry.qty, 0);
     const cost = itemMap[sku].cost;
 
-    if (entryDate < startOfMonth) {
+    if (entryDate < startOfPeriod) {
       itemMap[sku].priorOutQty += qty;
-    } else if (entryDate >= startOfMonth && entryDate <= endOfMonth) {
+    } else if (entryDate >= startOfPeriod && entryDate <= endOfPeriod) {
       itemMap[sku].monthOutQty += qty;
       itemMap[sku].monthOutValue += (qty * cost);
       itemMap[sku].monthOutCount += 1;
@@ -399,6 +462,7 @@ function calculateMonthlyInventory(yearMonthStr) {
   });
 
   // Compute item metrics, category groups, and totals
+  let totalOpeningQty = 0;
   let totalOpeningValue = 0;
   let totalInQty = 0;
   let totalInValue = 0;
@@ -432,6 +496,7 @@ function calculateMonthlyInventory(yearMonthStr) {
       activeSkuCount++;
     }
 
+    totalOpeningQty += openingQty;
     totalOpeningValue += openingValue;
     totalInQty += inQty;
     totalInValue += i.monthInValue;
@@ -488,14 +553,18 @@ function calculateMonthlyInventory(yearMonthStr) {
     .slice(0, 5);
 
   return {
-    yearMonthStr: ym,
-    monthLabel: formatMonthYearLabel(ym),
+    periodType: type,
+    periodKey,
+    yearMonthStr: periodKey,
+    periodLabel,
+    monthLabel: periodLabel,
     items: calculatedItems.sort((a, b) => (a.sku || '').localeCompare(b.sku || '')),
     monthInEntries: monthInList.sort((a, b) => b.entryDate - a.entryDate),
     monthOutEntries: monthOutList.sort((a, b) => b.entryDate - a.entryDate),
     topQtyGone,
     topValueGone,
     totals: {
+      totalOpeningQty: parseFloat(totalOpeningQty.toFixed(2)),
       totalOpeningValue,
       totalInQty: parseFloat(totalInQty.toFixed(2)),
       totalInValue,
@@ -511,6 +580,14 @@ function calculateMonthlyInventory(yearMonthStr) {
     },
     categories
   };
+}
+
+function calculateMonthlyInventory(yearMonthStr) {
+  return calculatePeriodInventory('month', yearMonthStr);
+}
+
+function calculateWeeklyInventory(weekDateStr) {
+  return calculatePeriodInventory('week', weekDateStr);
 }
 
 async function addLogToDB(action, details) {
@@ -550,11 +627,11 @@ function showToast(message, type = 'info') {
   if (!container) return;
 
   const toast = document.createElement('div');
-  const bgColors = {
-    success: 'bg-emerald-950/95 text-emerald-200 border-emerald-700/80',
-    info: 'bg-slate-900/95 text-slate-100 border-slate-700/80',
-    warning: 'bg-amber-950/95 text-amber-200 border-amber-700/80',
-    error: 'bg-rose-950/95 text-rose-200 border-rose-700/80'
+  const toastClass = {
+    success: 'toast-success',
+    info: 'toast-info',
+    warning: 'toast-warning',
+    error: 'toast-error'
   };
 
   const icons = {
@@ -564,7 +641,7 @@ function showToast(message, type = 'info') {
     error: '❌'
   };
 
-  toast.className = `stock-toast ${bgColors[type] || bgColors.info}`;
+  toast.className = `stock-toast ${toastClass[type] || 'toast-info'}`;
   toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span> <span>${message}</span>`;
   container.appendChild(toast);
 
@@ -645,20 +722,39 @@ function renderInOutBalanceTables() {
   // 1. Render TABLE 1: STOCK IN
   if (inBody) {
     if (filteredIn.length === 0) {
-      inBody.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-slate-500 font-medium">No Stock IN entries yet. Click "+ Record IN Stock" to add.</td></tr>';
+      inBody.innerHTML = '<tr><td colspan="9" class="py-4 text-center font-medium" style="color:var(--adm-muted);">No Stock IN entries yet. Click "+ Record IN Stock" to add.</td></tr>';
     } else {
-      inBody.innerHTML = filteredIn.map(entry => `
-        <tr class="hover:bg-slate-900/60 transition-colors">
-          <td class="py-2 px-2 text-slate-400 font-mono whitespace-nowrap">${entry.date}</td>
-          <td class="py-2 px-2 font-bold text-emerald-400 font-mono">${entry.sku}</td>
-          <td class="py-2 px-2 font-semibold text-white truncate max-w-[130px] sm:max-w-none">${entry.description}</td>
-          <td class="py-2 px-2 text-slate-400 text-[11px]">${entry.unit}</td>
-          <td class="py-2 px-2 text-right font-black text-emerald-300">+${entry.qty}</td>
-          <td class="py-2 px-1 text-center stock-no-print">
-            <button class="btn-del-in text-rose-400 hover:text-rose-300 font-bold p-1 cursor-pointer transition-transform active:scale-95" data-id="${entry.id}" title="Delete wrong IN entry">🗑️</button>
-          </td>
-        </tr>
-      `).join('');
+      inBody.innerHTML = filteredIn.map(entry => {
+        const costPrice = safeNum(entry.costPrice, 0);
+        const prevCost = safeNum(entry.previousCostPrice, 0);
+        const rateDiff = entry.rateDiff !== undefined ? safeNum(entry.rateDiff, 0) : (prevCost > 0 ? costPrice - prevCost : 0);
+        const totalAmt = safeNum(entry.totalAmount, costPrice * safeNum(entry.qty, 0));
+
+        let diffBadge = '<span class="stk-rate-pill rate-same">—</span>';
+        if (rateDiff > 0) {
+          diffBadge = `<span class="stk-rate-pill rate-up">+₹${rateDiff.toFixed(1)} 🔺</span>`;
+        } else if (rateDiff < 0) {
+          diffBadge = `<span class="stk-rate-pill rate-down">-₹${Math.abs(rateDiff).toFixed(1)} 🔻</span>`;
+        } else if (costPrice > 0 && prevCost > 0) {
+          diffBadge = '<span class="stk-rate-pill rate-same">=</span>';
+        }
+
+        return `
+          <tr>
+            <td class="whitespace-nowrap font-mono" style="color:var(--adm-muted);">${entry.date}</td>
+            <td class="font-bold font-mono" style="color:#4f46e5;">${entry.sku}</td>
+            <td class="font-semibold truncate max-w-[130px] sm:max-w-none" style="color:var(--adm-text);">${entry.description}</td>
+            <td style="color:var(--adm-muted);font-size:0.75rem;">${entry.unit}</td>
+            <td class="text-right font-black" style="color:#059669;">+${entry.qty}</td>
+            <td class="text-right font-mono" style="color:var(--adm-text);">₹ ${safeMoney(costPrice)}</td>
+            <td class="text-center">${diffBadge}</td>
+            <td class="text-right font-mono font-bold" style="color:#059669;">₹ ${safeMoney(totalAmt)}</td>
+            <td class="text-center stock-no-print">
+              <button class="btn-del-in font-bold p-1 cursor-pointer transition-transform active:scale-95" style="color:#e11d48;background:none;border:none;" data-id="${entry.id}" title="Delete wrong IN entry">🗑️</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
 
       inBody.querySelectorAll('.btn-del-in').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -672,20 +768,28 @@ function renderInOutBalanceTables() {
   // 2. Render TABLE 2: STOCK OUT
   if (outBody) {
     if (filteredOut.length === 0) {
-      outBody.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-slate-500 font-medium">No Stock OUT entries yet. Click "- Record OUT Stock" to add.</td></tr>';
+      outBody.innerHTML = '<tr><td colspan="7" class="py-4 text-center font-medium" style="color:var(--adm-muted);">No Stock OUT entries yet. Click "- Record OUT Stock" to add.</td></tr>';
     } else {
-      outBody.innerHTML = filteredOut.map(entry => `
-        <tr class="hover:bg-slate-900/60 transition-colors">
-          <td class="py-2 px-2 text-slate-400 font-mono whitespace-nowrap">${entry.date}</td>
-          <td class="py-2 px-2 font-bold text-amber-400 font-mono">${entry.sku}</td>
-          <td class="py-2 px-2 font-semibold text-white truncate max-w-[130px] sm:max-w-none">${entry.description}</td>
-          <td class="py-2 px-2 text-slate-400 text-[11px]">${entry.unit}</td>
-          <td class="py-2 px-2 text-right font-black text-amber-300">-${entry.qty}</td>
-          <td class="py-2 px-1 text-center stock-no-print">
-            <button class="btn-del-out text-rose-400 hover:text-rose-300 font-bold p-1 cursor-pointer transition-transform active:scale-95" data-id="${entry.id}" title="Delete wrong OUT entry">🗑️</button>
-          </td>
-        </tr>
-      `).join('');
+      outBody.innerHTML = filteredOut.map(entry => {
+        const itm = stockItems.find(i => i.sku === entry.sku);
+        const costPrice = safeNum(itm?.cost, 0);
+        const costVal = costPrice * safeNum(entry.qty, 0);
+        const reason = entry.usedBy || 'Kitchen Prep';
+
+        return `
+          <tr>
+            <td class="whitespace-nowrap font-mono" style="color:var(--adm-muted);">${entry.date}</td>
+            <td class="font-bold font-mono" style="color:#d97706;">${entry.sku}</td>
+            <td class="font-semibold truncate max-w-[120px] sm:max-w-none" style="color:var(--adm-text);">${entry.description}</td>
+            <td class="truncate max-w-[90px]" style="color:var(--adm-muted);font-size:0.75rem;">${reason}</td>
+            <td class="text-right font-black" style="color:#d97706;">-${entry.qty} ${entry.unit || ''}</td>
+            <td class="text-right font-mono font-bold" style="color:#d97706;">₹ ${safeMoney(costVal)}</td>
+            <td class="text-center stock-no-print">
+              <button class="btn-del-out font-bold p-1 cursor-pointer transition-transform active:scale-95" style="color:#e11d48;background:none;border:none;" data-id="${entry.id}" title="Delete wrong OUT entry">🗑️</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
 
       outBody.querySelectorAll('.btn-del-out').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -699,43 +803,67 @@ function renderInOutBalanceTables() {
   // 3. Render TABLE 3: REAL-TIME BALANCE
   if (balanceBody) {
     if (filteredItems.length === 0) {
-      balanceBody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-slate-500 font-medium">No matching stock items.</td></tr>';
+      balanceBody.innerHTML = '<tr><td colspan="7" class="py-4 text-center font-medium" style="color:var(--adm-muted);">No matching stock items.</td></tr>';
     } else {
       balanceBody.innerHTML = filteredItems.map(item => {
         const isNegative = item.qty < 0;
         const isLow = !isNegative && item.qty <= item.min;
         const isOut = item.qty === 0;
+        const itemVal = Math.max(0, safeNum(item.qty, 0)) * safeNum(item.cost, 0);
 
-        let badgeClass = 'text-sky-300';
-        let warningText = '';
+        let badgeClass = 'color:#0284c7;font-weight:800;';
+        let statusBadge = '<span class="adm-pill delivered">In Stock</span>';
         let rowBg = '';
 
         if (isNegative) {
-          badgeClass = 'text-rose-400 font-black';
-          warningText = ' ⚠️ Negative';
-          rowBg = 'bg-rose-950/20';
+          badgeClass = 'color:#e11d48;font-weight:900;';
+          statusBadge = '<span class="adm-pill cancelled">Negative</span>';
+          rowBg = 'background:rgba(244,63,94,0.06);';
         } else if (isOut) {
-          badgeClass = 'text-rose-400 font-black';
-          warningText = ' ⚠️ Out';
-          rowBg = 'bg-rose-950/20';
+          badgeClass = 'color:#e11d48;font-weight:900;';
+          statusBadge = '<span class="adm-pill cancelled">Out of Stock</span>';
+          rowBg = 'background:rgba(244,63,94,0.06);';
         } else if (isLow) {
-          badgeClass = 'text-amber-300 font-black';
-          warningText = ' ⚠️ Low';
-          rowBg = 'bg-amber-950/15';
+          badgeClass = 'color:#d97706;font-weight:900;';
+          statusBadge = '<span class="adm-pill pending">Low Stock</span>';
+          rowBg = 'background:rgba(245,158,11,0.06);';
         }
 
         return `
-          <tr data-action="view-details" data-id="${item.id}" class="hover:bg-slate-900/60 transition-colors cursor-pointer ${rowBg}">
-            <td class="py-2 px-2 font-bold text-sky-400 font-mono">${item.sku}</td>
-            <td class="py-2 px-2 font-semibold text-white truncate max-w-[130px] sm:max-w-none">${item.name}</td>
-            <td class="py-2 px-2 text-slate-400 text-[11px]">${item.unit}</td>
-            <td class="py-2 px-2 text-right font-black ${badgeClass}">${item.qty}${warningText}</td>
+          <tr data-action="view-details" data-id="${item.id}" style="cursor:pointer;${rowBg}">
+            <td class="font-bold font-mono" style="color:#4f46e5;">${item.sku}</td>
+            <td class="font-semibold truncate max-w-[150px] sm:max-w-none" style="color:var(--adm-text);">${item.name}</td>
+            <td style="color:var(--adm-muted);font-size:0.75rem;">${item.category}</td>
+            <td class="text-right font-mono" style="color:var(--adm-text);">₹ ${safeMoney(item.cost)}</td>
+            <td class="text-center font-mono" style="${badgeClass}">${item.qty} ${item.unit}</td>
+            <td class="text-right font-mono font-bold" style="color:#059669;">₹ ${safeMoney(itemVal)}</td>
+            <td class="text-center">${statusBadge}</td>
+            <td class="text-center stock-no-print" onclick="event.stopPropagation()">
+              <div style="display:inline-flex;align-items:center;gap:0.3rem;">
+                <button data-action="row-in" data-id="${item.id}" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#059669;padding:0.2rem 0.45rem;font-size:0.72rem;font-weight:700;" title="Quick Purchase IN">+ IN</button>
+                <button data-action="row-out" data-id="${item.id}" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#d97706;padding:0.2rem 0.45rem;font-size:0.72rem;font-weight:700;" title="Quick Kitchen Usage OUT">- OUT</button>
+              </div>
+            </td>
           </tr>
         `;
       }).join('');
 
       balanceBody.querySelectorAll('tr[data-action="view-details"]').forEach(row => {
         row.addEventListener('click', () => openItemDetailsModal(row.dataset.id));
+      });
+
+      balanceBody.querySelectorAll('button[data-action="row-in"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openInOutModal('IN', btn.dataset.id);
+        });
+      });
+
+      balanceBody.querySelectorAll('button[data-action="row-out"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openInOutModal('OUT', btn.dataset.id);
+        });
       });
     }
   }
@@ -842,34 +970,31 @@ function renderCriticalStockSection() {
   }
 
   sectionEl.classList.remove('hidden');
+  sectionEl.classList.remove('adm-hidden');
   gridEl.innerHTML = criticalItems.map(item => {
     const isOut = item.qty === 0;
     const isNegative = item.qty < 0;
 
-    let tagText = 'LOW STOCK';
-    let tagColor = 'bg-amber-950 text-amber-300 border-amber-800';
-
+    let statusPill = '<span class="adm-pill pending">Low Stock</span>';
     if (isNegative) {
-      tagText = 'NEGATIVE';
-      tagColor = 'bg-rose-950 text-rose-300 border-rose-800';
+      statusPill = '<span class="adm-pill cancelled">Negative</span>';
     } else if (isOut) {
-      tagText = 'OUT OF STOCK';
-      tagColor = 'bg-rose-950 text-rose-300 border-rose-800';
+      statusPill = '<span class="adm-pill cancelled">Out of Stock</span>';
     }
 
     return `
-      <div data-action="view-details" data-id="${item.id}" class="bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-slate-700 rounded-xl p-3 space-y-2 cursor-pointer transition-all shadow-lg">
-        <div class="flex items-start justify-between gap-1">
-          <span class="text-[10px] font-bold font-mono text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded border border-emerald-800/80">${item.sku}</span>
-          <span class="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${tagColor}">${tagText}</span>
+      <div data-action="view-details" data-id="${item.id}" class="adm-card" style="padding:0.85rem;cursor:pointer;border-left:4px solid #ef4444;transition:transform 0.15s ease,box-shadow 0.15s ease;">
+        <div style="display:flex;align-items:start;justify-content:space-between;gap:0.4rem;margin-bottom:0.4rem;">
+          <span class="stk-rate-pill rate-same" style="font-weight:800;color:#4f46e5;">${item.sku}</span>
+          ${statusPill}
         </div>
         <div>
-          <h4 class="text-xs font-bold text-white truncate" title="${item.name}">${item.name}</h4>
-          <p class="text-[10px] text-slate-400 truncate">${item.category}</p>
+          <h4 style="font-size:0.85rem;font-weight:800;color:var(--adm-text);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${item.name}">${item.name}</h4>
+          <p style="font-size:0.72rem;color:var(--adm-muted);margin:2px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.category}</p>
         </div>
-        <div class="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px]">
-          <span class="text-slate-400">Balance:</span>
-          <span class="font-extrabold ${item.qty <= 0 ? 'text-rose-400' : 'text-amber-300'}">${item.qty} ${item.unit}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-top:0.4rem;border-top:1px solid var(--adm-border);font-size:0.75rem;margin-top:0.4rem;">
+          <span style="color:var(--adm-muted);">Balance:</span>
+          <span style="font-weight:900;font-family:monospace;color:${item.qty <= 0 ? '#e11d48' : '#d97706'};">${item.qty} ${item.unit}</span>
         </div>
       </div>
     `;
@@ -948,47 +1073,47 @@ function renderCardFeed() {
     const itemValue = Math.max(0, item.qty) * item.cost;
     const mItem = monthItemMap[item.sku] || { monthOutQty: 0, monthOutValue: 0, depletionRate: '0.0' };
 
-    let qtyColor = 'text-emerald-400';
-    if (isNegative || item.qty === 0) qtyColor = 'text-rose-400';
-    else if (isLow) qtyColor = 'text-amber-300';
+    let qtyColor = '#059669';
+    if (isNegative || item.qty === 0) qtyColor = '#e11d48';
+    else if (isLow) qtyColor = '#d97706';
 
     return `
-      <div data-action="view-details" data-id="${item.id}" class="stock-item-feed-card ${isNegative ? 'is-negative' : ''}">
-        <div class="flex items-start justify-between gap-2 border-b border-slate-800/60 pb-2.5">
+      <div data-action="view-details" data-id="${item.id}" class="stk-feed-card" style="cursor:pointer;${isNegative ? 'border-left:4px solid #f43f5e;' : ''}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.5rem;border-bottom:1px solid var(--adm-border);padding-bottom:0.6rem;margin-bottom:0.6rem;">
           <div>
-            <div class="flex items-center gap-1.5">
-              <span class="text-[10px] font-bold font-mono text-emerald-400 bg-emerald-950 px-1.5 py-0.2 rounded border border-emerald-800/80">${item.sku}</span>
-              <h3 class="text-sm font-extrabold text-white group-hover:text-emerald-400 transition-colors">${item.name}</h3>
+            <div style="display:flex;align-items:center;gap:0.4rem;">
+              <span class="stk-rate-pill rate-same" style="font-weight:800;color:#4f46e5;">${item.sku}</span>
+              <h3 style="font-size:0.92rem;font-weight:800;color:var(--adm-text);margin:0;" class="truncate">${item.name}</h3>
             </div>
-            ${item.supplier ? `<p class="text-[10px] text-slate-400 mt-1 truncate max-w-[180px]">Supplier: ${item.supplier}</p>` : ''}
+            ${item.supplier ? `<p style="font-size:0.72rem;color:var(--adm-muted);margin:3px 0 0;" class="truncate max-w-[180px]">Supplier: ${item.supplier}</p>` : ''}
           </div>
-          <span class="stock-pill-btn text-[10px] uppercase font-bold shrink-0 bg-slate-950 border-slate-800 text-slate-300">
+          <span class="adm-pill confirmed" style="font-size:0.68rem;">
             ${item.category}
           </span>
         </div>
 
-        <div class="flex items-center justify-between pt-2.5 text-xs">
-          <div class="flex items-center gap-1.5">
-            <span class="text-slate-400 font-medium">Stock Value:</span>
-            <span class="font-extrabold text-teal-300 font-mono">₹ ${safeMoney(itemValue)}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:0.78rem;">
+          <div style="display:flex;align-items:center;gap:0.4rem;">
+            <span style="color:var(--adm-muted);">Stock Value:</span>
+            <span style="font-weight:800;color:#059669;font-family:monospace;">₹ ${safeMoney(itemValue)}</span>
           </div>
 
-          <div class="flex items-center gap-1.5">
-            <span class="text-slate-400 font-medium">Actual Balance:</span>
-            <span class="font-black ${qtyColor} font-mono">${item.qty} ${item.unit}</span>
+          <div style="display:flex;align-items:center;gap:0.4rem;">
+            <span style="color:var(--adm-muted);">Balance:</span>
+            <span style="font-weight:900;font-family:monospace;color:${qtyColor};">${item.qty} ${item.unit}</span>
           </div>
         </div>
 
         <!-- Monthly Balance Gone for this SKU -->
-        <div class="mt-2.5 pt-2 border-t border-slate-800/70 flex items-center justify-between text-[11px] bg-slate-950/40 -mx-1 px-2 py-1 rounded-lg">
-          <span class="text-slate-400 font-semibold flex items-center gap-1">
-            <span>🔥</span> Month Balance Gone:
+        <div style="margin-top:0.6rem;padding-top:0.5rem;border-top:1px solid var(--adm-border);display:flex;align-items:center;justify-content:space-between;font-size:0.72rem;background:var(--adm-bg);padding:0.4rem 0.6rem;border-radius:8px;">
+          <span style="color:var(--adm-muted);font-weight:600;display:flex;align-items:center;gap:0.25rem;">
+            <span>🔥</span> Month Usage:
           </span>
-          <div class="text-right">
-            <span class="font-black font-mono ${mItem.monthOutQty > 0 ? 'text-rose-400' : 'text-slate-500'}">
+          <div style="text-align:right;">
+            <span style="font-weight:800;font-family:monospace;color:${mItem.monthOutQty > 0 ? '#e11d48' : 'var(--adm-muted)'};">
               ${mItem.monthOutQty > 0 ? `-${mItem.monthOutQty} ${item.unit}` : '0 gone'}
             </span>
-            ${mItem.monthOutQty > 0 ? `<span class="text-[10px] text-amber-300 font-mono ml-1 font-semibold">(₹ ${safeMoney(mItem.monthOutValue)})</span>` : ''}
+            ${mItem.monthOutQty > 0 ? `<span style="font-size:0.68rem;color:#d97706;font-family:monospace;margin-left:0.25rem;font-weight:700;">(₹ ${safeMoney(mItem.monthOutValue)})</span>` : ''}
           </div>
         </div>
       </div>
@@ -1017,45 +1142,47 @@ function renderTable() {
     const isLow = !isNegative && !isOut && item.qty <= item.min;
     const mItem = monthItemMap[item.sku] || { monthOutQty: 0, monthOutValue: 0, depletionRate: '0.0' };
     
-    let statusBadge = '';
+    let statusBadge = '<span class="adm-pill delivered">In Stock</span>';
     if (isNegative) {
-      statusBadge = `<span class="stock-badge stock-badge-negative">Negative (${item.qty})</span>`;
+      statusBadge = `<span class="adm-pill cancelled">Negative (${item.qty})</span>`;
     } else if (isOut) {
-      statusBadge = '<span class="stock-badge stock-badge-out">Out of Stock</span>';
+      statusBadge = '<span class="adm-pill cancelled">Out of Stock</span>';
     } else if (isLow) {
-      statusBadge = '<span class="stock-badge stock-badge-low">Low Stock</span>';
-    } else {
-      statusBadge = '<span class="stock-badge stock-badge-healthy">In Stock</span>';
+      statusBadge = '<span class="adm-pill pending">Low Stock</span>';
     }
 
     const itemValue = (Math.max(0, item.qty) * item.cost);
 
     return `
-      <tr data-action="view-details" data-id="${item.id}" class="stock-table-row group ${isNegative ? 'bg-rose-950/20' : ''}">
-        <td class="font-semibold text-white">
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-bold font-mono text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded border border-emerald-800/80">${item.sku}</span>
-            <div class="text-sm font-bold group-hover:text-emerald-400 transition-colors">${item.name}</div>
+      <tr data-action="view-details" data-id="${item.id}" style="cursor:pointer;${isNegative ? 'background:rgba(244,63,94,0.06);' : ''}">
+        <td>
+          <div style="display:flex;align-items:center;gap:0.4rem;">
+            <span class="stk-rate-pill rate-same" style="font-weight:800;color:#4f46e5;">${item.sku}</span>
+            <span style="font-weight:700;color:var(--adm-text);">${item.name}</span>
           </div>
-          <div class="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+          <div style="display:flex;align-items:center;gap:0.4rem;margin-top:2px;font-size:0.72rem;color:var(--adm-muted);">
             <span>${item.supplier || 'No supplier'}</span>
-            ${mItem.monthOutQty > 0 ? `<span class="text-rose-400 font-mono font-semibold">• Gone this month: -${mItem.monthOutQty} ${item.unit} (₹ ${safeMoney(mItem.monthOutValue)})</span>` : ''}
+            ${mItem.monthOutQty > 0 ? `<span style="color:#e11d48;font-family:monospace;font-weight:700;">• Gone this month: -${mItem.monthOutQty} ${item.unit} (₹ ${safeMoney(mItem.monthOutValue)})</span>` : ''}
           </div>
         </td>
-        <td class="text-slate-300 text-xs">
-          <span class="bg-slate-950 border border-slate-800 px-2 py-0.5 rounded-lg text-[10px] font-bold text-slate-300">${item.category}</span>
+        <td>
+          <span class="adm-pill confirmed" style="font-size:0.7rem;">${item.category}</span>
         </td>
-        <td class="text-slate-400 text-xs">${item.godown || 'Main Godown'}</td>
-        <td class="text-center font-black ${isNegative ? 'text-rose-400' : 'text-emerald-400'} font-mono">
+        <td style="color:var(--adm-muted);font-size:0.75rem;">${item.godown || 'Main Godown'}</td>
+        <td class="text-center font-mono font-black" style="color:${isNegative ? '#e11d48' : '#059669'};">
           ${item.qty} ${item.unit}
         </td>
-        <td class="text-right text-slate-300 font-mono">₹ ${safeMoney(item.salePrice)}</td>
-        <td class="text-right text-slate-400 font-mono">₹ ${safeMoney(item.cost)}</td>
-        <td class="text-right font-bold text-teal-300 font-mono">₹ ${safeMoney(itemValue)}</td>
+        <td class="text-right font-mono" style="color:var(--adm-text);">₹ ${safeMoney(item.salePrice)}</td>
+        <td class="text-right font-mono" style="color:var(--adm-muted);">₹ ${safeMoney(item.cost)}</td>
+        <td class="text-right font-mono font-bold" style="color:#059669;">₹ ${safeMoney(itemValue)}</td>
         <td class="text-center">${statusBadge}</td>
-        <td class="text-right space-x-1 stock-no-print" onclick="event.stopPropagation()">
-          <button data-action="quick-adjust" data-id="${item.id}" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-xs text-teal-300 font-bold rounded-lg border border-slate-700">⚡ Adjust</button>
-          <button data-action="edit" data-id="${item.id}" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg border border-slate-700">✏️</button>
+        <td class="text-right stock-no-print" onclick="event.stopPropagation()">
+          <div style="display:inline-flex;align-items:center;gap:0.3rem;">
+            <button data-action="row-in" data-id="${item.id}" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#059669;padding:0.2rem 0.45rem;font-size:0.72rem;font-weight:700;" title="Record Purchase IN">+ IN</button>
+            <button data-action="row-out" data-id="${item.id}" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#d97706;padding:0.2rem 0.45rem;font-size:0.72rem;font-weight:700;" title="Record Kitchen Usage OUT">- OUT</button>
+            <button data-action="quick-adjust" data-id="${item.id}" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#4f46e5;padding:0.2rem 0.45rem;font-size:0.72rem;" title="Adjust Stock">⚡</button>
+            <button data-action="edit" data-id="${item.id}" class="adm-btn adm-btn-outline adm-btn-sm" style="padding:0.2rem 0.45rem;font-size:0.72rem;" title="Edit Item Details">✏️</button>
+          </div>
         </td>
       </tr>
     `;
@@ -1063,6 +1190,20 @@ function renderTable() {
 
   tbody.querySelectorAll('tr[data-action="view-details"]').forEach(row => {
     row.addEventListener('click', () => openItemDetailsModal(row.dataset.id));
+  });
+
+  tbody.querySelectorAll('button[data-action="row-in"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openInOutModal('IN', btn.dataset.id);
+    });
+  });
+
+  tbody.querySelectorAll('button[data-action="row-out"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openInOutModal('OUT', btn.dataset.id);
+    });
   });
 
   tbody.querySelectorAll('button[data-action="quick-adjust"]').forEach(btn => {
@@ -1086,47 +1227,76 @@ function renderLogs() {
     : stockLogs.filter(l => l.type && l.type.toLowerCase().includes(activeLogFilter.toLowerCase()));
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-slate-500 font-medium">No stock transaction logs matching filter.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center font-medium" style="color:var(--adm-muted);">No stock transaction logs matching filter.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = filtered.slice(0, 50).map(log => {
-    let badgeClass = 'bg-slate-950 text-slate-300 border-slate-800';
+    let statusPill = '<span class="adm-pill confirmed">Log</span>';
     if (log.type && log.type.includes('IN')) {
-      badgeClass = 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80';
+      statusPill = `<span class="adm-pill delivered">${log.type}</span>`;
     } else if (log.type && log.type.includes('OUT')) {
-      badgeClass = 'bg-amber-950/80 text-amber-300 border-amber-800/80';
+      statusPill = `<span class="adm-pill pending">${log.type}</span>`;
     } else if (log.type && log.type.includes('Delete')) {
-      badgeClass = 'bg-rose-950/80 text-rose-300 border-rose-800/80';
+      statusPill = `<span class="adm-pill cancelled">${log.type}</span>`;
+    } else if (log.type) {
+      statusPill = `<span class="adm-pill confirmed">${log.type}</span>`;
     }
 
     return `
-      <tr class="hover:bg-slate-800/20 transition-colors">
-        <td class="py-2.5 px-4 text-slate-400 whitespace-nowrap font-mono text-[11px]">${log.date}</td>
-        <td class="py-2.5 px-4 font-bold text-white">${log.itemName}</td>
-        <td class="py-2.5 px-4">
-          <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold border ${badgeClass}">${log.type}</span>
-        </td>
-        <td class="py-2.5 px-4 text-center font-bold font-mono ${log.qtyText.startsWith('-') ? 'text-amber-400' : 'text-emerald-400'}">${log.qtyText}</td>
-        <td class="py-2.5 px-4 text-slate-400 text-xs">${log.notes || '—'}</td>
+      <tr>
+        <td class="whitespace-nowrap font-mono text-[11px]" style="color:var(--adm-muted);">${log.date}</td>
+        <td style="font-weight:700;color:var(--adm-text);">${log.itemName}</td>
+        <td>${statusPill}</td>
+        <td class="text-center font-bold font-mono" style="color:${log.qtyText.startsWith('-') ? '#d97706' : '#059669'};">${log.qtyText}</td>
+        <td style="color:var(--adm-muted);font-size:0.75rem;">${log.notes || '—'}</td>
       </tr>
     `;
   }).join('');
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// MONTHLY DASHBOARD RENDERING SYSTEM
+// PERIOD / MONTHLY DASHBOARD RENDERING SYSTEM
 // ═════════════════════════════════════════════════════════════════════
-function renderMonthlyKPIs(monthData) {
-  const t = monthData.totals;
+function renderPeriodKPIs(periodData) {
+  const t = periodData.totals;
+  const isWeekly = currentAppMode === 'weekly';
 
   // Title & Header Badges
   const bannerTitle = document.getElementById('monthly-banner-title');
   const monthBadge = document.getElementById('monthly-badge-selected-month');
-  if (bannerTitle) bannerTitle.innerHTML = `<span>📅</span> Stock Calculation — ${monthData.monthLabel}`;
-  if (monthBadge) monthBadge.textContent = monthData.monthLabel;
+  const modeBadge = document.getElementById('period-badge-mode');
+  const bannerDesc = document.getElementById('period-banner-desc');
 
-  // Card 1: Inward / Purchases
+  if (isWeekly) {
+    if (modeBadge) modeBadge.textContent = 'Weekly Statement';
+    if (bannerTitle) bannerTitle.innerHTML = `<span>🗓️</span> Weekly Financial Statement — ${periodData.periodLabel}`;
+    if (monthBadge) monthBadge.textContent = periodData.periodLabel;
+    if (bannerDesc) bannerDesc.textContent = 'Weekly Opening Balance (₹), Inward Purchases (+), Kitchen Consumption (-), and Closing Balance (₹) complete valuation.';
+  } else {
+    if (modeBadge) modeBadge.textContent = 'Monthly Statement';
+    if (bannerTitle) bannerTitle.innerHTML = `<span>📅</span> Monthly Financial Statement — ${periodData.monthLabel}`;
+    if (monthBadge) monthBadge.textContent = periodData.monthLabel;
+    if (bannerDesc) bannerDesc.textContent = 'Automated monthly accounting of Opening Balance (₹), Inward Purchases (+), Outward Usage (-) & Closing Balance (₹).';
+  }
+
+  // Update Category section header text
+  const catSecTitle = document.querySelector('#monthly-categories-grid')?.parentElement?.querySelector('h3');
+  if (catSecTitle) {
+    catSecTitle.innerHTML = isWeekly
+      ? `<span>🏷️</span> Category-Wise Weekly Spend & Usage (7 Stock Groups)`
+      : `<span>🏷️</span> Category-Wise Monthly Spend & Usage (7 Stock Groups)`;
+  }
+
+  // Card 1: Opening Balance (Initial Stock Valuation)
+  const openValEl = document.getElementById('pkpi-opening-value');
+  const openQtyEl = document.getElementById('pkpi-opening-qty');
+  const openChipEl = document.getElementById('mkpi-opening-value-chip');
+  if (openValEl) openValEl.textContent = `₹ ${safeMoney(t.totalOpeningValue)}`;
+  if (openQtyEl) openQtyEl.textContent = `${t.totalOpeningQty} units`;
+  if (openChipEl) openChipEl.textContent = isWeekly ? 'Week Start' : 'Month Start';
+
+  // Card 2: Inward / Purchases (Total Received)
   const inQtyEl = document.getElementById('mkpi-in-qty');
   const inValEl = document.getElementById('mkpi-in-value');
   const inCntEl = document.getElementById('mkpi-in-count');
@@ -1134,7 +1304,7 @@ function renderMonthlyKPIs(monthData) {
   if (inValEl) inValEl.textContent = `₹ ${safeMoney(t.totalInValue)}`;
   if (inCntEl) inCntEl.textContent = `${t.totalInCount} entries`;
 
-  // Card 2: Outward / Usage
+  // Card 3: Outward / Usage (Total Consumed)
   const outQtyEl = document.getElementById('mkpi-out-qty');
   const outValEl = document.getElementById('mkpi-out-value');
   const outCntEl = document.getElementById('mkpi-out-count');
@@ -1142,7 +1312,7 @@ function renderMonthlyKPIs(monthData) {
   if (outValEl) outValEl.textContent = `₹ ${safeMoney(t.totalOutValue)}`;
   if (outCntEl) outCntEl.textContent = `${t.totalOutCount} entries`;
 
-  // Card 3: Net Movement
+  // Card 4: Net Movement (Net Variation)
   const netQtyEl = document.getElementById('mkpi-net-qty');
   const netValEl = document.getElementById('mkpi-net-value');
   const activeItemsEl = document.getElementById('mkpi-active-items');
@@ -1151,18 +1321,18 @@ function renderMonthlyKPIs(monthData) {
     netQtyEl.className = `text-xl font-black font-mono ${t.totalNetQty >= 0 ? 'text-emerald-300' : 'text-amber-300'}`;
   }
   if (netValEl) {
-    netValEl.textContent = `₹ ${safeMoney(t.totalNetValue)}`;
+    netValEl.textContent = `${t.totalNetValue >= 0 ? '+' : ''}₹ ${safeMoney(t.totalNetValue)}`;
   }
   if (activeItemsEl) activeItemsEl.textContent = `${t.activeSkuCount} active SKUs`;
 
-  // Card 4: Closing Valuation
+  // Card 5: Closing Valuation (Ending Stock on Hand)
   const closeValEl = document.getElementById('mkpi-closing-value');
   const closeQtyEl = document.getElementById('mkpi-closing-qty');
-  const openChipEl = document.getElementById('mkpi-opening-value-chip');
   if (closeValEl) closeValEl.textContent = `₹ ${safeMoney(t.totalClosingValue)}`;
   if (closeQtyEl) closeQtyEl.textContent = `${t.totalClosingQty} units`;
-  if (openChipEl) openChipEl.textContent = `Open: ₹ ${safeMoney(t.totalOpeningValue)}`;
 }
+
+const renderMonthlyKPIs = renderPeriodKPIs;
 
 function renderMonthlyCategoryBreakdown(monthData) {
   const grid = document.getElementById('monthly-categories-grid');
@@ -1184,30 +1354,30 @@ function renderMonthlyCategoryBreakdown(monthData) {
 
     return `
       <div class="monthly-cat-card">
-        <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
-          <div class="flex items-center gap-1.5 font-bold text-white text-xs truncate" title="${name}">
-            <span class="text-base">${c.icon || '📦'}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--adm-border,#e8e3dc);padding-bottom:0.5rem;">
+          <div style="display:flex;align-items:center;gap:0.4rem;font-weight:700;color:var(--adm-text);font-size:0.8rem;" class="truncate" title="${name}">
+            <span style="font-size:1.05rem;">${c.icon || '📦'}</span>
             <span class="truncate">${name}</span>
           </div>
-          <span class="text-[10px] bg-slate-950 px-2 py-0.5 rounded-full border border-slate-800 text-slate-400 font-mono">${c.count} SKUs</span>
+          <span class="stk-rate-pill rate-same" style="font-size:0.68rem;">${c.count} SKUs</span>
         </div>
 
-        <div class="grid grid-cols-2 gap-2 pt-2.5 text-[11px]">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;padding-top:0.6rem;font-size:0.75rem;">
           <div>
-            <span class="block text-slate-400 text-[10px] font-semibold uppercase">Purchases (IN)</span>
-            <span class="font-black text-emerald-400 font-mono">₹ ${safeMoney(c.inValue)}</span>
-            <span class="block text-[10px] text-emerald-500/80 font-mono">+${c.inQty.toFixed(1)} u</span>
+            <span style="display:block;color:var(--adm-muted);font-size:0.65rem;font-weight:700;text-transform:uppercase;">Purchases (IN)</span>
+            <span style="font-weight:800;color:#059669;font-family:monospace;">₹ ${safeMoney(c.inValue)}</span>
+            <span style="display:block;font-size:0.68rem;color:#059669;font-family:monospace;">+${c.inQty.toFixed(1)} u</span>
           </div>
-          <div class="text-right">
-            <span class="block text-slate-400 text-[10px] font-semibold uppercase">Usage (OUT)</span>
-            <span class="font-black text-amber-400 font-mono">₹ ${safeMoney(c.outValue)}</span>
-            <span class="block text-[10px] text-amber-500/80 font-mono">-${c.outQty.toFixed(1)} u</span>
+          <div style="text-align:right;">
+            <span style="display:block;color:var(--adm-muted);font-size:0.65rem;font-weight:700;text-transform:uppercase;">Usage (OUT)</span>
+            <span style="font-weight:800;color:#d97706;font-family:monospace;">₹ ${safeMoney(c.outValue)}</span>
+            <span style="display:block;font-size:0.68rem;color:#d97706;font-family:monospace;">-${c.outQty.toFixed(1)} u</span>
           </div>
         </div>
 
-        <div class="flex items-center justify-between pt-2 mt-2 border-t border-slate-800/80 text-[11px]">
-          <span class="text-slate-400">Closing Value:</span>
-          <span class="font-extrabold text-teal-300 font-mono">₹ ${safeMoney(c.closingValue)}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-top:0.5rem;margin-top:0.5rem;border-top:1px solid var(--adm-border);font-size:0.75rem;">
+          <span style="color:var(--adm-muted);">Closing Value:</span>
+          <span style="font-weight:800;color:#4f46e5;font-family:monospace;">₹ ${safeMoney(c.closingValue)}</span>
         </div>
       </div>
     `;
@@ -1220,20 +1390,20 @@ function renderMonthlyLeaderboards(monthData) {
 
   if (qtyList) {
     if (!monthData.topQtyGone || monthData.topQtyGone.length === 0) {
-      qtyList.innerHTML = '<p class="text-xs text-slate-500 py-3 text-center">No consumption recorded for this month.</p>';
+      qtyList.innerHTML = '<p style="font-size:0.75rem;color:var(--adm-muted);padding:1rem 0;text-align:center;">No consumption recorded for this period.</p>';
     } else {
       qtyList.innerHTML = monthData.topQtyGone.map((item, idx) => `
-        <div data-action="view-details" data-id="${item.id}" class="flex items-center justify-between p-2 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-rose-500/50 cursor-pointer transition-all hover:bg-slate-900/60">
-          <div class="flex items-center gap-2.5 min-w-0">
-            <span class="w-5 h-5 rounded-full bg-rose-950 border border-rose-700 text-rose-300 text-[10px] font-black flex items-center justify-center shrink-0">#${idx + 1}</span>
-            <div class="truncate">
-              <span class="text-xs font-extrabold text-white block truncate">${item.name}</span>
-              <span class="text-[10px] text-slate-400 font-mono">${item.sku} • ${item.category}</span>
+        <div data-action="view-details" data-id="${item.id}" style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0.75rem;border-radius:10px;background:var(--adm-card);border:1px solid var(--adm-border);cursor:pointer;transition:all 0.15s ease;">
+          <div style="display:flex;align-items:center;gap:0.6rem;min-width:0;">
+            <span style="width:22px;height:22px;border-radius:50%;background:#ffe4e6;color:#e11d48;font-size:0.68rem;font-weight:900;display:flex;align-items:center;justify-content:center;flex-shrink:0;">#${idx + 1}</span>
+            <div style="overflow:hidden;">
+              <span style="font-size:0.8rem;font-weight:700;color:var(--adm-text);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.name}</span>
+              <span style="font-size:0.68rem;color:var(--adm-muted);font-family:monospace;">${item.sku} • ${item.category}</span>
             </div>
           </div>
-          <div class="text-right shrink-0">
-            <span class="text-xs font-black text-rose-400 font-mono block">-${item.monthOutQty} ${item.unit}</span>
-            <span class="text-[10px] text-slate-400 font-mono">₹ ${safeMoney(item.monthOutValue)}</span>
+          <div style="text-align:right;flex-shrink:0;">
+            <span style="font-size:0.8rem;font-weight:900;color:#e11d48;font-family:monospace;display:block;">-${item.monthOutQty} ${item.unit}</span>
+            <span style="font-size:0.68rem;color:var(--adm-muted);font-family:monospace;">₹ ${safeMoney(item.monthOutValue)}</span>
           </div>
         </div>
       `).join('');
@@ -1246,20 +1416,20 @@ function renderMonthlyLeaderboards(monthData) {
 
   if (valList) {
     if (!monthData.topValueGone || monthData.topValueGone.length === 0) {
-      valList.innerHTML = '<p class="text-xs text-slate-500 py-3 text-center">No consumption expenditure recorded for this month.</p>';
+      valList.innerHTML = '<p style="font-size:0.75rem;color:var(--adm-muted);padding:1rem 0;text-align:center;">No consumption expenditure recorded for this period.</p>';
     } else {
       valList.innerHTML = monthData.topValueGone.map((item, idx) => `
-        <div data-action="view-details" data-id="${item.id}" class="flex items-center justify-between p-2 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-amber-500/50 cursor-pointer transition-all hover:bg-slate-900/60">
-          <div class="flex items-center gap-2.5 min-w-0">
-            <span class="w-5 h-5 rounded-full bg-amber-950 border border-amber-700 text-amber-300 text-[10px] font-black flex items-center justify-center shrink-0">#${idx + 1}</span>
-            <div class="truncate">
-              <span class="text-xs font-extrabold text-white block truncate">${item.name}</span>
-              <span class="text-[10px] text-slate-400 font-mono">${item.sku} • ${item.category}</span>
+        <div data-action="view-details" data-id="${item.id}" style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0.75rem;border-radius:10px;background:var(--adm-card);border:1px solid var(--adm-border);cursor:pointer;transition:all 0.15s ease;">
+          <div style="display:flex;align-items:center;gap:0.6rem;min-width:0;">
+            <span style="width:22px;height:22px;border-radius:50%;background:#fef3c7;color:#d97706;font-size:0.68rem;font-weight:900;display:flex;align-items:center;justify-content:center;flex-shrink:0;">#${idx + 1}</span>
+            <div style="overflow:hidden;">
+              <span style="font-size:0.8rem;font-weight:700;color:var(--adm-text);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.name}</span>
+              <span style="font-size:0.68rem;color:var(--adm-muted);font-family:monospace;">${item.sku} • ${item.category}</span>
             </div>
           </div>
-          <div class="text-right shrink-0">
-            <span class="text-xs font-black text-amber-300 font-mono block">₹ ${safeMoney(item.monthOutValue)}</span>
-            <span class="text-[10px] text-rose-400 font-mono">-${item.monthOutQty} ${item.unit}</span>
+          <div style="text-align:right;flex-shrink:0;">
+            <span style="font-size:0.8rem;font-weight:900;color:#d97706;font-family:monospace;display:block;">₹ ${safeMoney(item.monthOutValue)}</span>
+            <span style="font-size:0.68rem;color:#e11d48;font-family:monospace;">-${item.monthOutQty} ${item.unit}</span>
           </div>
         </div>
       `).join('');
@@ -1304,7 +1474,7 @@ function renderMonthlyMatrixTable(monthData) {
   if (badge) badge.textContent = `${filtered.length} items`;
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="11" class="py-8 text-center text-slate-500 font-medium">No stock items match the selected monthly filters.</td></tr>`;
+    tbody.innerHTML = '<tr><td colspan="11" style="padding:2rem;text-align:center;color:var(--adm-muted);font-weight:500;">No stock items match the selected monthly filters.</td></tr>';
     if (tfoot) tfoot.innerHTML = '';
     return;
   }
@@ -1320,58 +1490,58 @@ function renderMonthlyMatrixTable(monthData) {
     const isZero = item.closingQty === 0;
 
     return `
-      <tr data-action="view-details" data-id="${item.id}" class="monthly-matrix-row group cursor-pointer ${isNegative ? 'bg-rose-950/20' : ''}">
-        <td class="py-2.5 px-3">
-          <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold font-mono text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded border border-emerald-800/80">${item.sku}</span>
-            <span class="font-extrabold text-white group-hover:text-emerald-400 transition-colors">${item.name}</span>
+      <tr data-action="view-details" data-id="${item.id}" style="cursor:pointer;${isNegative ? 'background:rgba(244,63,94,0.06);' : ''}">
+        <td>
+          <div style="display:flex;align-items:center;gap:0.4rem;">
+            <span class="stk-rate-pill rate-same" style="font-weight:800;color:#4f46e5;">${item.sku}</span>
+            <span style="font-weight:700;color:var(--adm-text);">${item.name}</span>
           </div>
-          ${item.supplier ? `<p class="text-[10px] text-slate-400 mt-0.5 truncate max-w-[200px]">${item.supplier}</p>` : ''}
+          ${item.supplier ? `<p style="font-size:0.72rem;color:var(--adm-muted);margin:2px 0 0;" class="truncate max-w-[200px]">${item.supplier}</p>` : ''}
         </td>
-        <td class="py-2.5 px-2 text-slate-300">
-          <span class="bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-[10px] font-semibold">${item.category}</span>
+        <td>
+          <span class="adm-pill confirmed" style="font-size:0.68rem;">${item.category}</span>
         </td>
-        <td class="py-2.5 px-2 text-slate-400 font-mono text-[11px]">${item.unit}</td>
-        <td class="py-2.5 px-2 text-right font-mono text-slate-300">₹ ${safeMoney(item.cost)}</td>
+        <td style="color:var(--adm-muted);font-family:monospace;font-size:0.75rem;">${item.unit}</td>
+        <td class="text-right font-mono" style="color:var(--adm-muted);">₹ ${safeMoney(item.cost)}</td>
         
         <!-- Opening Stock -->
-        <td class="py-2.5 px-3 text-right bg-slate-900/40">
-          <div class="font-bold text-slate-300 font-mono">${item.openingQty}</div>
-          <div class="text-[10px] text-slate-500 font-mono">₹ ${safeMoney(item.openingValue)}</div>
+        <td class="text-right" style="background:rgba(0,0,0,0.02);">
+          <div class="font-bold font-mono" style="color:var(--adm-text);">${item.openingQty}</div>
+          <div style="font-size:0.68rem;color:var(--adm-muted);font-family:monospace;">₹ ${safeMoney(item.openingValue)}</div>
         </td>
 
         <!-- Month IN / Purchases -->
-        <td class="py-2.5 px-3 text-right bg-emerald-950/30">
-          <div class="font-bold text-emerald-400 font-mono">${item.monthInQty > 0 ? '+' + item.monthInQty : '0'}</div>
-          <div class="text-[10px] text-emerald-500/80 font-mono">₹ ${safeMoney(item.monthInValue)}</div>
+        <td class="text-right" style="background:rgba(16,185,129,0.04);">
+          <div class="font-bold font-mono" style="color:#059669;">${item.monthInQty > 0 ? '+' + item.monthInQty : '0'}</div>
+          <div style="font-size:0.68rem;color:#059669;font-family:monospace;">₹ ${safeMoney(item.monthInValue)}</div>
         </td>
 
         <!-- Total Balance Gone (OUT -) -->
-        <td class="py-2.5 px-3 text-right bg-rose-950/30 border-x border-rose-900/40">
-          <div class="font-black text-rose-400 font-mono">${item.monthOutQty > 0 ? '-' + item.monthOutQty : '0'} ${item.unit}</div>
-          <div class="text-[10px] text-rose-300 font-semibold font-mono">₹ ${safeMoney(item.monthOutValue)}</div>
-          ${item.monthOutQty > 0 ? `<div class="text-[9px] text-slate-400 font-mono">${item.depletionRate}% used</div>` : ''}
+        <td class="text-right" style="background:rgba(244,63,94,0.04);">
+          <div class="font-black font-mono" style="color:#e11d48;">${item.monthOutQty > 0 ? '-' + item.monthOutQty : '0'} ${item.unit}</div>
+          <div style="font-size:0.68rem;color:#e11d48;font-weight:700;font-family:monospace;">₹ ${safeMoney(item.monthOutValue)}</div>
+          ${item.monthOutQty > 0 ? `<div style="font-size:0.65rem;color:var(--adm-muted);font-family:monospace;">${item.depletionRate}% used</div>` : ''}
         </td>
 
         <!-- Closing Stock -->
-        <td class="py-2.5 px-3 text-right bg-teal-950/30">
-          <div class="font-black ${isNegative ? 'text-rose-400' : (isZero ? 'text-rose-300' : 'text-teal-300')} font-mono">${item.closingQty}</div>
-          <div class="text-[10px] ${item.netQty >= 0 ? 'text-emerald-400' : 'text-amber-400'} font-mono">Net: ${item.netQty >= 0 ? '+' : ''}${item.netQty}</div>
+        <td class="text-right" style="background:rgba(99,102,241,0.04);">
+          <div class="font-black font-mono" style="color:${isNegative ? '#e11d48' : (isZero ? '#e11d48' : '#4f46e5')};">${item.closingQty}</div>
+          <div style="font-size:0.68rem;font-family:monospace;color:${item.netQty >= 0 ? '#059669' : '#d97706'};">Net: ${item.netQty >= 0 ? '+' : ''}${item.netQty}</div>
         </td>
 
         <!-- Closing Value -->
-        <td class="py-2.5 px-3 text-right font-black text-sky-300 font-mono">
+        <td class="text-right font-black font-mono" style="color:#4f46e5;">
           ₹ ${safeMoney(item.closingValue)}
         </td>
 
         <!-- Status -->
-        <td class="py-2.5 px-2 text-center">
+        <td class="text-center">
           <span class="badge-monthly-status ${statusClass}">${item.status}</span>
         </td>
 
         <!-- Action / Ledger -->
-        <td class="py-2.5 px-2 text-center stock-no-print" onclick="event.stopPropagation()">
-          <button data-action="view-details" data-id="${item.id}" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-bold transition-all border border-slate-700">
+        <td class="text-center stock-no-print" onclick="event.stopPropagation()">
+          <button data-action="view-details" data-id="${item.id}" class="adm-btn adm-btn-outline adm-btn-sm" style="padding:0.2rem 0.5rem;font-size:0.72rem;">
             🔍 View
           </button>
         </td>
@@ -1396,26 +1566,26 @@ function renderMonthlyMatrixTable(monthData) {
   if (tfoot) {
     tfoot.innerHTML = `
       <tr>
-        <td colspan="4" class="py-3 px-3 uppercase tracking-wider text-white text-xs font-black">
+        <td colspan="4" style="padding:0.75rem 0.85rem;text-transform:uppercase;font-weight:900;color:var(--adm-text);font-size:0.75rem;letter-spacing:0.04em;">
           Total Summary (${filtered.length} Filtered SKUs)
         </td>
-        <td class="py-3 px-3 text-right font-black text-slate-300 font-mono text-xs">
+        <td class="text-right font-mono" style="padding:0.75rem 0.85rem;font-weight:800;color:var(--adm-text);font-size:0.8rem;">
           ₹ ${safeMoney(filteredOpenVal)}
         </td>
-        <td class="py-3 px-3 text-right font-black text-emerald-400 font-mono text-xs">
+        <td class="text-right font-mono" style="padding:0.75rem 0.85rem;font-weight:800;color:#059669;font-size:0.8rem;">
           +₹ ${safeMoney(filteredInVal)}
         </td>
-        <td class="py-3 px-3 text-right font-black text-rose-400 font-mono text-xs">
+        <td class="text-right font-mono" style="padding:0.75rem 0.85rem;font-weight:800;color:#e11d48;font-size:0.8rem;">
           -₹ ${safeMoney(filteredOutVal)}
         </td>
-        <td class="py-3 px-3 text-right font-black text-teal-300 font-mono text-xs">
+        <td class="text-right font-mono" style="padding:0.75rem 0.85rem;font-weight:800;color:#4f46e5;font-size:0.8rem;">
           Net ₹ ${safeMoney(filteredInVal - filteredOutVal)}
         </td>
-        <td class="py-3 px-3 text-right font-black text-sky-300 font-mono text-xs">
+        <td class="text-right font-mono" style="padding:0.75rem 0.85rem;font-weight:900;color:#4f46e5;font-size:0.85rem;">
           ₹ ${safeMoney(filteredCloseVal)}
         </td>
-        <td colspan="2" class="py-3 px-2 text-center text-slate-400 text-[10px]">
-          Month End
+        <td colspan="2" class="text-center" style="font-size:0.7rem;color:var(--adm-muted);">
+          Period End
         </td>
       </tr>
     `;
@@ -1433,15 +1603,15 @@ function renderMonthlyInOutTables(monthData) {
 
   if (inBody) {
     if (monthData.monthInEntries.length === 0) {
-      inBody.innerHTML = `<tr><td colspan="5" class="py-4 text-center text-slate-500 font-medium">No inward purchase entries for ${monthData.monthLabel}.</td></tr>`;
+      inBody.innerHTML = `<tr><td colspan="5" class="py-4 text-center font-medium" style="color:var(--adm-muted);">No inward purchase entries for ${monthData.monthLabel}.</td></tr>`;
     } else {
       inBody.innerHTML = monthData.monthInEntries.slice(0, 35).map(e => `
-        <tr class="hover:bg-slate-900/60 transition-colors">
-          <td class="py-2 px-2 text-slate-400 font-mono">${e.date}</td>
-          <td class="py-2 px-2 font-bold text-emerald-400 font-mono">${e.sku}</td>
-          <td class="py-2 px-2 font-semibold text-white truncate max-w-[130px] sm:max-w-none">${e.description}</td>
-          <td class="py-2 px-2 text-right font-bold text-emerald-300">+${e.qty} ${e.unit}</td>
-          <td class="py-2 px-2 text-right font-mono text-slate-300 font-semibold">₹ ${safeMoney(e.amount)}</td>
+        <tr>
+          <td class="font-mono whitespace-nowrap" style="color:var(--adm-muted);">${e.date}</td>
+          <td class="font-bold font-mono" style="color:#4f46e5;">${e.sku}</td>
+          <td class="font-semibold truncate max-w-[130px] sm:max-w-none" style="color:var(--adm-text);">${e.description}</td>
+          <td class="text-right font-bold" style="color:#059669;">+${e.qty} ${e.unit}</td>
+          <td class="text-right font-mono font-bold" style="color:#059669;">₹ ${safeMoney(e.amount)}</td>
         </tr>
       `).join('');
     }
@@ -1449,28 +1619,38 @@ function renderMonthlyInOutTables(monthData) {
 
   if (outBody) {
     if (monthData.monthOutEntries.length === 0) {
-      outBody.innerHTML = `<tr><td colspan="5" class="py-4 text-center text-slate-500 font-medium">No outward usage entries for ${monthData.monthLabel}.</td></tr>`;
+      outBody.innerHTML = `<tr><td colspan="5" class="py-4 text-center font-medium" style="color:var(--adm-muted);">No outward usage entries for ${monthData.monthLabel}.</td></tr>`;
     } else {
       outBody.innerHTML = monthData.monthOutEntries.slice(0, 35).map(e => `
-        <tr class="hover:bg-slate-900/60 transition-colors">
-          <td class="py-2 px-2 text-slate-400 font-mono">${e.date}</td>
-          <td class="py-2 px-2 font-bold text-amber-400 font-mono">${e.sku}</td>
-          <td class="py-2 px-2 font-semibold text-white truncate max-w-[130px] sm:max-w-none">${e.description}</td>
-          <td class="py-2 px-2 text-right font-bold text-amber-300">-${e.qty} ${e.unit}</td>
-          <td class="py-2 px-2 text-right font-mono text-slate-300 font-semibold">₹ ${safeMoney(e.costAmount)}</td>
+        <tr>
+          <td class="font-mono whitespace-nowrap" style="color:var(--adm-muted);">${e.date}</td>
+          <td class="font-bold font-mono" style="color:#d97706;">${e.sku}</td>
+          <td class="font-semibold truncate max-w-[130px] sm:max-w-none" style="color:var(--adm-text);">${e.description}</td>
+          <td class="text-right font-bold" style="color:#d97706;">-${e.qty} ${e.unit}</td>
+          <td class="text-right font-mono font-bold" style="color:#d97706;">₹ ${safeMoney(e.costAmount)}</td>
         </tr>
       `).join('');
     }
   }
 }
 
+function renderPeriodDashboard() {
+  const periodData = currentAppMode === 'weekly'
+    ? calculateWeeklyInventory(selectedWeekDate)
+    : calculateMonthlyInventory(selectedMonthYear);
+  renderPeriodKPIs(periodData);
+  renderMonthlyCategoryBreakdown(periodData);
+  renderMonthlyLeaderboards(periodData);
+  renderMonthlyMatrixTable(periodData);
+  renderMonthlyInOutTables(periodData);
+}
+
 function renderMonthlyDashboard() {
-  const monthData = calculateMonthlyInventory(selectedMonthYear);
-  renderMonthlyKPIs(monthData);
-  renderMonthlyCategoryBreakdown(monthData);
-  renderMonthlyLeaderboards(monthData);
-  renderMonthlyMatrixTable(monthData);
-  renderMonthlyInOutTables(monthData);
+  renderPeriodDashboard();
+}
+
+function renderWeeklyDashboard() {
+  renderPeriodDashboard();
 }
 
 let currentDailyDate = new Date().toISOString().slice(0, 10);
@@ -1481,76 +1661,87 @@ async function renderDailySummaryBlock(dateStr = null) {
   if (dateInput && !dateInput.value) dateInput.value = currentDailyDate;
 
   const openingEl = document.getElementById('ds-opening-balance');
+  const openingValEl = document.getElementById('ds-opening-val');
   const inEl = document.getElementById('ds-stock-in');
+  const inValEl = document.getElementById('ds-stock-in-val');
   const outEl = document.getElementById('ds-stock-out');
+  const outValEl = document.getElementById('ds-stock-out-val');
   const adjEl = document.getElementById('ds-adjustments');
+  const netValEl = document.getElementById('ds-net-val');
   const curEl = document.getElementById('ds-current-balance');
+  const curValEl = document.getElementById('ds-current-val');
   if (!openingEl) return;
 
-  // Try RPC first
-  let summary = null;
-  try {
-    const { data, error } = await insforge.rpc('get_stock_daily_summary', { p_date: currentDailyDate });
-    if (!error && data) {
-      summary = data;
-    }
-  } catch (e) {
-    // fallback
-  }
+  // Local calculation for currentDailyDate
+  const targetDate = currentDailyDate;
+  const [y, m, d] = targetDate.split('-');
+  const dateFormatted = `${d}-${m}-${y}`; // DD-MM-YYYY
+  const dateAlt = `${d}/${m}/${y}`;
 
-  if (summary) {
-    openingEl.textContent = `${safeNum(summary.opening_balance, 0).toFixed(1)}`;
-    inEl.textContent = `+${safeNum(summary.stock_in_today, 0).toFixed(1)}`;
-    outEl.textContent = `-${safeNum(summary.stock_out_today, 0).toFixed(1)}`;
-    adjEl.textContent = `${safeNum(summary.adjustments, 0).toFixed(1)}`;
-    curEl.textContent = `${safeNum(summary.current_balance, 0).toFixed(1)}`;
-  } else {
-    // Local fallback calculation for currentDailyDate
-    const targetDate = currentDailyDate;
-    const [y, m, d] = targetDate.split('-');
-    const dateFormatted = `${d}-${m}-${y}`; // DD-MM-YYYY
-    const dateAlt = `${d}/${m}/${y}`;
+  const inEntriesToday = stockInEntries.filter(e => e.date === dateFormatted || e.date === dateAlt || (e.createdAt && e.createdAt.startsWith(targetDate)));
+  const outEntriesToday = stockOutEntries.filter(e => e.date === dateFormatted || e.date === dateAlt || (e.createdAt && e.createdAt.startsWith(targetDate)));
 
-    const inToday = stockInEntries
-      .filter(e => e.date === dateFormatted || e.date === dateAlt || (e.createdAt && e.createdAt.startsWith(targetDate)))
-      .reduce((sum, e) => sum + safeNum(e.qty, 0), 0);
+  const inToday = inEntriesToday.reduce((sum, e) => sum + safeNum(e.qty, 0), 0);
+  const inTodayVal = inEntriesToday.reduce((sum, e) => sum + safeNum(e.totalAmount, safeNum(e.costPrice, 0) * safeNum(e.qty, 0)), 0);
 
-    const outToday = stockOutEntries
-      .filter(e => e.date === dateFormatted || e.date === dateAlt || (e.createdAt && e.createdAt.startsWith(targetDate)))
-      .reduce((sum, e) => sum + safeNum(e.qty, 0), 0);
+  const outToday = outEntriesToday.reduce((sum, e) => sum + safeNum(e.qty, 0), 0);
+  const outTodayVal = outEntriesToday.reduce((sum, e) => {
+    const itm = stockItems.find(i => i.sku === e.sku);
+    const cost = safeNum(itm?.cost, 0);
+    return sum + (safeNum(e.qty, 0) * cost);
+  }, 0);
 
-    const curBalance = stockItems.reduce((sum, i) => sum + safeNum(i.qty, 0), 0);
-    const openingBalance = curBalance - inToday + outToday;
+  const curBalance = stockItems.reduce((sum, i) => sum + safeNum(i.qty, 0), 0);
+  const curBalanceVal = stockItems.reduce((sum, i) => sum + (Math.max(0, safeNum(i.qty, 0)) * safeNum(i.cost, 0)), 0);
+  const openingBalance = curBalance - inToday + outToday;
+  const openingBalanceVal = Math.max(0, curBalanceVal - inTodayVal + outTodayVal);
 
-    openingEl.textContent = `${openingBalance.toFixed(1)}`;
-    inEl.textContent = `+${inToday.toFixed(1)}`;
-    outEl.textContent = `-${outToday.toFixed(1)}`;
-    adjEl.textContent = '0.0';
-    curEl.textContent = `${curBalance.toFixed(1)}`;
-  }
+  const netQty = inToday - outToday;
+  const netVal = inTodayVal - outTodayVal;
+
+  openingEl.textContent = `${openingBalance.toFixed(1)} u`;
+  if (openingValEl) openingValEl.textContent = `₹ ${safeMoney(openingBalanceVal)}`;
+
+  inEl.textContent = `+${inToday.toFixed(1)} u`;
+  if (inValEl) inValEl.textContent = `+₹ ${safeMoney(inTodayVal)}`;
+
+  outEl.textContent = `-${outToday.toFixed(1)} u`;
+  if (outValEl) outValEl.textContent = `-₹ ${safeMoney(outTodayVal)}`;
+
+  adjEl.textContent = `${netQty >= 0 ? '+' : ''}${netQty.toFixed(1)} u`;
+  if (netValEl) netValEl.textContent = `${netVal >= 0 ? '+' : ''}₹ ${safeMoney(netVal)}`;
+
+  curEl.textContent = `${curBalance.toFixed(1)} u`;
+  if (curValEl) curValEl.textContent = `₹ ${safeMoney(curBalanceVal)}`;
 }
 
 function exportDailySummaryCSV() {
   const dateStr = currentDailyDate || new Date().toISOString().slice(0, 10);
   const openVal = document.getElementById('ds-opening-balance')?.textContent || '0';
+  const openRs = document.getElementById('ds-opening-val')?.textContent || '0';
   const inVal = document.getElementById('ds-stock-in')?.textContent || '0';
+  const inRs = document.getElementById('ds-stock-in-val')?.textContent || '0';
   const outVal = document.getElementById('ds-stock-out')?.textContent || '0';
+  const outRs = document.getElementById('ds-stock-out-val')?.textContent || '0';
   const adjVal = document.getElementById('ds-adjustments')?.textContent || '0';
+  const netRs = document.getElementById('ds-net-val')?.textContent || '0';
   const curVal = document.getElementById('ds-current-balance')?.textContent || '0';
+  const curRs = document.getElementById('ds-current-val')?.textContent || '0';
 
   let csvContent = "data:text/csv;charset=utf-8,";
   csvContent += "LIMRA Restaurant - Daily Stock Summary Report\n";
   csvContent += `Date,${dateStr}\n\n`;
-  csvContent += "Metric,Quantity\n";
-  csvContent += `Opening Balance,${openVal}\n`;
-  csvContent += `Stock In (Purchases),${inVal}\n`;
-  csvContent += `Stock Out (Kitchen Usage),${outVal}\n`;
-  csvContent += `Adjustments,${adjVal}\n`;
-  csvContent += `Current Balance,${curVal}\n\n`;
-  csvContent += "SKU,Item Name,Category,Unit,Current Balance\n";
+  csvContent += "Metric,Quantity,Valuation (INR)\n";
+  csvContent += `Opening Balance,${openVal},"${openRs}"\n`;
+  csvContent += `Stock In (Purchases),${inVal},"${inRs}"\n`;
+  csvContent += `Stock Out (Kitchen Usage),${outVal},"${outRs}"\n`;
+  csvContent += `Net Day Movement,${adjVal},"${netRs}"\n`;
+  csvContent += `Closing / Current Balance,${curVal},"${curRs}"\n\n`;
+  csvContent += "SKU,Item Name,Category,Unit,Current Balance,Cost Price,Valuation (INR)\n";
 
   stockItems.forEach(i => {
-    csvContent += `"${i.sku}","${(i.name || '').replace(/"/g, '""')}","${i.category}","${i.unit}",${i.qty}\n`;
+    const v = Math.max(0, safeNum(i.qty, 0)) * safeNum(i.cost, 0);
+    csvContent += `"${i.sku}","${(i.name || '').replace(/"/g, '""')}","${i.category}","${i.unit}",${i.qty},${i.cost},${v.toFixed(2)}\n`;
   });
 
   const encodedUri = encodeURI(csvContent);
@@ -1579,20 +1770,24 @@ function exportDailySummaryPDF() {
   doc.text(`Date: ${dateStr} | Generated: ${new Date().toLocaleTimeString('en-IN')}`, 14, 25);
 
   const openVal = document.getElementById('ds-opening-balance')?.textContent || '0';
+  const openRs = document.getElementById('ds-opening-val')?.textContent || '0';
   const inVal = document.getElementById('ds-stock-in')?.textContent || '0';
+  const inRs = document.getElementById('ds-stock-in-val')?.textContent || '0';
   const outVal = document.getElementById('ds-stock-out')?.textContent || '0';
+  const outRs = document.getElementById('ds-stock-out-val')?.textContent || '0';
   const curVal = document.getElementById('ds-current-balance')?.textContent || '0';
+  const curRs = document.getElementById('ds-current-val')?.textContent || '0';
 
   const summaryData = [
-    ['Opening Balance', openVal],
-    ['Stock In (Today)', inVal],
-    ['Stock Out (Today)', outVal],
-    ['Closing / Current Balance', curVal]
+    ['Opening Balance', openVal, openRs],
+    ['Stock In (Purchases Today)', inVal, inRs],
+    ['Stock Out (Kitchen Usage Today)', outVal, outRs],
+    ['Closing / Current Balance', curVal, curRs]
   ];
 
   if (doc.autoTable) {
     doc.autoTable({
-      head: [['Inventory Equation (What do I have? What came in? What went out?)', 'Quantity']],
+      head: [['Inventory Equation (What do I have? What came in? What went out?)', 'Quantity', 'Valuation (₹)']],
       body: summaryData,
       startY: 30,
       theme: 'grid',
@@ -1618,8 +1813,8 @@ function exportDailySummaryPDF() {
 }
 
 function renderAll() {
-  if (currentAppMode === 'monthly') {
-    renderMonthlyDashboard();
+  if (currentAppMode === 'monthly' || currentAppMode === 'weekly') {
+    renderPeriodDashboard();
   } else {
     renderKPIs();
     renderDailySummaryBlock();
@@ -1649,19 +1844,29 @@ function openInOutModal(mode = 'IN', presetItemId = null) {
   const prevBalanceEl = document.getElementById('inout-prev-balance');
   const afterBalanceEl = document.getElementById('inout-after-balance');
 
+  // Rate difference elements
+  const costInput = document.getElementById('inout-cost');
+  const totalAmountInput = document.getElementById('inout-total-amount');
+  const prevRateDisplay = document.getElementById('inout-prev-rate-display');
+  const newRateDisplay = document.getElementById('inout-new-rate-display');
+  const rateDiffBadge = document.getElementById('inout-rate-diff-badge');
+  const impactMsg = document.getElementById('inout-batch-impact-msg');
+  const updateMasterChk = document.getElementById('inout-update-master-cost');
+
   if (!modal || !itemSelect) return;
 
   modeInput.value = mode;
-  title.textContent = mode === 'IN' ? '📥 Record Stock IN Entry' : '📤 Record Stock OUT Entry';
+  title.textContent = mode === 'IN' ? '📥 Record Stock IN Entry (Purchases & Receipts)' : '📤 Record Stock OUT Entry (Kitchen Usage & Waste)';
   submitBtn.textContent = mode === 'IN' ? 'Save IN Entry' : 'Confirm Stock OUT';
-  submitBtn.className = mode === 'IN'
-    ? 'px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl shadow-lg transition-all cursor-pointer'
-    : 'px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl shadow-lg transition-all cursor-pointer';
+  submitBtn.className = 'adm-btn adm-btn-primary';
+  submitBtn.style.background = mode === 'IN' ? '#059669' : '#d97706';
+  submitBtn.style.borderColor = mode === 'IN' ? '#059669' : '#d97706';
 
   dateInput.value = new Date().toISOString().slice(0, 10);
   qtyInput.value = '';
   if (allowNegativeChk) allowNegativeChk.checked = false;
   if (overrideContainer) overrideContainer.classList.add('hidden');
+  if (updateMasterChk) updateMasterChk.checked = true;
 
   if (mode === 'IN') {
     reasonWrap?.classList.add('hidden');
@@ -1674,8 +1879,59 @@ function openInOutModal(mode = 'IN', presetItemId = null) {
   // Sort and populate options
   const sorted = [...stockItems].sort((a, b) => (a.sku || '').localeCompare(b.sku || ''));
   itemSelect.innerHTML = sorted.map(item => `
-    <option value="${item.sku}" data-id="${item.id}" data-unit="${item.unit}" data-name="${item.name}" data-qty="${item.qty}" ${presetItemId && item.id === presetItemId ? 'selected' : ''}>${item.sku} — ${item.name} (${item.category})</option>
+    <option value="${item.sku}" data-id="${item.id}" data-unit="${item.unit}" data-name="${item.name}" data-qty="${item.qty}" data-cost="${item.cost}" ${presetItemId && item.id === presetItemId ? 'selected' : ''}>${item.sku} — ${item.name} (${item.category})</option>
   `).join('');
+
+  function updateRateComparison() {
+    if (mode !== 'IN') return;
+    const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
+    if (!selectedOpt) return;
+    const itm = stockItems.find(i => i.sku === selectedOpt.value);
+    const prevRate = safeNum(itm?.cost, safeNum(selectedOpt.dataset.cost, 0));
+    const unit = selectedOpt.dataset.unit || 'pcs';
+
+    if (prevRateDisplay) {
+      prevRateDisplay.textContent = `₹ ${safeMoney(prevRate)} / ${unit}`;
+    }
+
+    const newRate = safeNum(costInput?.value, 0);
+    const qty = safeNum(qtyInput.value, 0);
+
+    if (newRateDisplay) {
+      newRateDisplay.textContent = `₹ ${safeMoney(newRate)} / ${unit}`;
+    }
+
+    if (rateDiffBadge) {
+      if (newRate <= 0) {
+        rateDiffBadge.textContent = '— Enter Rate';
+        rateDiffBadge.className = 'stk-rate-pill rate-same';
+        if (impactMsg) impactMsg.textContent = '';
+      } else {
+        const diff = newRate - prevRate;
+        const pct = prevRate > 0 ? ((diff / prevRate) * 100).toFixed(1) : '0.0';
+
+        if (diff > 0.001) {
+          rateDiffBadge.textContent = `🔺 +₹ ${safeMoney(diff)} Higher (+${pct}%)`;
+          rateDiffBadge.className = 'stk-rate-pill rate-up';
+          if (impactMsg) {
+            impactMsg.innerHTML = `<span style="color:#e11d48;font-weight:700;">⚠️ Higher by ₹${safeMoney(diff)}/${unit}!</span> Additional batch cost: ₹${safeMoney(diff * qty)}.`;
+          }
+        } else if (diff < -0.001) {
+          rateDiffBadge.textContent = `🔻 -₹ ${safeMoney(Math.abs(diff))} Lower (-${Math.abs(pct)}%)`;
+          rateDiffBadge.className = 'stk-rate-pill rate-down';
+          if (impactMsg) {
+            impactMsg.innerHTML = `<span style="color:#059669;font-weight:700;">🎉 Lower by ₹${safeMoney(Math.abs(diff))}/${unit}!</span> Total batch savings: ₹${safeMoney(Math.abs(diff) * qty)}.`;
+          }
+        } else {
+          rateDiffBadge.textContent = `✅ Same Rate (No Variance)`;
+          rateDiffBadge.className = 'stk-rate-pill rate-same';
+          if (impactMsg) {
+            impactMsg.textContent = `Previous and new rate are identical (₹ ${safeMoney(newRate)} / ${unit}).`;
+          }
+        }
+      }
+    }
+  }
 
   function updateLiveBalancePreview() {
     const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
@@ -1695,7 +1951,8 @@ function openInOutModal(mode = 'IN', presetItemId = null) {
 
     if (afterBalanceEl) {
       afterBalanceEl.textContent = `${parseFloat(afterQty.toFixed(2))} ${unit}`;
-      afterBalanceEl.className = afterQty < 0 ? 'text-rose-400 font-black' : (afterQty <= 5 ? 'text-amber-300 font-bold' : 'text-emerald-400 font-black');
+      afterBalanceEl.className = 'font-bold';
+      afterBalanceEl.style.color = afterQty < 0 ? '#e11d48' : (afterQty <= 5 ? '#d97706' : '#059669');
     }
 
     if (mode === 'OUT' && afterQty < 0 && inputQty > 0) {
@@ -1717,8 +1974,55 @@ function openInOutModal(mode = 'IN', presetItemId = null) {
     }
   }
 
-  itemSelect.onchange = updateLiveBalancePreview;
-  qtyInput.oninput = updateLiveBalancePreview;
+  itemSelect.onchange = () => {
+    updateLiveBalancePreview();
+    if (mode === 'IN') {
+      const itm = stockItems.find(i => i.sku === itemSelect.value);
+      if (costInput && itm && itm.cost > 0) {
+        costInput.value = itm.cost;
+      }
+      if (totalAmountInput) {
+        const q = safeNum(qtyInput.value, 0);
+        totalAmountInput.value = itm && itm.cost > 0 && q > 0 ? (itm.cost * q).toFixed(2) : '';
+      }
+      updateRateComparison();
+    }
+  };
+
+  qtyInput.oninput = () => {
+    updateLiveBalancePreview();
+    if (mode === 'IN') {
+      const q = safeNum(qtyInput.value, 0);
+      const c = safeNum(costInput?.value, 0);
+      if (totalAmountInput && c > 0) {
+        totalAmountInput.value = (c * q).toFixed(2);
+      }
+      updateRateComparison();
+    }
+  };
+
+  if (costInput) {
+    costInput.oninput = () => {
+      const q = safeNum(qtyInput.value, 0);
+      const c = safeNum(costInput.value, 0);
+      if (totalAmountInput && q > 0) {
+        totalAmountInput.value = (c * q).toFixed(2);
+      }
+      updateRateComparison();
+    };
+  }
+
+  if (totalAmountInput) {
+    totalAmountInput.oninput = () => {
+      const q = safeNum(qtyInput.value, 0);
+      const tot = safeNum(totalAmountInput.value, 0);
+      if (costInput && q > 0) {
+        costInput.value = (tot / q).toFixed(2);
+      }
+      updateRateComparison();
+    };
+  }
+
   allowNegativeChk?.addEventListener('change', () => {
     if (submitBtn) {
       if (allowNegativeChk.checked) {
@@ -1735,6 +2039,16 @@ function openInOutModal(mode = 'IN', presetItemId = null) {
       }
     }
   });
+
+  // Prepopulate rate for initial selected item if IN
+  if (mode === 'IN') {
+    const initItem = stockItems.find(i => presetItemId ? i.id === presetItemId : i.sku === itemSelect.value) || stockItems[0];
+    if (costInput && initItem && initItem.cost > 0) {
+      costInput.value = initItem.cost;
+    }
+    if (totalAmountInput) totalAmountInput.value = '';
+    updateRateComparison();
+  }
 
   updateLiveBalancePreview();
   modal.classList.remove('hidden');
@@ -1758,6 +2072,8 @@ async function handleInOutSubmit(e) {
   const allowNegative = document.getElementById('inout-allow-negative')?.checked || false;
   const reason = document.getElementById('inout-reason')?.value || 'Kitchen Prep';
   const costPrice = safeNum(document.getElementById('inout-cost')?.value, 0);
+  const totalAmount = safeNum(document.getElementById('inout-total-amount')?.value, costPrice * qty);
+  const updateMasterCost = document.getElementById('inout-update-master-cost')?.checked || false;
   const supplier = document.getElementById('inout-supplier')?.value || '';
   const notes = document.getElementById('inout-notes')?.value || '';
 
@@ -1767,6 +2083,14 @@ async function handleInOutSubmit(e) {
   }
 
   const targetItem = stockItems.find(i => i.sku === sku) || { id: itemId, cost: costPrice, supplier, qty: 0 };
+  const prevCost = safeNum(targetItem.cost, 0);
+  const rateDiff = costPrice > 0 ? parseFloat((costPrice - prevCost).toFixed(2)) : 0;
+
+  if (mode === 'IN' && costPrice <= 0) {
+    showToast('Please enter the purchase rate (₹ / unit).', 'warning');
+    document.getElementById('inout-cost')?.focus();
+    return;
+  }
 
   // Hard negative check on client
   if (mode === 'OUT' && (safeNum(targetItem.qty, 0) - qty) < 0 && !allowNegative) {
@@ -1785,7 +2109,10 @@ async function handleInOutSubmit(e) {
     description,
     unit,
     qty,
-    costPrice: mode === 'IN' ? (costPrice || targetItem.cost || 0) : targetItem.cost,
+    costPrice: mode === 'IN' ? costPrice : targetItem.cost,
+    previousCostPrice: prevCost,
+    rateDiff: mode === 'IN' ? rateDiff : 0,
+    totalAmount: mode === 'IN' ? totalAmount : (targetItem.cost * qty),
     supplier: mode === 'IN' ? (supplier || targetItem.supplier || '') : targetItem.supplier,
     usedBy: mode === 'OUT' ? reason : '',
     notes,
@@ -1794,7 +2121,13 @@ async function handleInOutSubmit(e) {
 
   if (mode === 'IN') {
     stockInEntries.unshift(entryLocal);
-    showToast(`Recorded Stock IN: +${qty} ${unit} for "${description}"`, 'success');
+    if (updateMasterCost && costPrice > 0) {
+      targetItem.cost = costPrice;
+      const mi = stockItems.find(i => i.sku === sku);
+      if (mi) mi.cost = costPrice;
+    }
+    const diffNotice = rateDiff !== 0 ? ` (Rate: ₹${safeMoney(costPrice)}, ${rateDiff > 0 ? '+' : ''}₹${safeMoney(rateDiff)} vs last)` : '';
+    showToast(`Recorded Stock IN: +${qty} ${unit} for "${description}"${diffNotice}`, 'success');
   } else {
     stockOutEntries.unshift(entryLocal);
     showToast(`Recorded Stock OUT: -${qty} ${unit} for "${description}" (${reason})`, 'warning');
@@ -1839,6 +2172,7 @@ async function handleInOutSubmit(e) {
         if (updatedItem) {
           await insforge.database.from('stock_items').update({
             qty: updatedItem.qty,
+            cost_price: updatedItem.cost,
             updated_at: nowIso
           }).eq('id', updatedItem.id);
         }
@@ -1851,6 +2185,13 @@ async function handleInOutSubmit(e) {
         p_supplier: supplier || targetItem.supplier || null,
         p_notes: notes
       });
+
+      if (updateMasterCost && costPrice > 0) {
+        await insforge.database.from('stock_items').update({
+          cost_price: costPrice,
+          updated_at: nowIso
+        }).eq('id', targetItem.id);
+      }
 
       if (rpcErr) {
         console.warn('[StockManager] record_stock_in RPC fallback to direct insert:', rpcErr);
@@ -1869,12 +2210,13 @@ async function handleInOutSubmit(e) {
         }]);
         await addLogToDB(
           `${description} (Stock IN (+))`,
-          `+${qty} ${unit} | ${notes}`
+          `+${qty} ${unit} @ ₹${safeMoney(costPrice || targetItem.cost)} | ${notes}`
         );
         const updatedItem = stockItems.find(i => i.sku === sku);
         if (updatedItem) {
           await insforge.database.from('stock_items').update({
             qty: updatedItem.qty,
+            cost_price: updatedItem.cost,
             updated_at: nowIso
           }).eq('id', updatedItem.id);
         }
@@ -1911,16 +2253,16 @@ function openItemDetailsModal(itemId) {
   if (statusChip) {
     if (item.qty < 0) {
       statusChip.textContent = '⚠️ Negative Stock';
-      statusChip.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800';
+      statusChip.className = 'adm-pill cancelled';
     } else if (item.qty === 0) {
       statusChip.textContent = '⚠️ Out of Stock';
-      statusChip.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800';
+      statusChip.className = 'adm-pill cancelled';
     } else if (item.qty <= item.min) {
       statusChip.textContent = '⚠️ Low Stock';
-      statusChip.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-800';
+      statusChip.className = 'adm-pill pending';
     } else {
       statusChip.textContent = '✓ Good';
-      statusChip.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800';
+      statusChip.className = 'adm-pill delivered';
     }
   }
 
@@ -2019,16 +2361,16 @@ function openItemDetailsModal(itemId) {
 
   if (ledgerBody) {
     if (combined.length === 0) {
-      ledgerBody.innerHTML = '<tr><td colspan="3" class="py-4 text-center text-slate-500">No IN or OUT ledger records for this item yet.</td></tr>';
+      ledgerBody.innerHTML = '<tr><td colspan="3" style="padding:1rem;text-align:center;color:var(--adm-muted);">No IN or OUT ledger records for this item yet.</td></tr>';
     } else {
       ledgerBody.innerHTML = combined.map(e => `
-        <tr class="hover:bg-slate-900/60">
-          <td class="py-2 px-3">
-            <span class="font-bold text-white">${e.type}</span>
-            <span class="text-slate-500 text-[10px] ml-1.5 font-mono">${e.date}</span>
+        <tr class="adm-table-row">
+          <td style="padding:0.45rem 0.75rem;border-bottom:1px solid var(--adm-border,#e8e3dc);">
+            <span style="font-weight:700;color:var(--adm-text);">${e.type}</span>
+            <span style="color:var(--adm-muted);font-size:0.75rem;margin-left:0.35rem;font-family:monospace;">${e.date}</span>
           </td>
-          <td class="py-2 px-3 text-center font-bold ${e.type.includes('IN') ? 'text-emerald-400' : 'text-amber-400'}">${e.qty} ${e.unit}</td>
-          <td class="py-2 px-3 text-right font-mono text-slate-300">₹ ${safeMoney(e.qty * item.cost)}</td>
+          <td style="padding:0.45rem 0.75rem;text-align:center;font-weight:700;font-family:monospace;border-bottom:1px solid var(--adm-border,#e8e3dc);color:${e.type.includes('IN') ? '#059669' : '#d97706'};">${e.qty} ${e.unit}</td>
+          <td style="padding:0.45rem 0.75rem;text-align:right;font-family:monospace;border-bottom:1px solid var(--adm-border,#e8e3dc);color:var(--adm-text);">₹ ${safeMoney(e.qty * item.cost)}</td>
         </tr>
       `).join('');
     }
@@ -2069,6 +2411,9 @@ function openAdjustModal(itemId) {
   document.getElementById('adjust-workflow-notes').value = '';
   document.getElementById('adjust-mode').value = 'add';
 
+  const costInput = document.getElementById('adjust-workflow-cost');
+  if (costInput) costInput.value = item.cost > 0 ? item.cost : '';
+
   const btnAdd = document.getElementById('toggle-type-add');
   const btnReduce = document.getElementById('toggle-type-reduce');
   if (btnAdd && btnReduce) {
@@ -2101,6 +2446,14 @@ async function handleAdjustSubmit(e) {
     return;
   }
 
+  const costInput = document.getElementById('adjust-workflow-cost');
+  const inputCost = safeNum(costInput?.value, 0);
+  if (mode === 'add' && inputCost > 0) {
+    item.cost = inputCost;
+    const mi = stockItems.find(i => i.id === itemId);
+    if (mi) mi.cost = inputCost;
+  }
+
   const entryId = (mode === 'add' ? 'in_' : 'out_') + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
 
   const entryLocal = {
@@ -2110,12 +2463,17 @@ async function handleAdjustSubmit(e) {
     description: item.name,
     unit: item.unit,
     qty,
+    costPrice: item.cost,
+    totalAmount: item.cost * qty,
+    supplier: item.supplier || '',
+    usedBy: mode === 'reduce' ? godown : '',
+    notes,
     createdAt: nowIso
   };
 
   if (mode === 'add') {
     stockInEntries.unshift(entryLocal);
-    showToast(`Added +${qty} ${item.unit} to "${item.name}"`, 'success');
+    showToast(`Added +${qty} ${item.unit} to "${item.name}" (Rate: ₹${safeMoney(item.cost)})`, 'success');
   } else {
     stockOutEntries.unshift(entryLocal);
     showToast(`Reduced -${qty} ${item.unit} from "${item.name}"`, 'warning');
@@ -2144,7 +2502,7 @@ async function handleAdjustSubmit(e) {
       }]);
       await addLogToDB(
         `${item.name} (Stock IN (+))`,
-        `+${qty} ${item.unit} | ${notes}`
+        `+${qty} ${item.unit} @ ₹${safeMoney(item.cost)} | ${notes}`
       );
     } else {
       await insforge.database.from('stock_out').insert([{
@@ -2167,6 +2525,7 @@ async function handleAdjustSubmit(e) {
 
     await insforge.database.from('stock_items').update({
       qty: item.qty,
+      cost_price: item.cost,
       updated_at: nowIso
     }).eq('id', item.id);
   } catch (err) {
@@ -2295,6 +2654,12 @@ async function handleItemSubmit(e) {
         description: name,
         unit,
         qty: baseQty,
+        costPrice: cost,
+        previousCostPrice: cost,
+        rateDiff: 0,
+        totalAmount: cost * baseQty,
+        supplier,
+        notes: 'Opening stock balance for newly created item',
         createdAt: nowIso
       });
 
@@ -2578,36 +2943,213 @@ function exportMonthlyToPDF() {
   showToast(`Exported Monthly Statement (${monthData.monthLabel}) to PDF`, 'success');
 }
 
+function exportWeeklyToExcel() {
+  if (typeof XLSX === 'undefined') {
+    return alert('Excel export engine (SheetJS) is loading. Please try again.');
+  }
+
+  const weekData = calculateWeeklyInventory(selectedWeekDate);
+  const data = weekData.items.map((i, idx) => ({
+    'Sl No': idx + 1,
+    'SKU Code': i.sku,
+    'Item Description': i.name,
+    'Category': i.category,
+    'Godown': i.godown || 'Main Godown',
+    'Unit': i.unit,
+    'Cost Price (INR)': i.cost,
+    'Opening Stock Qty': i.openingQty,
+    'Opening Stock Value (INR)': parseFloat(i.openingValue.toFixed(2)),
+    'Week IN Purchases (Qty)': i.monthInQty,
+    'Week Purchases Spend (INR)': parseFloat(i.monthInValue.toFixed(2)),
+    'Total Balance Gone Qty (Week OUT)': i.monthOutQty,
+    'Total Cost of Balance Gone (INR)': parseFloat(i.monthOutValue.toFixed(2)),
+    'Stock Depletion Rate (%)': `${i.depletionRate}%`,
+    'Net Movement Qty': i.netQty,
+    'Closing Stock Qty': i.closingQty,
+    'Closing Stock Value (INR)': parseFloat(i.closingValue.toFixed(2)),
+    'Weekly Status': i.status,
+    'Supplier': i.supplier || ''
+  }));
+
+  // Summary row
+  data.push({
+    'Sl No': 'TOTALS',
+    'SKU Code': '—',
+    'Item Description': `Weekly Summary (${weekData.periodLabel})`,
+    'Category': '—',
+    'Godown': '—',
+    'Unit': '—',
+    'Cost Price (INR)': '—',
+    'Opening Stock Qty': '—',
+    'Opening Stock Value (INR)': parseFloat(weekData.totals.totalOpeningValue.toFixed(2)),
+    'Week IN Purchases (Qty)': weekData.totals.totalInQty,
+    'Week Purchases Spend (INR)': parseFloat(weekData.totals.totalInValue.toFixed(2)),
+    'Total Balance Gone Qty (Week OUT)': weekData.totals.totalOutQty,
+    'Total Cost of Balance Gone (INR)': parseFloat(weekData.totals.totalOutValue.toFixed(2)),
+    'Stock Depletion Rate (%)': '—',
+    'Net Movement Qty': weekData.totals.totalNetQty,
+    'Closing Stock Qty': weekData.totals.totalClosingQty,
+    'Closing Stock Value (INR)': parseFloat(weekData.totals.totalClosingValue.toFixed(2)),
+    'Weekly Status': `${weekData.totals.activeSkuCount} Active SKUs`,
+    'Supplier': '—'
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, `Week ${weekData.periodKey}`);
+  XLSX.writeFile(workbook, `LIMRA_Stock_Weekly_Statement_${weekData.periodKey}.xlsx`);
+  showToast(`Exported Weekly Statement (${weekData.periodLabel}) to Excel (.xlsx)`, 'success');
+}
+
+function exportWeeklyToPDF() {
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    return alert('PDF export engine is loading. Please try again.');
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF('landscape', 'mm', 'a4');
+  const weekData = calculateWeeklyInventory(selectedWeekDate);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text(`LIMRA Restaurant — Weekly Stock Financial Statement`, 14, 15);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Period: ${weekData.periodLabel} | Generated on: ${new Date().toLocaleString('en-IN')}`, 14, 21);
+
+  doc.setFontSize(8);
+  doc.text(
+    `Opening: ₹ ${safeMoney(weekData.totals.totalOpeningValue)} | Purchases (IN): ₹ ${safeMoney(weekData.totals.totalInValue)} (+${weekData.totals.totalInQty} u) | Balance Gone (OUT): ₹ ${safeMoney(weekData.totals.totalOutValue)} (-${weekData.totals.totalOutQty} u) | Closing Val: ₹ ${safeMoney(weekData.totals.totalClosingValue)}`,
+    14,
+    26
+  );
+
+  const headers = [[
+    'SKU', 'Item Description', 'Category', 'Unit', 'Cost',
+    'Open Qty', 'Purchases (+)', 'Purchases (₹)', 'Usage (-)', 'Usage Cost (₹)', 'Closing Qty', 'Closing Val (₹)', 'Status'
+  ]];
+
+  const rows = weekData.items.map(i => [
+    i.sku,
+    i.name,
+    i.category,
+    i.unit,
+    `₹ ${safeMoney(i.cost)}`,
+    i.openingQty,
+    i.monthInQty > 0 ? `+${i.monthInQty}` : '0',
+    `₹ ${safeMoney(i.monthInValue)}`,
+    i.monthOutQty > 0 ? `-${i.monthOutQty}` : '0',
+    `₹ ${safeMoney(i.monthOutValue)}`,
+    i.closingQty,
+    `₹ ${safeMoney(i.closingValue)}`,
+    i.status
+  ]);
+
+  if (doc.autoTable) {
+    doc.autoTable({
+      head: headers,
+      body: rows,
+      startY: 30,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42], textColor: [52, 211, 153], fontSize: 7, fontStyle: 'bold' },
+      styles: { fontSize: 6.5, cellPadding: 1.2 }
+    });
+  }
+
+  doc.save(`LIMRA_Stock_Weekly_Statement_${weekData.periodKey}.pdf`);
+  showToast(`Exported Weekly Statement (${weekData.periodLabel}) to PDF`, 'success');
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // DOM EVENT LISTENERS & INITIALIZATION
 // ═════════════════════════════════════════════════════════════════════
 function setupEventListeners() {
-  // Mode Switcher Buttons (Live Summary vs Monthly Calculation)
+  // Mode Switcher Buttons (Live Operations vs Weekly Financials vs Monthly Financials)
   const tabLive = document.getElementById('tab-mode-live');
+  const tabWeekly = document.getElementById('tab-mode-weekly');
   const tabMonthly = document.getElementById('tab-mode-monthly');
   const viewLive = document.getElementById('view-live-container');
   const viewMonthly = document.getElementById('view-monthly-container');
+  const weeklyQuickControls = document.getElementById('weekly-quick-controls');
   const monthlyQuickControls = document.getElementById('monthly-quick-controls');
 
-  tabLive?.addEventListener('click', () => {
-    currentAppMode = 'live';
-    tabLive.className = 'px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 bg-emerald-500 text-slate-950 shadow-lg cursor-pointer';
-    tabMonthly.className = 'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 bg-slate-950 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 cursor-pointer';
-    viewLive?.classList.remove('hidden');
-    viewMonthly?.classList.add('hidden');
-    monthlyQuickControls?.classList.add('hidden');
+  const activeTabClass = 'pos-cat-pill active';
+  const inactiveTabClass = 'pos-cat-pill';
+
+  function switchAppMode(mode) {
+    currentAppMode = mode;
+    if (tabLive) tabLive.className = mode === 'live' ? activeTabClass : inactiveTabClass;
+    if (tabWeekly) tabWeekly.className = mode === 'weekly' ? activeTabClass : inactiveTabClass;
+    if (tabMonthly) tabMonthly.className = mode === 'monthly' ? activeTabClass : inactiveTabClass;
+
+    if (mode === 'live') {
+      viewLive?.classList.remove('adm-hidden', 'hidden');
+      viewMonthly?.classList.add('adm-hidden');
+      weeklyQuickControls?.classList.add('adm-hidden');
+      monthlyQuickControls?.classList.add('adm-hidden');
+    } else if (mode === 'weekly') {
+      viewLive?.classList.add('adm-hidden');
+      viewMonthly?.classList.remove('adm-hidden', 'hidden');
+      weeklyQuickControls?.classList.remove('adm-hidden', 'hidden');
+      monthlyQuickControls?.classList.add('adm-hidden');
+      const weekBadge = document.getElementById('weekly-badge-range');
+      const weekPicker = document.getElementById('weekly-select-picker');
+      if (weekPicker && !weekPicker.value) weekPicker.value = selectedWeekDate;
+      if (weekBadge) weekBadge.textContent = getWeekRange(selectedWeekDate).label;
+    } else if (mode === 'monthly') {
+      viewLive?.classList.add('adm-hidden');
+      viewMonthly?.classList.remove('adm-hidden', 'hidden');
+      weeklyQuickControls?.classList.add('adm-hidden');
+      monthlyQuickControls?.classList.remove('adm-hidden', 'hidden');
+    }
+
+    renderAll();
+  }
+
+  tabLive?.addEventListener('click', () => switchAppMode('live'));
+  tabWeekly?.addEventListener('click', () => switchAppMode('weekly'));
+  tabMonthly?.addEventListener('click', () => switchAppMode('monthly'));
+
+  // Weekly Navigation Controls
+  const weekPicker = document.getElementById('weekly-select-picker');
+  const weekBadge = document.getElementById('weekly-badge-range');
+  if (weekPicker) {
+    weekPicker.value = selectedWeekDate;
+    if (weekBadge) weekBadge.textContent = getWeekRange(selectedWeekDate).label;
+    weekPicker.addEventListener('change', (e) => {
+      selectedWeekDate = e.target.value || _initialDateStr;
+      if (weekBadge) weekBadge.textContent = getWeekRange(selectedWeekDate).label;
+      renderAll();
+    });
+  }
+
+  document.getElementById('btn-week-current')?.addEventListener('click', () => {
+    selectedWeekDate = new Date().toISOString().slice(0, 10);
+    if (weekPicker) weekPicker.value = selectedWeekDate;
+    if (weekBadge) weekBadge.textContent = getWeekRange(selectedWeekDate).label;
     renderAll();
   });
 
-  tabMonthly?.addEventListener('click', () => {
-    currentAppMode = 'monthly';
-    tabMonthly.className = 'px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 bg-emerald-500 text-slate-950 shadow-lg cursor-pointer';
-    tabLive.className = 'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 bg-slate-950 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 cursor-pointer';
-    viewMonthly?.classList.remove('hidden');
-    viewLive?.classList.add('hidden');
-    monthlyQuickControls?.classList.remove('hidden');
+  document.getElementById('btn-week-prev')?.addEventListener('click', () => {
+    const d = parseEntryDate(selectedWeekDate);
+    d.setDate(d.getDate() - 7);
+    selectedWeekDate = d.toISOString().slice(0, 10);
+    if (weekPicker) weekPicker.value = selectedWeekDate;
+    if (weekBadge) weekBadge.textContent = getWeekRange(selectedWeekDate).label;
     renderAll();
   });
+
+  document.getElementById('btn-week-next')?.addEventListener('click', () => {
+    const d = parseEntryDate(selectedWeekDate);
+    d.setDate(d.getDate() + 7);
+    selectedWeekDate = d.toISOString().slice(0, 10);
+    if (weekPicker) weekPicker.value = selectedWeekDate;
+    if (weekBadge) weekBadge.textContent = getWeekRange(selectedWeekDate).label;
+    renderAll();
+  });
+
+  document.getElementById('btn-week-excel')?.addEventListener('click', exportWeeklyToExcel);
+  document.getElementById('btn-week-pdf')?.addEventListener('click', exportWeeklyToPDF);
 
   // Month Picker & Quick Navigation
   const monthPicker = document.getElementById('monthly-select-picker');
@@ -2643,22 +3185,30 @@ function setupEventListeners() {
     renderAll();
   });
 
-  // Monthly Matrix Filters
+  // Monthly/Weekly Matrix Filters
   document.getElementById('monthly-cat-filter')?.addEventListener('change', (e) => {
     monthlyCategoryFilter = e.target.value;
-    renderMonthlyMatrixTable(calculateMonthlyInventory(selectedMonthYear));
+    const periodData = currentAppMode === 'weekly' ? calculateWeeklyInventory(selectedWeekDate) : calculateMonthlyInventory(selectedMonthYear);
+    renderMonthlyMatrixTable(periodData);
   });
 
   document.getElementById('monthly-activity-filter')?.addEventListener('change', (e) => {
     monthlyActivityFilter = e.target.value;
-    renderMonthlyMatrixTable(calculateMonthlyInventory(selectedMonthYear));
+    const periodData = currentAppMode === 'weekly' ? calculateWeeklyInventory(selectedWeekDate) : calculateMonthlyInventory(selectedMonthYear);
+    renderMonthlyMatrixTable(periodData);
   });
 
-  // Monthly Export Triggers
+  // Monthly & Contextual Hero Export Triggers
   document.getElementById('btn-month-excel')?.addEventListener('click', exportMonthlyToExcel);
   document.getElementById('btn-month-pdf')?.addEventListener('click', exportMonthlyToPDF);
-  document.getElementById('btn-monthly-export-xls-hero')?.addEventListener('click', exportMonthlyToExcel);
-  document.getElementById('btn-monthly-export-pdf-hero')?.addEventListener('click', exportMonthlyToPDF);
+  document.getElementById('btn-monthly-export-xls-hero')?.addEventListener('click', () => {
+    if (currentAppMode === 'weekly') exportWeeklyToExcel();
+    else exportMonthlyToExcel();
+  });
+  document.getElementById('btn-monthly-export-pdf-hero')?.addEventListener('click', () => {
+    if (currentAppMode === 'weekly') exportWeeklyToPDF();
+    else exportMonthlyToPDF();
+  });
 
   // As on Date Checkbox & Input
   const chkAsOn = document.getElementById('chk-as-on-date');
@@ -2699,15 +3249,18 @@ function setupEventListeners() {
   document.getElementById('btn-export-daily-csv')?.addEventListener('click', exportDailySummaryCSV);
   document.getElementById('btn-export-daily-pdf')?.addEventListener('click', exportDailySummaryPDF);
 
-  // Record IN & OUT Buttons
+  // Record IN & OUT Buttons (Standard + Hero Quick Actions)
   document.getElementById('btn-record-in')?.addEventListener('click', () => openInOutModal('IN'));
+  document.getElementById('btn-hero-record-in')?.addEventListener('click', () => openInOutModal('IN'));
   document.getElementById('btn-record-out')?.addEventListener('click', () => openInOutModal('OUT'));
+  document.getElementById('btn-hero-record-out')?.addEventListener('click', () => openInOutModal('OUT'));
   document.getElementById('modal-inout-close')?.addEventListener('click', closeInOutModal);
   document.getElementById('inout-cancel-btn')?.addEventListener('click', closeInOutModal);
   document.getElementById('form-inout-entry')?.addEventListener('submit', handleInOutSubmit);
 
-  // Add Item Button
+  // Add Item Button (Standard + Hero Quick Action)
   document.getElementById('btn-add-item')?.addEventListener('click', () => openItemModal());
+  document.getElementById('btn-hero-add-item')?.addEventListener('click', () => openItemModal());
   document.getElementById('modal-item-close')?.addEventListener('click', closeItemModal);
   document.getElementById('btn-cancel-item')?.addEventListener('click', closeItemModal);
   document.getElementById('form-stock-item')?.addEventListener('submit', handleItemSubmit);
@@ -2820,18 +3373,18 @@ function setupEventListeners() {
 
   btnFeed?.addEventListener('click', () => {
     viewMode = 'feed';
-    btnFeed.className = 'px-2.5 py-1 bg-slate-800 text-emerald-400 border border-slate-700 rounded-lg text-xs font-bold transition-all';
-    btnTable.className = 'px-2.5 py-1 bg-slate-900 text-slate-400 hover:text-white border border-slate-800 rounded-lg text-xs font-semibold transition-all';
-    feedWrap?.classList.remove('hidden');
-    tableWrap?.classList.add('hidden');
+    btnFeed.className = 'adm-btn adm-btn-primary adm-btn-sm';
+    btnTable.className = 'adm-btn adm-btn-outline adm-btn-sm';
+    feedWrap?.classList.remove('adm-hidden', 'hidden');
+    tableWrap?.classList.add('adm-hidden', 'hidden');
   });
 
   btnTable?.addEventListener('click', () => {
     viewMode = 'table';
-    btnTable.className = 'px-2.5 py-1 bg-slate-800 text-emerald-400 border border-slate-700 rounded-lg text-xs font-bold transition-all';
-    btnFeed.className = 'px-2.5 py-1 bg-slate-900 text-slate-400 hover:text-white border border-slate-800 rounded-lg text-xs font-semibold transition-all';
-    tableWrap?.classList.remove('hidden');
-    feedWrap?.classList.add('hidden');
+    btnTable.className = 'adm-btn adm-btn-primary adm-btn-sm';
+    btnFeed.className = 'adm-btn adm-btn-outline adm-btn-sm';
+    tableWrap?.classList.remove('adm-hidden', 'hidden');
+    feedWrap?.classList.add('adm-hidden', 'hidden');
   });
 
   // More Options Menu
@@ -2901,8 +3454,16 @@ function setupEventListeners() {
   });
 }
 
-// Initialize on DOM Ready
-document.addEventListener('DOMContentLoaded', () => {
+let isStockInitialized = false;
+
+export function initStockSummarySection() {
+  if (isStockInitialized) {
+    // Retain state, refresh calculations and views seamlessly
+    recalculateBalances();
+    renderAll();
+    return;
+  }
+  isStockInitialized = true;
   try {
     loadLocalCache();
     setupEventListeners();
@@ -2912,4 +3473,11 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Stock Manager Initialization Error:', err);
     document.getElementById('stock-error-boundary')?.classList.remove('hidden');
   }
-});
+}
+
+// Auto-run on DOM Ready if loaded directly via standalone stock-manager/index.html
+if (typeof window !== 'undefined' && document.getElementById('btn-header-back')) {
+  document.addEventListener('DOMContentLoaded', () => {
+    initStockSummarySection();
+  });
+}
