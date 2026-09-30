@@ -5,21 +5,30 @@ import { createClient } from "@supabase/supabase-js";
 
 export const SUPABASE_URL =
   process.env.SUPABASE_URL ||
-  process.env.VITE_SUPABASE_URL ||
-  "https://your-project.supabase.co";
+  process.env.VITE_SUPABASE_URL;
+
+if (!SUPABASE_URL) {
+  console.error("❌ CRITICAL: SUPABASE_URL is not set in .env file!");
+}
 
 export const SUPABASE_ANON_KEY =
   process.env.SUPABASE_ANON_KEY ||
-  process.env.VITE_SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy_anon_key";
+  process.env.VITE_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_ANON_KEY) {
+  console.error("❌ CRITICAL: SUPABASE_ANON_KEY is not set in .env file!");
+}
 
 export const SUPABASE_SERVICE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_ADMIN_KEY ||
-  SUPABASE_ANON_KEY;
+  process.env.SUPABASE_ADMIN_KEY;
+
+if (!SUPABASE_SERVICE_KEY) {
+  console.warn("⚠️ WARNING: SUPABASE_SERVICE_ROLE_KEY is not set — falling back to anon key. RLS may block backend operations.");
+}
 
 // Create Supabase Admin client for backend operations
-export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY, {
   auth: {
     persistSession: false,
     autoRefreshToken: false
@@ -28,7 +37,6 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 
 // Alias for backward compatibility
 export const insforge = supabase;
-export const mongodb = supabase;
 
 /**
  * Ping Supabase database and return latency metrics

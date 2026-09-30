@@ -7,13 +7,17 @@ function toValidUuid(rawId) {
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)) {
     return str.toLowerCase();
   }
-  const cleanHex = str.replace(/[^0-9a-fA-F]/g, "");
-  if (cleanHex.length >= 24) {
-    const padded = cleanHex.padEnd(32, "0").slice(0, 32);
-    return `${padded.slice(0, 8)}-${padded.slice(8, 12)}-4${padded.slice(13, 16)}-8${padded.slice(17, 20)}-${padded.slice(20, 32)}`.toLowerCase();
-  }
+  // For any non-UUID string, hash it deterministically into a valid UUID v4
   const hash = crypto.createHash("md5").update(str).digest("hex");
-  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`.toLowerCase();
+  // UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+  // where y is 8, 9, a, or b
+  return [
+    hash.slice(0, 8),
+    hash.slice(8, 12),
+    "4" + hash.slice(13, 16),
+    (((parseInt(hash[16], 16) & 0x3) | 0x8).toString(16)) + hash.slice(17, 20),
+    hash.slice(20, 32)
+  ].join("-").toLowerCase();
 }
 
 async function parseRequestBody(req) {
@@ -42,20 +46,7 @@ async function parseRequestBody(req) {
 }
 
 export default async function handler(req, res) {
-  if (res.setHeader) {
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
-    );
-  }
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
+  // CORS is handled globally by server.js — no duplication needed here
   try {
     const parsedBody = await parseRequestBody(req);
     const { action, table, collection, filter, data, updates, options, rpc, params, auth } = parsedBody || {};
@@ -153,7 +144,7 @@ export default async function handler(req, res) {
       if (authType === "signOut" || authType === "logout") {
         try {
           await supabase.auth.signOut();
-        } catch (e) {}
+        } catch (e) { console.warn("[SignOut Notice]:", e.message); }
         return res.status(200).json({ data: { success: true }, error: null });
       }
 

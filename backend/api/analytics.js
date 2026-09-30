@@ -1,20 +1,7 @@
 import { supabase } from "./lib/supabase.js";
 
 export default async function handler(req, res) {
-  if (res.setHeader) {
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
-    );
-  }
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
+  // CORS is handled globally by server.js — no duplication needed here
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -86,7 +73,6 @@ export default async function handler(req, res) {
     const { data: orderItems } = await supabase
       .from("order_items")
       .select("item_name, quantity, line_total")
-      .order("created_at", { ascending: false })
       .limit(1000);
 
     const dishMap = {};

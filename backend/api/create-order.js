@@ -2,23 +2,11 @@ import Razorpay from 'razorpay';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const getKeyId = () => process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TBmsInWXVkKowt';
-const getKeySecret = () => process.env.RAZORPAY_KEY_SECRET || 'DL98BCefLpezCsb3bdj5f2MW';
+const getKeyId = () => process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || '';
+const getKeySecret = () => process.env.RAZORPAY_KEY_SECRET || '';
 
 export default async function handler(req, res) {
-  // Setup CORS
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
+  // CORS is handled globally by server.js — no duplication needed here
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -32,6 +20,11 @@ export default async function handler(req, res) {
   try {
     const key_id = getKeyId();
     const key_secret = getKeySecret();
+
+    if (!key_id || !key_secret) {
+      return res.status(500).json({ error: 'Razorpay credentials are not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env file.' });
+    }
+
     const razorpay = new Razorpay({ key_id, key_secret });
 
     const order = await razorpay.orders.create({

@@ -49,7 +49,7 @@ async function processOrderInventoryDeduction(order) {
       const { data: stockList } = await supabase
         .from("stock_items")
         .select("*")
-        .ilike("name", itemName)
+        .eq("name", itemName)
         .limit(1);
 
       if (stockList && stockList.length > 0) {
@@ -77,18 +77,7 @@ async function processOrderInventoryDeduction(order) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Credentials", true);
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,OPTIONS");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
-  );
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
+  // CORS is handled globally by server.js — no duplication needed here
   try {
     // 1. POST: Create Order
     if (req.method === "POST") {
@@ -134,7 +123,7 @@ export default async function handler(req, res) {
           // 1. Query for an active ticket at this table
           let activeTickets = null;
           try {
-            const res = await supabase
+            const ticketRes = await supabase
               .from("orders")
               .select("id, order_number, notes")
               .eq("table_number", numTable)
@@ -143,12 +132,12 @@ export default async function handler(req, res) {
               .gte("created_at", new Date(Date.now() - 12 * 3600 * 1000).toISOString())
               .order("created_at", { ascending: true })
               .limit(1);
-            if (!res.error && res.data) activeTickets = res.data;
-          } catch (e) {}
+            if (!ticketRes.error && ticketRes.data) activeTickets = ticketRes.data;
+          } catch (e) { console.warn("[Ticket Status Query Notice]:", e.message); }
 
           if (!activeTickets || activeTickets.length === 0) {
             // Fallback in case ticket_status column does not exist yet
-            const res = await supabase
+            const fallbackRes = await supabase
               .from("orders")
               .select("id, order_number, notes")
               .eq("table_number", numTable)
@@ -157,7 +146,7 @@ export default async function handler(req, res) {
               .gte("created_at", new Date(Date.now() - 12 * 3600 * 1000).toISOString())
               .order("created_at", { ascending: true })
               .limit(1);
-            if (!res.error && res.data) activeTickets = res.data;
+            if (!fallbackRes.error && fallbackRes.data) activeTickets = fallbackRes.data;
           }
 
           if (activeTickets && activeTickets.length > 0) {
@@ -298,7 +287,7 @@ export default async function handler(req, res) {
         success: true,
         data: {
           id: orderUuid,
-          order_number: orderNumber,
+          order_number: assignedOrderNumber,
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim(),
           order_type: orderType,
@@ -389,9 +378,10 @@ export default async function handler(req, res) {
 
     // 4. DELETE: Delete Order
     if (req.method === "DELETE") {
-      const { id, order_number } = req.body || req.query || {};
-      const targetId = id || req.query?.id;
-      const targetNum = order_number || req.query?.order_number;
+      const bodyData = req.body || {};
+      const queryData = req.query || {};
+      const targetId = bodyData.id || queryData.id;
+      const targetNum = bodyData.order_number || queryData.order_number;
 
       if (!targetId && !targetNum) {
         return res.status(400).json({ error: "Order id or order_number is required for deletion." });

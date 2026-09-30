@@ -1,4 +1,4 @@
-import { insforge } from './insforge.js';
+import { supabase as insforge } from './supabase.js';
 
 export const PaymentService = {
   /**
