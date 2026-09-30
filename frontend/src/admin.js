@@ -3685,16 +3685,7 @@ function loadOrderIntoPos(order) {
     if ($('pos-customer-phone')) $('pos-customer-phone').value = order.customer_phone || '';
 
     // Set Order Type
-    posOrderType = orderType;
-    document.querySelectorAll('.pos-type-btn').forEach(b => {
-      const isSelected = b.dataset.type === orderType;
-      b.className = 'pos-type-btn adm-btn ' + (isSelected ? 'adm-btn-primary' : 'adm-btn-outline');
-    });
-
-    const tableField = $('pos-table-field');
-    const deliveryField = $('pos-delivery-field');
-    if (tableField) tableField.style.display = orderType === 'table' ? 'block' : 'none';
-    if (deliveryField) deliveryField.style.display = orderType === 'delivery' ? 'block' : 'none';
+    syncPosOrderTypeState(orderType);
 
     if (orderType === 'table' && $('pos-table-number')) {
       $('pos-table-number').value = parsedMeta.tableNumber || order.table_number || '';
@@ -12542,6 +12533,67 @@ let allFoodsCache = [];
 let posActiveCat = "all";
 let posSelectedPlace = null; // { id, name, charge }
 
+function syncPosOrderTypeState(type) {
+  posOrderType = type;
+  document.querySelectorAll('.pos-type-btn').forEach(b => {
+    const isSelected = b.dataset.type === type;
+    b.className = 'pos-type-btn adm-btn ' + (isSelected ? 'adm-btn-primary' : 'adm-btn-outline');
+  });
+
+  if ($('pos-table-field')) $('pos-table-field').style.display = type === 'table' ? 'block' : 'none';
+  if ($('pos-delivery-field')) $('pos-delivery-field').style.display = type === 'delivery' ? 'block' : 'none';
+
+  // Requirement 4: For pickup or delivery, HIDE HOLD and KOT!
+  const holdKotGroup = $('pos-hold-kot-group');
+  if (holdKotGroup) {
+    holdKotGroup.style.display = type === 'table' ? 'grid' : 'none';
+  }
+
+  // Requirement 1: Mandatory only for delivery, optional for table & pickup
+  const nameStar = $('pos-name-req-star');
+  const phoneStar = $('pos-phone-req-star');
+  const custBadge = $('pos-cust-req-badge');
+  const nameInp = $('pos-customer-name');
+  const phoneInp = $('pos-customer-phone');
+  const billBtnLabel = $('pos-bill-btn-label');
+  const billBtnIcon = $('pos-bill-btn-icon');
+
+  if (type === 'delivery') {
+    if (nameStar) nameStar.style.display = 'inline';
+    if (phoneStar) phoneStar.style.display = 'inline';
+    if (custBadge) custBadge.innerHTML = '<span style="color:#ef4444;font-weight:700;">* Required for Delivery</span>';
+    if (nameInp) nameInp.placeholder = 'Customer Name (Required for Delivery)';
+    if (phoneInp) phoneInp.placeholder = '10-digit Mobile Number (Required)';
+    if (billBtnLabel) billBtnLabel.textContent = 'BILL & DISPATCH';
+    if (billBtnIcon) billBtnIcon.textContent = '🚗';
+  } else if (type === 'pickup') {
+    if (nameStar) nameStar.style.display = 'none';
+    if (phoneStar) phoneStar.style.display = 'none';
+    if (custBadge) custBadge.innerHTML = '<span style="color:var(--adm-muted);">(Optional for Takeaway)</span>';
+    if (nameInp) nameInp.placeholder = 'e.g. Salim Khan (Optional)';
+    if (phoneInp) phoneInp.placeholder = 'e.g. 9876543210 (Optional)';
+    if (billBtnLabel) billBtnLabel.textContent = 'BILL & SETTLE (PICKUP)';
+    if (billBtnIcon) billBtnIcon.textContent = '⚡';
+    if (nameInp) nameInp.classList.remove('pos-input-invalid');
+    if (phoneInp) phoneInp.classList.remove('pos-input-invalid');
+  } else {
+    // table
+    if (nameStar) nameStar.style.display = 'none';
+    if (phoneStar) phoneStar.style.display = 'none';
+    if (custBadge) custBadge.innerHTML = '<span style="color:var(--adm-muted);">(Optional for Table)</span>';
+    if (nameInp) nameInp.placeholder = 'e.g. Salim Khan (Optional)';
+    if (phoneInp) phoneInp.placeholder = 'e.g. 9876543210 (Optional)';
+    if (billBtnLabel) billBtnLabel.textContent = 'BILL & SETTLE';
+    if (billBtnIcon) billBtnIcon.textContent = '🧾';
+    if (nameInp) nameInp.classList.remove('pos-input-invalid');
+    if (phoneInp) phoneInp.classList.remove('pos-input-invalid');
+  }
+
+  if (typeof updatePosCartUI === 'function') {
+    updatePosCartUI();
+  }
+}
+
 function renderPosPlaceChips() {
   const container = $('pos-quick-places-pills');
   if (!container) return;
@@ -12907,14 +12959,25 @@ async function buildOrderFromPos(action) {
     return null;
   }
 
-  // 1. Customer Name Validation & Friendly Fallback
+  // 1. Customer Name Validation & Friendly Fallback (Mandatory for Delivery, Optional for Table & Pickup)
   const nameInp = $('pos-customer-name');
   let name = nameInp?.value?.trim() || '';
   if (!name) {
-    name = posOrderType === 'table' ? `Table ${$('pos-table-number')?.value?.trim() || 'Dine-in'}` : 'Walk-in';
+    if (posOrderType === 'delivery') {
+      nameInp?.classList.add('pos-input-invalid');
+      nameInp?.focus();
+      showAdminToast('Customer name is required for Delivery orders.', 'error');
+      return null;
+    } else if (posOrderType === 'table') {
+      name = `Table ${$('pos-table-number')?.value?.trim() || 'Dine-in'}`;
+    } else {
+      name = 'Walk-in Guest';
+    }
+  } else {
+    nameInp?.classList.remove('pos-input-invalid');
   }
 
-  // 2. Mobile Number Validation & Friendly Fallback (strict for delivery, fallback for counter/table)
+  // 2. Mobile Number Validation & Friendly Fallback (Mandatory for Delivery, Optional for Table & Pickup)
   const phoneInp = $('pos-customer-phone');
   let phone = phoneInp?.value?.trim() || '';
   const digitsOnly = phone.replace(/[^0-9]/g, '');
@@ -12925,7 +12988,7 @@ async function buildOrderFromPos(action) {
       showAdminToast('A valid 10-digit mobile number is mandatory for Delivery orders.', 'error');
       return null;
     } else {
-      phone = '9999999999';
+      phone = phone || '9999999999';
     }
   } else {
     phoneInp?.classList.remove('pos-input-invalid');
@@ -14590,8 +14653,9 @@ async function initBillingPanel() {
     renderCategoryPills();
     renderFoodGrid();
 
-    // Auto-focus customer name
-    setTimeout(() => { $('pos-customer-name')?.focus(); }, 100);
+    // Sync order type state & auto-focus food search for rapid billing
+    syncPosOrderTypeState(posOrderType || 'table');
+    setTimeout(() => { $('pos-food-search')?.focus(); }, 100);
   });
 
   closePosBtn?.addEventListener('click', () => {
@@ -14641,15 +14705,24 @@ async function initBillingPanel() {
     });
   });
 
-  // 6. Order Type Selector Buttons
+  // 6. Bind Order Type Buttons
+
+  // Bind Order Type Buttons
   document.querySelectorAll('.pos-type-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      posOrderType = btn.dataset.type;
-      document.querySelectorAll('.pos-type-btn').forEach(b => {
-        b.className = 'pos-type-btn adm-btn ' + (b === btn ? 'adm-btn-primary' : 'adm-btn-outline');
+      syncPosOrderTypeState(btn.dataset.type);
+    });
+  });
+
+  // Bind Quick Payment Mode Pills
+  document.querySelectorAll('.pos-pay-mode-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.pay;
+      const sel = $('pos-payment-mode');
+      if (sel) sel.value = mode;
+      document.querySelectorAll('.pos-pay-mode-pill').forEach(b => {
+        b.className = 'pos-pay-mode-pill adm-btn ' + (b === btn ? 'adm-btn-primary' : 'adm-btn-outline');
       });
-      if ($('pos-table-field')) $('pos-table-field').style.display = posOrderType === 'table' ? 'block' : 'none';
-      if ($('pos-delivery-field')) $('pos-delivery-field').style.display = posOrderType === 'delivery' ? 'block' : 'none';
       updatePosCartUI();
     });
   });
@@ -14739,9 +14812,12 @@ async function initBillingPanel() {
   $('pos-kot-bill-btn')?.addEventListener('click', async () => {
     const result = await buildOrderFromPos('bill');
     if (!result) return;
-    await printKOT(result.order, result.items);
+    // Print KOT ONLY for dine-in tables (not for pickup or delivery)
+    if (posOrderType === 'table') {
+      await printKOT(result.order, result.items);
+    }
     await printOrderReceiptWithTax(result.order, result.items);
-    showAdminToast(`Order #${result.order.order_number} completed, KOT & Final Bill printed! ✅`, 'success');
+    showAdminToast(`Order #${result.order.order_number} settled & final bill printed! ✅`, 'success');
     posCart = [];
     if (posEl) posEl.style.display = 'none';
     if (totalSection) totalSection.style.display = 'block';
@@ -14750,6 +14826,30 @@ async function initBillingPanel() {
     renderHoldOrdersPanel();
     renderTablesPanel();
     renderKitchenPanel();
+  });
+
+  // Fast Billing Keyboard Shortcuts (F2: Settle, F1: Search Dish)
+  window.addEventListener('keydown', (e) => {
+    const posBox = $('billing-pos');
+    if (!posBox || posBox.style.display === 'none') return;
+    if (e.key === 'F2' || (e.ctrlKey && e.key === 'Enter')) {
+      e.preventDefault();
+      $('pos-kot-bill-btn')?.click();
+    } else if (e.key === 'F1') {
+      e.preventDefault();
+      $('pos-food-search')?.focus();
+    }
+  });
+
+  // Quick Enter in food search: adds first filtered dish
+  $('pos-food-search')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const firstDishBtn = document.querySelector('#pos-food-grid .pos-food-card');
+      if (firstDishBtn) {
+        e.preventDefault();
+        firstDishBtn.click();
+      }
+    }
   });
 
   $('pos-save-only-btn')?.addEventListener('click', async () => {

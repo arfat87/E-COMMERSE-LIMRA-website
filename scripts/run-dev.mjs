@@ -11,7 +11,7 @@ console.log("\x1b[36m%s\x1b[0m", "==============================================
 console.log("\x1b[33m%s\x1b[0m", "📍 Quick Access Links (Local Dev):");
 console.log("\x1b[32m%s\x1b[0m", "   • Customer Storefront:     http://localhost:5173/");
 console.log("\x1b[35m%s\x1b[0m", "   • Admin & POS Hub (Ph. 2): http://localhost:5173/admin.html");
-console.log("\x1b[36m%s\x1b[0m", "   • Stock Manager (Phase 2): http://localhost:5173/stock-manager/index.html");
+console.log("\x1b[36m%s\x1b[0m", "   • Stock Manager in POS:    http://localhost:5173/admin.html#panel-stock");
 console.log("\x1b[34m%s\x1b[0m", "   • Dine-In Table 1 QR:      http://localhost:5173/table/index.html?table=1");
 console.log("\x1b[36m%s\x1b[0m", "==================================================\n");
 

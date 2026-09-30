@@ -103,15 +103,29 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Order must contain at least one item." });
       }
 
-      if (!customerName || !customerPhone) {
-        return res.status(400).json({ error: "Customer name and phone are required." });
+      // Customer name and phone validation:
+      // Strictly mandatory for delivery; optional for dine-in table and pickup
+      const numTable = tableNumber ? parseInt(tableNumber, 10) : null;
+      const cleanType = orderType || (numTable ? "table" : "delivery");
+      let finalCustomerName = (customerName || "").trim();
+      let finalCustomerPhone = (customerPhone || "").trim();
+
+      if (cleanType === "delivery") {
+        if (!finalCustomerName || !finalCustomerPhone) {
+          return res.status(400).json({ error: "Customer name and phone are required for delivery orders." });
+        }
+      } else {
+        if (!finalCustomerName) {
+          finalCustomerName = cleanType === "table" ? `Table ${numTable || "Dine-in"}` : "Walk-in Guest";
+        }
+        if (!finalCustomerPhone) {
+          finalCustomerPhone = "9999999999";
+        }
       }
 
       const orderUuid = crypto.randomUUID();
       const orderNumber = generateOrderNumber();
-      const numTable = tableNumber ? parseInt(tableNumber, 10) : null;
-      const cleanZone = tableZone || (tableNumber ? "indoor" : null);
-      const cleanType = orderType || (tableNumber ? "table" : "delivery");
+      const cleanZone = tableZone || (numTable ? "indoor" : null);
       const cleanPayStatus = sanitizePaymentStatus(paymentStatus);
 
       let computedRound = 1;
@@ -212,8 +226,8 @@ export default async function handler(req, res) {
       const orderInsertPayload = {
         id: orderUuid,
         order_number: assignedOrderNumber,
-        customer_name: customerName.trim(),
-        customer_phone: customerPhone.trim(),
+        customer_name: finalCustomerName,
+        customer_phone: finalCustomerPhone,
         total_amount: subtotal,
         status: "pending",
         ticket_status: "OPEN",

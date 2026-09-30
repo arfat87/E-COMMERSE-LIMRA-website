@@ -47,7 +47,8 @@ const apiHandlers = {
   "/api/db-status": () => import("./api/db-status.js"),
   "/api/verify-payment": () => import("./api/verify-payment.js"),
   "/api/create-order": () => import("./api/create-order.js"),
-  "/api/analytics": () => import("./api/analytics.js")
+  "/api/analytics": () => import("./api/analytics.js"),
+  "/api/auth": () => import("./api/auth.js")
 };
 
 async function parseBody(req) {
@@ -88,7 +89,7 @@ const server = http.createServer(async (req, res) => {
 
   // 1. API ROUTES DISPATCHER
   if (pathname.startsWith("/api/")) {
-    const handlerLoader = apiHandlers[pathname];
+    const handlerLoader = apiHandlers[pathname] || (pathname.startsWith("/api/auth") ? apiHandlers["/api/auth"] : null);
     if (handlerLoader) {
       try {
         const { default: handler } = await handlerLoader();

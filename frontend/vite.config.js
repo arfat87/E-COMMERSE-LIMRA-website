@@ -25,8 +25,7 @@ export default defineConfig({
         adminLogin: path.resolve(__dirname, 'admin-login.html'),
         privacy: path.resolve(__dirname, 'privacy.html'),
         table: path.resolve(__dirname, 'table/index.html'),
-        qrAdmin: path.resolve(__dirname, 'table/qr-admin.html'),
-        stockManager: path.resolve(__dirname, 'stock-manager/index.html')
+        qrAdmin: path.resolve(__dirname, 'table/qr-admin.html')
       },
       output: {
         manualChunks(id) {

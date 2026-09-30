@@ -1829,58 +1829,107 @@ async function loadDeliveryAreas() {
 
 let activeMenuOverrides = [];
 
+// Ultra-fast SessionStorage cache with 5-minute TTL
+function getFastCache(key, ttlMs = 300000) {
+  try {
+    const raw = sessionStorage.getItem(`limra_fast_${key}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.t < ttlMs) return parsed.d;
+  } catch (e) {}
+  return null;
+}
+
+function setFastCache(key, data) {
+  try {
+    sessionStorage.setItem(`limra_fast_${key}`, JSON.stringify({ t: Date.now(), d: data }));
+  } catch (e) {}
+}
+
 async function loadCombos() {
+  const cached = getFastCache('combos');
+  if (cached && Array.isArray(cached)) activeCombos = cached;
   try {
     const combos = await getCombos();
-    activeCombos = combos || [];
+    if (combos && Array.isArray(combos)) {
+      activeCombos = combos;
+      setFastCache('combos', combos);
+    }
   } catch (err) {
     console.warn('[Website] Failed to load combos from database:', err);
   }
 }
 
 async function loadCustomDishes() {
+  const cached = getFastCache('custom_dishes');
+  if (cached && Array.isArray(cached)) activeCustomDishes = cached;
   try {
     const dishes = await getCustomDishes();
-    activeCustomDishes = dishes || [];
+    if (dishes && Array.isArray(dishes)) {
+      activeCustomDishes = dishes;
+      setFastCache('custom_dishes', dishes);
+    }
   } catch (err) {
     console.warn('[Website] Failed to load custom dishes from database:', err);
   }
 }
 
+function applyOverridesToList(overrides) {
+  if (!overrides || !Array.isArray(overrides)) return;
+  menuItems.forEach(item => {
+    const override = overrides.find(o => o.id === item.id);
+    if (override) {
+      if (override.price !== null && override.price !== undefined) item.price = parseFloat(override.price);
+      if (override.mrp !== null && override.mrp !== undefined) item.mrp = parseFloat(override.mrp);
+      if (override.available !== undefined) item.available = override.available;
+      if (override.featured !== undefined) item.featured = override.featured;
+      if (override.description !== undefined) item.description = override.description;
+    }
+  });
+}
+
 async function loadMenuOverridesAndApply() {
+  const cached = getFastCache('overrides');
+  if (cached && Array.isArray(cached)) {
+    activeMenuOverrides = cached;
+    applyOverridesToList(cached);
+  }
   try {
     activeMenuOverrides = await getMenuOverrides();
-    // Apply overrides to static menuItems
-    menuItems.forEach(item => {
-      const override = activeMenuOverrides.find(o => o.id === item.id);
-      if (override) {
-        if (override.price !== null && override.price !== undefined) item.price = parseFloat(override.price);
-        if (override.mrp !== null && override.mrp !== undefined) item.mrp = parseFloat(override.mrp);
-        if (override.available !== undefined) item.available = override.available;
-        if (override.featured !== undefined) item.featured = override.featured;
-        if (override.description !== undefined) item.description = override.description;
-      } else {
-        item.available = true;
-        item.featured = false;
-        item.description = '';
-      }
-    });
+    if (activeMenuOverrides && Array.isArray(activeMenuOverrides)) {
+      setFastCache('overrides', activeMenuOverrides);
+      applyOverridesToList(activeMenuOverrides);
+    }
   } catch (err) {
     console.error('Failed to load menu overrides:', err);
   }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
   initScrollAnimations();
 
-  // Load database delivery areas, combos, custom dishes, and menu overrides before rendering grids
-  await loadDeliveryAreas();
-  await loadCombos();
-  await loadCustomDishes();
-  await loadMenuOverridesAndApply();
+  // 1. Instantly apply any cached data for 0ms initial render
+  const cachedOverrides = getFastCache('overrides');
+  if (cachedOverrides) applyOverridesToList(cachedOverrides);
+  const cachedCombos = getFastCache('combos');
+  if (cachedCombos) activeCombos = cachedCombos;
+  const cachedDishes = getFastCache('custom_dishes');
+  if (cachedDishes) activeCustomDishes = cachedDishes;
 
+  // 2. Render static menu immediately with zero delay (0ms perceived load time!)
   renderMenuGrid('menu-grid', 'all');
   renderMenuGrid('order-grid', 'all');
+
+  // 3. Hydrate live updates in the background without blocking the UI
+  Promise.allSettled([
+    loadDeliveryAreas(),
+    loadCombos(),
+    loadCustomDishes(),
+    loadMenuOverridesAndApply()
+  ]).then(() => {
+    renderMenuGrid('menu-grid', currentMenuCategory || 'all');
+    renderMenuGrid('order-grid', currentMenuCategory || 'all');
+  });
 
   // Food Search
   const foodSearchInput = document.getElementById('food-search-input');
@@ -3627,6 +3676,7 @@ let userProfile = null;
 async function initAuthPanel() {
   const userBtn = document.getElementById('user-profile-btn');
   const mobileLink = document.getElementById('mobile-profile-link');
+  const bottomAccountBtn = document.getElementById('bottom-nav-account-btn');
   const closeBtn = document.getElementById('auth-close-btn');
   const overlay = document.getElementById('auth-overlay');
   const drawer = document.getElementById('auth-drawer');
@@ -3652,169 +3702,29 @@ async function initAuthPanel() {
     e.preventDefault();
     openDrawer();
   });
+  bottomAccountBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openDrawer();
+  });
   closeBtn?.addEventListener('click', closeDrawer);
   overlay?.addEventListener('click', closeDrawer);
 
-  // Tab Switcher
-  const tabSignin = document.getElementById('tab-signin-btn');
-  const tabSignup = document.getElementById('tab-signup-btn');
-  const formSignin = document.getElementById('form-signin');
-  const formSignup = document.getElementById('form-signup');
+  // ─────────────────────────────────────────────────────────────
+  // BLINKIT-STYLE PHONE NUMBER + OTP AUTHENTICATION
+  // ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
+  // BLINKIT-STYLE PHONE NUMBER + WHATSAPP OTP AUTHENTICATION
+  // ─────────────────────────────────────────────────────────────
+  let currentAuthPhone = '';
+  let currentAuthChannel = 'whatsapp';
+  let currentVerifiedOtp = '';
+  let otpCountdownTimer = null;
 
-  const signinIdentifierInput = document.getElementById('signin-identifier');
-  const signinPasswordGroup = document.getElementById('signin-password-group');
-  const signinPasswordInput = document.getElementById('signin-password');
-  const btnGotoForgot = document.getElementById('btn-goto-forgot');
-
-  const signupIdentifierInput = document.getElementById('signup-identifier');
-  const signupPasswordGroup = document.getElementById('signup-password-group');
-  const signupPasswordInput = document.getElementById('signup-password');
-
-  function resetSignupFormStep() {
-    if (formSignup) formSignup.reset();
-    signupPasswordGroup?.classList.remove('hidden');
-    signupPasswordInput?.setAttribute('required', '');
-    signupIdentifierInput?.dispatchEvent(new Event('input'));
-  }
-
-  signinIdentifierInput?.addEventListener('input', () => {
-    const val = signinIdentifierInput.value.trim();
-    const detected = detectInputType(val);
-    if (detected && detected.type === 'phone') {
-      signinPasswordGroup?.classList.add('hidden');
-      signinPasswordInput?.removeAttribute('required');
-      btnGotoForgot?.classList.add('hidden');
-    } else {
-      signinPasswordGroup?.classList.remove('hidden');
-      signinPasswordInput?.setAttribute('required', '');
-      btnGotoForgot?.classList.remove('hidden');
-    }
-  });
-
-  signupIdentifierInput?.addEventListener('input', () => {
-    const val = signupIdentifierInput.value.trim();
-    const detected = detectInputType(val);
-    if (detected && detected.type === 'phone') {
-      signupPasswordGroup?.classList.add('hidden');
-      signupPasswordInput?.removeAttribute('required');
-    } else {
-      signupPasswordGroup?.classList.remove('hidden');
-      signupPasswordInput?.setAttribute('required', '');
-    }
-  });
-
-  tabSignin?.addEventListener('click', () => {
-    tabSignin.className = 'flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-slate-800 bg-white shadow-sm';
-    tabSignup.className = 'flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-slate-500';
-    formSignin.classList.remove('hidden');
-    formSignup.classList.add('hidden');
-    resetSignupFormStep();
-  });
-
-  tabSignup?.addEventListener('click', () => {
-    tabSignup.className = 'flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-slate-800 bg-white shadow-sm';
-    tabSignin.className = 'flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-slate-500';
-    formSignup.classList.remove('hidden');
-    formSignin.classList.add('hidden');
-    resetSignupFormStep();
-  });
-
-  // Signup method toggle (Email vs Phone)
-  let signupIdentifier = '';
-  let signupPassword = '';
-  let signupMethod = ''; // 'email' or 'phone'
-  let signupOtpCode = '';
-
-  let forgotIdentifier = '';
-  let forgotMethod = '';
-  let forgotOtpCode = '';
-
-  function showAuthView(viewName) {
-    formSignin.classList.add('hidden');
-    formSignup.classList.add('hidden');
-    document.getElementById('auth-verification-view')?.classList.add('hidden');
-    document.getElementById('auth-forgot-view')?.classList.add('hidden');
-    document.getElementById('auth-error-msg')?.classList.add('hidden');
-
-    if (viewName === 'signin') {
-      formSignin.classList.remove('hidden');
-      tabSignin.className = 'flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-slate-800 bg-white shadow-sm';
-      tabSignup.className = 'flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-slate-500';
-    } else if (viewName === 'signup') {
-      formSignup.classList.remove('hidden');
-      tabSignup.className = 'flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-slate-800 bg-white shadow-sm';
-      tabSignin.className = 'flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-slate-500';
-    } else if (viewName === 'verification') {
-      document.getElementById('auth-verification-view')?.classList.remove('hidden');
-    } else if (viewName === 'forgot') {
-      document.getElementById('auth-forgot-view')?.classList.remove('hidden');
-    }
-  }
-
-  // Override top tabs click handlers
-  tabSignin?.addEventListener('click', () => {
-    showAuthView('signin');
-  });
-
-  tabSignup?.addEventListener('click', () => {
-    showAuthView('signup');
-  });
-
-  // Password Show/Hide toggles
-  const btnSigninTogglePassword = document.getElementById('btn-signin-toggle-password');
-  btnSigninTogglePassword?.addEventListener('click', () => {
-    const isPass = signinPasswordInput.type === 'password';
-    signinPasswordInput.type = isPass ? 'text' : 'password';
-    btnSigninTogglePassword.textContent = isPass ? 'Hide' : 'Show';
-  });
-
-  const btnSignupTogglePassword = document.getElementById('btn-signup-toggle-password');
-  btnSignupTogglePassword?.addEventListener('click', () => {
-    const isPass = signupPasswordInput.type === 'password';
-    signupPasswordInput.type = isPass ? 'text' : 'password';
-    btnSignupTogglePassword.textContent = isPass ? 'Hide' : 'Show';
-  });
-
-  const forgotNewPasswordInput = document.getElementById('forgot-new-password');
-  const btnForgotTogglePassword = document.getElementById('btn-forgot-toggle-password');
-  btnForgotTogglePassword?.addEventListener('click', () => {
-    const isPass = forgotNewPasswordInput.type === 'password';
-    forgotNewPasswordInput.type = isPass ? 'text' : 'password';
-    btnForgotTogglePassword.textContent = isPass ? 'Hide' : 'Show';
-  });
-
-  // Navigation handlers between auth sub-views
-  document.getElementById('btn-goto-forgot')?.addEventListener('click', () => {
-    showAuthView('forgot');
-    document.getElementById('form-forgot-step1').classList.remove('hidden');
-    document.getElementById('form-forgot-step2').classList.add('hidden');
-  });
-
-  document.getElementById('btn-back-to-login')?.addEventListener('click', () => {
-    showAuthView('signin');
-  });
-
-  document.getElementById('btn-back-to-signup')?.addEventListener('click', () => {
-    showAuthView('signup');
-  });
-
-  // Input Type Detection helper
-  function detectInputType(val) {
-    const trimmed = val.trim();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (emailRegex.test(trimmed)) {
-      return { type: 'email', value: trimmed };
-    }
-    const digits = trimmed.replace(/\D/g, '');
-    if (digits.length >= 10 && digits.length <= 15) {
-      const cleanPhone = digits.slice(-10);
-      return { type: 'phone', value: cleanPhone };
-    }
-    return null;
-  }
-
-  // Display Errors helper
+  const viewPhone = document.getElementById('auth-view-phone');
+  const viewOtp = document.getElementById('auth-view-otp');
+  const viewName = document.getElementById('auth-view-name');
   const errorMsg = document.getElementById('auth-error-msg');
+
   const displayError = (msg) => {
     if (errorMsg) {
       errorMsg.textContent = msg;
@@ -3825,427 +3735,318 @@ async function initAuthPanel() {
     }
   };
 
-  // 1. Sign Up Handler
-  document.getElementById('form-signup')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const rawVal = document.getElementById('signup-identifier').value.trim();
+  function switchAuthStep(step) {
+    if (errorMsg) errorMsg.classList.add('hidden');
+    viewPhone?.classList.add('hidden');
+    viewOtp?.classList.add('hidden');
+    viewName?.classList.add('hidden');
 
-    const detected = detectInputType(rawVal);
-    if (!detected) {
-      alert('Please enter a valid email address or 10-digit mobile number.');
+    if (step === 'phone') {
+      viewPhone?.classList.remove('hidden');
+      setTimeout(() => document.getElementById('auth-phone-input')?.focus(), 100);
+    } else if (step === 'otp') {
+      viewOtp?.classList.remove('hidden');
+      setTimeout(() => document.getElementById('auth-otp-input')?.focus(), 100);
+    } else if (step === 'name') {
+      viewName?.classList.remove('hidden');
+      setTimeout(() => document.getElementById('auth-new-name-input')?.focus(), 100);
+    }
+  }
+
+  function startOtpCountdown(seconds = 25) {
+    if (otpCountdownTimer) clearInterval(otpCountdownTimer);
+    const container = document.getElementById('otp-timer-container');
+    const counter = document.getElementById('otp-timer-count');
+    const resendBtn = document.getElementById('btn-resend-phone-otp');
+
+    container?.classList.remove('hidden');
+    resendBtn?.classList.add('hidden');
+    let remaining = seconds;
+    if (counter) counter.textContent = remaining;
+
+    otpCountdownTimer = setInterval(() => {
+      remaining--;
+      if (counter) counter.textContent = remaining;
+      if (remaining <= 0) {
+        clearInterval(otpCountdownTimer);
+        otpCountdownTimer = null;
+        container?.classList.add('hidden');
+        resendBtn?.classList.remove('hidden');
+      }
+    }, 1000);
+  }
+
+  // Helper to send OTP (via WhatsApp or SMS)
+  async function triggerSendOtp(channel = 'whatsapp') {
+    const phoneInput = document.getElementById('auth-phone-input');
+    const rawVal = phoneInput?.value.trim() || '';
+    const cleanDigits = rawVal.replace(/\D/g, '').slice(-10);
+
+    if (cleanDigits.length !== 10 || !/^[6-9]\d{9}$/.test(cleanDigits)) {
+      displayError('Please enter a valid 10-digit Indian mobile number (e.g. 9876543210).');
       return;
     }
 
-    signupMethod = detected.type;
-    signupIdentifier = detected.value;
+    currentAuthPhone = cleanDigits;
+    currentAuthChannel = channel;
 
-    if (signupMethod === 'phone') {
-      signupPassword = signupIdentifier;
-    } else {
-      signupPassword = document.getElementById('signup-password').value;
-      if (signupPassword.length < 8) {
-        alert('Password must be at least 8 characters long.');
-        return;
-      }
-    }
-
-    const submitBtn = document.getElementById('btn-signup-action');
+    const submitBtn = document.getElementById('btn-send-phone-otp');
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Processing...';
+    submitBtn.textContent = channel === 'whatsapp' ? 'Sending WhatsApp OTP...' : 'Sending SMS OTP...';
 
-    if (signupMethod === 'email') {
-      try {
-        const { data, error } = await insforge.auth.signUp({
-          email: signupIdentifier,
-          password: signupPassword,
-          name: 'Customer'
-        });
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send-otp',
+          phone: currentAuthPhone,
+          channel: currentAuthChannel
+        })
+      });
+      const data = await res.json();
 
-        if (error) {
-          if (error.message && error.message.toLowerCase().includes('already exists')) {
-            throw new Error('An account with this email or phone number already exists.');
-          }
-          throw error;
-        }
-
-        document.getElementById('verification-msg').textContent = 'We have sent a verification code to your email address.';
-        showAuthView('verification');
-        document.getElementById('verification-otp').focus();
-      } catch (err) {
-        displayError(err.message || 'Signup failed.');
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Register Account ➔';
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to send OTP.');
       }
-    } else {
-      try {
-        const { data: code, error } = await insforge.database.rpc('send_phone_signup_code', {
-          p_phone: signupIdentifier
-        });
 
-        if (error) {
-          if (error.message && error.message.toLowerCase().includes('already exists')) {
-            throw new Error('An account with this email or phone number already exists.');
-          }
-          throw error;
-        }
-
-        signupOtpCode = code;
-        console.log(`[LIMRA-SMS-Mock] Verification code for ${signupIdentifier}: ${signupOtpCode}`);
-
-        alert(`💬 SMS Message • +91 ${signupIdentifier}\n\n[LIMRA Restaurant] Your verification OTP code is ${signupOtpCode}. This code expires in 5 minutes.`);
-
-        document.getElementById('verification-msg').textContent = 'We have sent a verification code to your mobile number.';
-        showAuthView('verification');
-        document.getElementById('verification-otp').focus();
-      } catch (err) {
-        displayError(err.message || 'Signup failed.');
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Register Account ➔';
+      // Display Target Phone
+      const displayEl = document.getElementById('auth-display-target-phone');
+      if (displayEl) {
+        displayEl.textContent = `${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
       }
+
+      // Update Channel Badge
+      const channelBadge = document.getElementById('auth-channel-badge');
+      if (channelBadge) {
+        if (channel === 'whatsapp') {
+          channelBadge.innerHTML = '<span>💬</span> WhatsApp';
+          channelBadge.className = 'text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1';
+        } else {
+          channelBadge.innerHTML = '<span>📱</span> SMS';
+          channelBadge.className = 'text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 flex items-center gap-1';
+        }
+      }
+
+      // Demo/Instant OTP Toast
+      const demoToast = document.getElementById('auth-demo-sms-toast');
+      const demoOtpEl = document.getElementById('auth-demo-otp-number');
+      const otpInput = document.getElementById('auth-otp-input');
+      const openWaChat = document.getElementById('btn-open-wa-chat');
+
+      if (otpInput) otpInput.value = '';
+
+      if (data.waLink && openWaChat) {
+        openWaChat.href = data.waLink;
+        openWaChat.classList.remove('hidden');
+      } else if (openWaChat) {
+        openWaChat.classList.add('hidden');
+      }
+
+      if (data.otp) {
+        if (demoOtpEl) demoOtpEl.textContent = data.otp;
+        demoToast?.classList.remove('hidden');
+
+        const autofillBtn = document.getElementById('btn-demo-autofill');
+        if (autofillBtn) {
+          autofillBtn.onclick = () => {
+            if (otpInput) {
+              otpInput.value = data.otp;
+              otpInput.dispatchEvent(new Event('input'));
+              document.getElementById('form-verify-otp')?.dispatchEvent(new Event('submit'));
+            }
+          };
+        }
+      } else {
+        demoToast?.classList.add('hidden');
+      }
+
+      switchAuthStep('otp');
+      startOtpCountdown(25);
+    } catch (err) {
+      displayError(err.message || 'Unable to send OTP. Please check your connection.');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<span>💬</span> Get OTP on WhatsApp ➔';
+    }
+  }
+
+  // 1. Submit Phone Number -> WhatsApp OTP
+  document.getElementById('form-phone-step')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    triggerSendOtp('whatsapp');
+  });
+
+  // Secondary SMS Fallback button
+  document.getElementById('btn-send-sms-fallback')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    triggerSendOtp('sms');
+  });
+
+  // Back to Phone Step
+  document.getElementById('btn-back-to-phone')?.addEventListener('click', () => {
+    switchAuthStep('phone');
+  });
+
+  // Resend OTP button
+  document.getElementById('btn-resend-phone-otp')?.addEventListener('click', async () => {
+    if (!currentAuthPhone) return;
+    const resendBtn = document.getElementById('btn-resend-phone-otp');
+    resendBtn.disabled = true;
+    resendBtn.textContent = 'Resending...';
+
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'resend-otp',
+          phone: currentAuthPhone,
+          channel: currentAuthChannel
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to resend code');
+
+      // Update demo toast
+      const demoToast = document.getElementById('auth-demo-sms-toast');
+      const demoOtpEl = document.getElementById('auth-demo-otp-number');
+      const openWaChat = document.getElementById('btn-open-wa-chat');
+
+      if (data.waLink && openWaChat) {
+        openWaChat.href = data.waLink;
+      }
+
+      if (data.otp) {
+        if (demoOtpEl) demoOtpEl.textContent = data.otp;
+        demoToast?.classList.remove('hidden');
+      }
+
+      startOtpCountdown(25);
+    } catch (err) {
+      displayError(err.message || 'Failed to resend OTP.');
+      resendBtn.disabled = false;
+      resendBtn.textContent = "Didn't receive code? Resend via WhatsApp";
     }
   });
 
-  // 2. OTP Verification Handler
-  document.getElementById('form-verify')?.addEventListener('submit', async (e) => {
+
+  // Auto-submit OTP when 6 digits are typed
+  const otpInputEl = document.getElementById('auth-otp-input');
+  otpInputEl?.addEventListener('input', () => {
+    const val = otpInputEl.value.replace(/\D/g, '');
+    otpInputEl.value = val;
+    if (val.length === 6) {
+      document.getElementById('form-verify-otp')?.dispatchEvent(new Event('submit'));
+    }
+  });
+
+  // 2. Submit OTP -> Verify
+  document.getElementById('form-verify-otp')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const enteredOtp = document.getElementById('verification-otp').value.trim();
-    if (enteredOtp.length !== 6) {
-      alert('Please enter a 6-digit verification code.');
+    const otpInput = document.getElementById('auth-otp-input');
+    const otpVal = otpInput?.value.trim() || '';
+
+    if (otpVal.length !== 6) {
+      displayError('Please enter the full 6-digit OTP code.');
       return;
     }
 
-    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const submitBtn = document.getElementById('btn-verify-otp-action');
     submitBtn.disabled = true;
     submitBtn.textContent = 'Verifying...';
 
-    if (signupMethod === 'email') {
-      try {
-        const { data, error } = await insforge.auth.verifyEmail({
-          email: signupIdentifier,
-          otp: enteredOtp
-        });
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify-otp',
+          phone: currentAuthPhone,
+          otp: otpVal
+        })
+      });
+      const data = await res.json();
 
-        if (error) {
-          if (error.message && error.message.toLowerCase().includes('expired')) {
-            throw new Error('Verification code expired. Please request a new code.');
-          } else {
-            throw new Error('Incorrect verification code.');
-          }
-        }
-
-        const { data: existingProfile } = await insforge.database
-          .from('customer_profiles')
-          .select('id')
-          .eq('id', data.user.id);
-
-        if (!existingProfile || existingProfile.length === 0) {
-          const profileData = {
-            id: data.user.id,
-            name: 'Customer',
-            phone: '',
-            email: signupIdentifier,
-            email_verified: true,
-            address: ''
-          };
-          await insforge.database.from('customer_profiles').insert([profileData]);
-        }
-
-        alert('Registration Successful\n\nYou are now registered and signed in.');
-        await checkAuthStatus();
-        closeDrawer();
-      } catch (err) {
-        alert(err.message || 'Verification failed.');
-      } finally {
-        submitBtn.disabled = false;
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Invalid verification code.');
       }
-    } else {
-      if (enteredOtp !== signupOtpCode) {
-        alert('Incorrect verification code.');
-        submitBtn.disabled = false;
+
+      if (data.requiresName) {
+        currentVerifiedOtp = otpVal;
+        switchAuthStep('name');
         return;
       }
 
-      const mockEmail = `${signupIdentifier}@limraresturent.in`;
-      const mockPassword = signupPassword;
-
-      try {
-        const regRes = await insforge.auth.signUp({
-          email: mockEmail,
-          password: mockPassword,
-          name: 'Customer'
+      // Existing User login
+      if (data.credentials) {
+        const { error: signInErr } = await insforge.auth.signInWithPassword({
+          email: data.credentials.email,
+          password: data.credentials.token
         });
-        if (regRes.error) throw regRes.error;
-
-        const loginRes = await insforge.auth.signInWithPassword({
-          email: mockEmail,
-          password: mockPassword
-        });
-        if (loginRes.error) throw loginRes.error;
-
-        const { data: existingProfile } = await insforge.database
-          .from('customer_profiles')
-          .select('id')
-          .eq('id', loginRes.data.user.id);
-
-        if (!existingProfile || existingProfile.length === 0) {
-          const profileData = {
-            id: loginRes.data.user.id,
-            name: 'Customer',
-            phone: signupIdentifier,
-            email: null,
-            phone_verified: true,
-            address: ''
-          };
-          await insforge.database.from('customer_profiles').insert([profileData]);
-        }
-
-        // Clean up temporary phone verification row
-        try {
-          await insforge.database.query("DELETE FROM public.phone_verifications WHERE phone = $1", [signupIdentifier]);
-        } catch (e) {}
-
-        alert('Registration Successful\n\nYou are now registered and signed in.');
-        await checkAuthStatus();
-        closeDrawer();
-      } catch (err) {
-        alert('Registration failed: ' + (err.message || err));
-      } finally {
-        submitBtn.disabled = false;
+        if (signInErr) throw signInErr;
       }
-    }
-  });
 
-  // 3. Resend OTP Handler
-  document.getElementById('btn-resend-otp')?.addEventListener('click', async () => {
-    const resendBtn = document.getElementById('btn-resend-otp');
-    resendBtn.disabled = true;
-    resendBtn.textContent = 'Sending...';
-
-    if (signupMethod === 'email') {
-      try {
-        await insforge.auth.resendVerificationEmail({
-          email: signupIdentifier,
-          redirectTo: window.location.origin
-        });
-        alert('A new verification code has been sent to your email address.');
-      } catch (err) {
-        alert(err.message || 'Resend failed.');
-      } finally {
-        resendBtn.disabled = false;
-        resendBtn.textContent = 'Resend Code';
-      }
-    } else {
-      try {
-        const { data: code, error } = await insforge.database.rpc('send_phone_signup_code', {
-          p_phone: signupIdentifier
-        });
-        if (error) throw error;
-
-        signupOtpCode = code;
-        alert(`💬 SMS Message • +91 ${signupIdentifier}\n\n[LIMRA Restaurant] Your verification OTP code is ${signupOtpCode}. This code expires in 5 minutes.`);
-      } catch (err) {
-        alert(err.message || 'Resend failed.');
-      } finally {
-        resendBtn.disabled = false;
-        resendBtn.textContent = 'Resend Code';
-      }
-    }
-  });
-
-  // 4. Forgot Password - Send Code Handler
-  document.getElementById('form-forgot-step1')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const rawVal = document.getElementById('forgot-identifier').value.trim();
-
-    const detected = detectInputType(rawVal);
-    if (!detected) {
-      alert('Please enter a valid email address or 10-digit mobile number.');
-      return;
-    }
-
-    forgotMethod = detected.type;
-    forgotIdentifier = detected.value;
-
-    const submitBtn = e.target.querySelector('button[type="submit"]');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Sending...';
-
-    if (forgotMethod === 'email') {
-      try {
-        const { error } = await insforge.auth.sendResetPasswordEmail({
-          email: forgotIdentifier,
-          redirectTo: window.location.origin
-        });
-        if (error) throw error;
-
-        document.getElementById('forgot-step2-msg').textContent = 'We have sent a verification code to your email address.';
-        document.getElementById('form-forgot-step1').classList.add('hidden');
-        document.getElementById('form-forgot-step2').classList.remove('hidden');
-        document.getElementById('forgot-otp').focus();
-      } catch (err) {
-        alert(err.message || 'Failed to send reset code.');
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Send Reset Code';
-      }
-    } else {
-      try {
-        const { data: code, error } = await insforge.database.rpc('send_phone_reset_code', {
-          p_phone: forgotIdentifier
-        });
-        if (error) {
-          if (error.message && error.message.toLowerCase().includes('does not exist')) {
-            throw new Error('Account with this phone number does not exist.');
-          }
-          throw error;
-        }
-
-        forgotOtpCode = code;
-        alert(`💬 SMS Message • +91 ${forgotIdentifier}\n\n[LIMRA Restaurant] Your password reset verification OTP is ${forgotOtpCode}. Expires in 5 minutes.`);
-
-        document.getElementById('forgot-step2-msg').textContent = 'We have sent a verification code to your mobile number.';
-        document.getElementById('form-forgot-step1').classList.add('hidden');
-        document.getElementById('form-forgot-step2').classList.remove('hidden');
-        document.getElementById('forgot-otp').focus();
-      } catch (err) {
-        alert(err.message || 'Failed to send reset code.');
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Send Reset Code';
-      }
-    }
-  });
-
-  // 5. Forgot Password - Verify and Update Handler
-  document.getElementById('form-forgot-step2')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const enteredOtp = document.getElementById('forgot-otp').value.trim();
-    const newPassword = document.getElementById('forgot-new-password').value;
-
-    if (enteredOtp.length !== 6) {
-      alert('Please enter a 6-digit verification code.');
-      return;
-    }
-    if (newPassword.length < 8) {
-      alert('Password must be at least 8 characters long.');
-      return;
-    }
-
-    const submitBtn = e.target.querySelector('button[type="submit"]');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Resetting...';
-
-    if (forgotMethod === 'email') {
-      try {
-        const exRes = await insforge.auth.exchangeResetPasswordToken({
-          email: forgotIdentifier,
-          code: enteredOtp
-        });
-        if (exRes.error) {
-          if (exRes.error.message && exRes.error.message.toLowerCase().includes('expired')) {
-            throw new Error('Verification code expired. Please request a new code.');
-          } else {
-            throw new Error('Incorrect verification code.');
-          }
-        }
-
-        const token = exRes.data.token;
-
-        const resetRes = await insforge.auth.resetPassword({
-          newPassword: newPassword,
-          otp: token
-        });
-        if (resetRes.error) throw resetRes.error;
-
-        alert('Password updated successfully.');
-        await checkAuthStatus();
-        closeDrawer();
-      } catch (err) {
-        alert(err.message || 'Password reset failed.');
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Reset Password & Sign In';
-      }
-    } else {
-      try {
-        const { data: success, error } = await insforge.database.rpc('verify_phone_reset_password', {
-          p_phone: forgotIdentifier,
-          p_code: enteredOtp,
-          p_new_password: newPassword
-        });
-
-        if (error) {
-          if (error.message && error.message.toLowerCase().includes('expired')) {
-            throw new Error('Verification code expired. Please request a new code.');
-          } else {
-            throw new Error('Incorrect verification code.');
-          }
-        }
-
-        alert('Password updated successfully.');
-
-        const mockEmail = `${forgotIdentifier}@limraresturent.in`;
-        await insforge.auth.signInWithPassword({
-          email: mockEmail,
-          password: newPassword
-        });
-
-        await checkAuthStatus();
-        closeDrawer();
-      } catch (err) {
-        alert(err.message || 'Password reset failed.');
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Reset Password & Sign In';
-      }
-    }
-  });
-
-  // 6. Sign In Handler
-  document.getElementById('form-signin')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const rawVal = document.getElementById('signin-identifier').value.trim();
-
-    const detected = detectInputType(rawVal);
-    if (!detected) {
-      alert('Please enter a valid email address or 10-digit mobile number.');
-      return;
-    }
-
-    const password = detected.type === 'phone' ? detected.value : document.getElementById('signin-password').value;
-    if (!password) {
-      alert('Password is required.');
-      return;
-    }
-
-    const submitBtn = e.target.querySelector('button[type="submit"]');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Signing in...';
-
-    let email = detected.value;
-    if (detected.type === 'phone') {
-      email = `${detected.value}@limraresturent.in`;
-    }
-
-    try {
-      const { data, error } = await insforge.auth.signInWithPassword({ email, password });
-      if (error) {
-        if (error.message && (error.message.toLowerCase().includes('invalid') || error.message.toLowerCase().includes('incorrect'))) {
-          throw new Error('Incorrect password.');
-        }
-        throw error;
-      }
-      
       await checkAuthStatus();
-      alert('Welcome to LIMRA Restaurant! You are now signed in.');
       closeDrawer();
     } catch (err) {
-      displayError(err.message || 'Login failed. Please verify email/password.');
+      displayError(err.message || 'Verification failed.');
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Sign In ➔';
+      submitBtn.textContent = 'Verify & Proceed ➔';
+    }
+  });
+
+  // 3. Complete Name Registration (For New Users)
+  document.getElementById('form-complete-name')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nameInput = document.getElementById('auth-new-name-input');
+    const emailInput = document.getElementById('auth-new-email-input');
+    const nameVal = nameInput?.value.trim();
+    const emailVal = emailInput?.value.trim() || null;
+
+    if (!nameVal) {
+      displayError('Please enter your name.');
+      return;
+    }
+
+    const submitBtn = document.getElementById('btn-complete-name-action');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating Account...';
+
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'complete-registration',
+          phone: currentAuthPhone,
+          otp: currentVerifiedOtp,
+          name: nameVal,
+          email: emailVal
+        })
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to complete registration.');
+      }
+
+      if (data.credentials) {
+        const { error: signInErr } = await insforge.auth.signInWithPassword({
+          email: data.credentials.email,
+          password: data.credentials.token
+        });
+        if (signInErr) throw signInErr;
+      }
+
+      await checkAuthStatus();
+      closeDrawer();
+    } catch (err) {
+      displayError(err.message || 'Registration failed.');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Start Ordering ➔';
     }
   });
 

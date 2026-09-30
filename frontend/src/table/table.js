@@ -134,22 +134,44 @@ let selectedCategory = 'featured';
 let activeCombos = [];
 let activeCustomDishes = [];
 
+function applyTableOverrides(overrides) {
+  if (!overrides || !Array.isArray(overrides)) return;
+  menuItems.forEach(item => {
+    const override = overrides.find(o => o.id === item.id);
+    if (override) {
+      if (override.price !== null && override.price !== undefined) item.price = parseFloat(override.price);
+      if (override.mrp !== null && override.mrp !== undefined) item.mrp = parseFloat(override.mrp);
+      if (override.available !== undefined) item.available = override.available;
+      if (override.featured !== undefined) item.featured = override.featured;
+    }
+  });
+}
+
+function getTableFastCache(key, ttlMs = 300000) {
+  try {
+    const raw = sessionStorage.getItem(`limra_tbl_${key}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.t < ttlMs) return parsed.d;
+  } catch (e) {}
+  return null;
+}
+
+function setTableFastCache(key, data) {
+  try {
+    sessionStorage.setItem(`limra_tbl_${key}`, JSON.stringify({ t: Date.now(), d: data }));
+  } catch (e) {}
+}
+
 async function loadMenuOverridesAndApply() {
+  const cached = getTableFastCache('overrides');
+  if (cached) applyTableOverrides(cached);
   try {
     const overrides = await getMenuOverrides();
-    // Apply overrides to static menuItems
-    menuItems.forEach(item => {
-      const override = overrides.find(o => o.id === item.id);
-      if (override) {
-        if (override.price !== null && override.price !== undefined) item.price = parseFloat(override.price);
-        if (override.mrp !== null && override.mrp !== undefined) item.mrp = parseFloat(override.mrp);
-        if (override.available !== undefined) item.available = override.available;
-        if (override.featured !== undefined) item.featured = override.featured;
-      } else {
-        item.available = true;
-        item.featured = false;
-      }
-    });
+    if (overrides && Array.isArray(overrides)) {
+      setTableFastCache('overrides', overrides);
+      applyTableOverrides(overrides);
+    }
   } catch (err) {
     console.error('Failed to load menu overrides:', err);
   }
@@ -164,34 +186,46 @@ async function initCustomerView() {
   $('#checkout-table-display').textContent = currentTable;
   if ($('checkout-zone-display')) $('checkout-zone-display').textContent = zoneLabel;
   
-  // Load dynamic menu overrides first
-  await loadMenuOverridesAndApply();
+  // 1. Instantly apply cached overrides and combos for 0ms initial render
+  const cachedOverrides = getTableFastCache('overrides');
+  if (cachedOverrides) applyTableOverrides(cachedOverrides);
+  const cachedCombos = getTableFastCache('combos');
+  if (cachedCombos) activeCombos = cachedCombos;
+  const cachedDishes = getTableFastCache('custom_dishes');
+  if (cachedDishes) activeCustomDishes = cachedDishes;
 
-  // Load combos & custom dishes from database
-  try {
-    const [combos, dishes] = await Promise.all([
-      getCombos().catch(() => []),
-      getCustomDishes().catch(() => [])
-    ]);
-    activeCombos = combos || [];
-    activeCustomDishes = dishes || [];
-  } catch (err) {
-    console.error('Failed to load combos on customer view:', err);
+  // 2. Render Categories chips & Menu immediately without waiting on network
+  renderCategoryChips();
+  renderMenu();
+  setupCartUI();
+
+  // Setup Search once
+  const searchInp = $('#food-search-input');
+  if (searchInp && !searchInp._hasInit) {
+    searchInp._hasInit = true;
+    searchInp.addEventListener('input', () => {
+      renderMenu();
+    });
   }
 
-  // Render Categories chips
-  renderCategoryChips();
-  
-  // Render Menu
-  renderMenu();
-  
-  // Setup Search
-  $('#food-search-input').addEventListener('input', () => {
+  // 3. Hydrate live overrides, combos and custom dishes in background
+  Promise.allSettled([
+    loadMenuOverridesAndApply(),
+    getCombos().then(combos => {
+      if (combos && Array.isArray(combos)) {
+        activeCombos = combos;
+        setTableFastCache('combos', combos);
+      }
+    }),
+    getCustomDishes().then(dishes => {
+      if (dishes && Array.isArray(dishes)) {
+        activeCustomDishes = dishes;
+        setTableFastCache('custom_dishes', dishes);
+      }
+    })
+  ]).then(() => {
     renderMenu();
   });
-
-  // Setup Checkout modals & drawers
-  setupCartUI();
 }
 
 function renderCategoryChips() {
@@ -304,7 +338,7 @@ function renderMenu() {
       <div class="glass-card food-card p-2.5 sm:p-3.5 flex flex-col justify-between rounded-2xl border border-amber-500/25 cursor-pointer hover:border-amber-500/50 transition-all active:scale-[0.99] relative overflow-hidden" data-item-id="combo-${combo.id}">
         <div>
           <div class="w-full aspect-[4/3] rounded-xl overflow-hidden shrink-0 border border-amber-500/20 bg-neutral-800 animate-pulse flex items-center justify-center relative mb-2">
-            <img src="${comboImg}" alt="${combo.name}" class="w-full h-full object-cover error-fallback" onload="this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');">
+            <img src="${comboImg}" alt="${combo.name}" class="w-full h-full object-cover error-fallback" loading="lazy" decoding="async" onload="this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');">
             <span class="text-3xl absolute inset-0 flex items-center justify-center" style="display:none;">🍱</span>
             <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-amber-500 text-[9px] font-black text-slate-950 uppercase tracking-wider shadow-sm">🍱 Combo</span>
           </div>
@@ -348,7 +382,7 @@ function renderMenu() {
       <div class="glass-card food-card p-2.5 sm:p-3.5 flex flex-col justify-between rounded-2xl border border-white/10 ${isAvailable ? 'hover:border-amber-500/40 cursor-pointer' : 'opacity-55 grayscale-[20%] cursor-not-allowed'} transition-all active:scale-[0.99] relative overflow-hidden" data-item-id="${item.id}">
         <div>
           <div class="w-full aspect-[4/3] rounded-xl overflow-hidden shrink-0 border border-white/5 bg-neutral-800 animate-pulse flex items-center justify-center relative mb-2">
-            <img src="${itemImage}" alt="${item.name}" class="w-full h-full object-cover error-fallback" onload="this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');">
+            <img src="${itemImage}" alt="${item.name}" class="w-full h-full object-cover error-fallback" loading="lazy" decoding="async" onload="this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');">
             <span class="text-3xl absolute inset-0 flex items-center justify-center" style="display:none;">${emojiStr}</span>
             <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-slate-950/80 backdrop-blur-md text-[9px] sm:text-[10px] font-bold text-slate-300 capitalize border border-white/10 truncate max-w-[85%]">${catLabel}</span>
           </div>
