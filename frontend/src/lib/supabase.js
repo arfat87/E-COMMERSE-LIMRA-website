@@ -89,14 +89,59 @@ if (supabase.auth) {
 if (!supabase.realtime) {
   supabase.realtime = {};
 }
+
+const activeChannels = new Map();
+const realtimeEventHandlers = new Map();
+
+supabase.realtime.on = function (event, handler) {
+  if (!realtimeEventHandlers.has(event)) {
+    realtimeEventHandlers.set(event, []);
+  }
+  realtimeEventHandlers.get(event).push(handler);
+};
+
+supabase.realtime.connect = async function () {
+  const handlers = realtimeEventHandlers.get('connect') || [];
+  handlers.forEach(fn => fn());
+  return { success: true };
+};
+
+supabase.realtime.subscribe = async function (channelName) {
+  try {
+    let ch = activeChannels.get(channelName);
+    if (!ch) {
+      ch = supabase.channel(channelName);
+      ch.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          const handlers = realtimeEventHandlers.get('connect') || [];
+          handlers.forEach(fn => fn());
+        }
+      });
+      activeChannels.set(channelName, ch);
+    }
+    return { data: { channel: channelName }, error: null };
+  } catch (err) {
+    return { data: null, error: err };
+  }
+};
+
+supabase.realtime.unsubscribe = async function (channelName) {
+  try {
+    const ch = activeChannels.get(channelName);
+    if (ch) {
+      await supabase.removeChannel(ch);
+      activeChannels.delete(channelName);
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err };
+  }
+};
+
 supabase.realtime.publish = async function (channelName, event, payload) {
   try {
-    const ch = supabase.channel(channelName);
-    ch.subscribe((status) => {
-      if (status === "SUBSCRIBED") {
-        ch.send({ type: "broadcast", event, payload });
-      }
-    });
+    const ch = activeChannels.get(channelName) || supabase.channel(channelName);
+    ch.send({ type: "broadcast", event, payload });
   } catch (e) {
     console.warn("[Realtime Publish Notice]:", e.message);
   }

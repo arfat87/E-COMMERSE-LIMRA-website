@@ -349,24 +349,43 @@ export default async function handler(req, res) {
         });
       }
 
-      // Upsert profile in customer_profiles
-      const profileData = {
-        id: authUser.id,
-        name: customerName,
-        phone: cleanPhone,
-        email: email && !email.endsWith("@limraresturent.in") ? email.trim() : (existingProfile?.email || null),
-        phone_verified: true,
-        addresses: existingProfile?.addresses || []
-      };
+      // Update or insert profile in customer_profiles
+      let savedProfile = null;
+      if (existingProfile) {
+        const updateData = {
+          name: customerName,
+          phone_verified: true,
+          updated_at: new Date().toISOString()
+        };
+        if (email && !email.endsWith("@limraresturent.in")) {
+          updateData.email = email.trim();
+        }
+        const { data: updated, error: updateErr } = await supabase
+          .from("customer_profiles")
+          .update(updateData)
+          .eq("id", existingProfile.id)
+          .select()
+          .maybeSingle();
 
-      const { data: savedProfile, error: profErr } = await supabase
-        .from("customer_profiles")
-        .upsert(profileData)
-        .select()
-        .single();
+        if (updateErr) console.error("[Customer Profile Update Error]:", updateErr);
+        savedProfile = updated || { ...existingProfile, ...updateData };
+      } else {
+        const insertData = {
+          id: authUser.id,
+          name: customerName,
+          phone: cleanPhone,
+          email: email && !email.endsWith("@limraresturent.in") ? email.trim() : null,
+          phone_verified: true,
+          addresses: []
+        };
+        const { data: inserted, error: insertErr } = await supabase
+          .from("customer_profiles")
+          .insert(insertData)
+          .select()
+          .maybeSingle();
 
-      if (profErr) {
-        console.error("[Customer Profile Upsert Error]:", profErr);
+        if (insertErr) console.error("[Customer Profile Insert Error]:", insertErr);
+        savedProfile = inserted || insertData;
       }
 
       // Clean up phone_verifications table for this phone
