@@ -1485,17 +1485,16 @@ function processNotificationsAndAlerts(incomingNotifs, currentAllOrders, newlyAr
             showDashboardToast(title, msg, 'success', targetOrderId);
           }
           
-          // Automatically print delivery orders
+          // Trigger incoming order modal for online website orders instead of auto printing final bill
           try {
             if (order) {
               const meta = parseNotesMetadata(order.notes, order);
-              if (meta.type === 'delivery') {
-                console.log(`[QZ] Auto-printing delivery order #${order.order_number}`);
-                printOrderReceipt(order);
+              if (meta.type === 'delivery' || meta.type === 'pickup' || order.status === 'pending') {
+                triggerIncomingOrderPrompt(order);
               }
             }
-          } catch (printErr) {
-            console.error('[QZ] Auto-print failed:', printErr);
+          } catch (promptErr) {
+            console.error('[Incoming Order] Prompt failed:', promptErr);
           }
         } else if (n.type === 'booking') {
           showDashboardToast(
@@ -1548,11 +1547,14 @@ function processNotificationsAndAlerts(incomingNotifs, currentAllOrders, newlyAr
           const title = `🚗 Online Delivery #${formatDailyOrderNumber(order)}`;
           const msg = `${order.customer_name || 'Customer'} placed Delivery order (₹${Number(order.total_amount || 0).toFixed(0)})`;
           showDashboardToast(title, msg, 'success', order.id);
-          try { printOrderReceipt(order); } catch (e) {}
+          triggerIncomingOrderPrompt(order);
         } else {
           const title = `🥡 Pickup Order #${formatDailyOrderNumber(order)}`;
           const msg = `${order.customer_name || 'Customer'} placed Pickup order (₹${Number(order.total_amount || 0).toFixed(0)})`;
           showDashboardToast(title, msg, 'success', order.id);
+          if (order.status === 'pending') {
+            triggerIncomingOrderPrompt(order);
+          }
         }
       }
     }
@@ -1564,6 +1566,201 @@ function processNotificationsAndAlerts(incomingNotifs, currentAllOrders, newlyAr
     playNotificationChime();
   }
 }
+
+// ── Incoming Online Website Orders (Accept / Reject Flow) ───────────────
+let currentIncomingOrder = null;
+
+function closeIncomingOrderModal() {
+  const modal = $('adm-incoming-order-modal');
+  if (modal) {
+    modal.classList.remove('open');
+    modal.style.display = 'none';
+  }
+  currentIncomingOrder = null;
+}
+window.closeIncomingOrderModal = closeIncomingOrderModal;
+
+async function triggerIncomingOrderPrompt(order) {
+  if (!order) return;
+  // If order is already settled, delivered or cancelled, ignore
+  if (order.status === 'delivered' || order.status === 'completed' || order.status === 'closed' || order.status === 'cancelled' || order.status === 'preparing') {
+    return;
+  }
+  currentIncomingOrder = order;
+
+  // Sound notification
+  try { playNewOrderSound(); } catch(e) {}
+
+  const modal = $('adm-incoming-order-modal');
+  if (!modal) return;
+
+  const parsed = parseNotesMetadata(order.notes, order);
+  const isDelivery = parsed.type === 'delivery' || order.order_type === 'delivery';
+
+  if ($('incoming-order-modal-title')) {
+    $('incoming-order-modal-title').textContent = `🔔 New Online Order #${formatDailyOrderNumber(order)}!`;
+  }
+  if ($('incoming-order-cust-name')) {
+    $('incoming-order-cust-name').textContent = order.customer_name || 'Customer';
+  }
+  if ($('incoming-order-cust-phone')) {
+    $('incoming-order-cust-phone').textContent = order.customer_phone || '—';
+  }
+  if ($('incoming-order-type-badge')) {
+    $('incoming-order-type-badge').textContent = isDelivery ? '🚗 Home Delivery' : '🥡 Takeaway Pickup';
+    $('incoming-order-type-badge').style.background = isDelivery ? '#ecfdf5' : '#eef2ff';
+    $('incoming-order-type-badge').style.color = isDelivery ? '#059669' : '#4f46e5';
+  }
+  if ($('incoming-order-time')) {
+    $('incoming-order-time').textContent = timeSince(order.created_at || new Date().toISOString());
+  }
+
+  // Address
+  const addrBox = $('incoming-order-address-box');
+  const addrText = $('incoming-order-address-text');
+  if (addrBox && addrText) {
+    if (parsed.address) {
+      addrText.textContent = ` ${parsed.address} ${parsed.area ? `(${parsed.area})` : ''}`;
+      addrBox.style.display = 'block';
+    } else {
+      addrBox.style.display = 'none';
+    }
+  }
+
+  // Instructions / Notes
+  const notesBox = $('incoming-order-notes-box');
+  const notesText = $('incoming-order-notes-text');
+  if (notesBox && notesText) {
+    if (parsed.customNote) {
+      notesText.textContent = ` ${parsed.customNote}`;
+      notesBox.style.display = 'block';
+    } else {
+      notesBox.style.display = 'none';
+    }
+  }
+
+  // Payment method
+  if ($('incoming-order-payment-method')) {
+    const isPaid = order.payment_status === 'paid' || parsed.paymentStatus === 'paid';
+    $('incoming-order-payment-method').textContent = isPaid ? '✅ Paid Online' : '💵 Cash on Delivery';
+  }
+
+  // Total
+  if ($('incoming-order-total-amt')) {
+    $('incoming-order-total-amt').textContent = fmtMoney(order.total_amount || 0);
+  }
+
+  // Items List
+  let rawItems = getItemsForOrder(order.id);
+  if (!rawItems || rawItems.length === 0) {
+    try {
+      const { data: dbItems } = await insforge.database.from('order_items').select('*').eq('order_id', order.id);
+      if (dbItems && dbItems.length > 0) {
+        rawItems = dbItems;
+        for (const dbi of dbItems) {
+          if (!orderItems.some(x => x.id === dbi.id)) orderItems.push(dbi);
+        }
+      }
+    } catch(err) { console.warn('[Incoming Prompt] DB items fetch error:', err); }
+  }
+
+  const items = consolidateOrderItems(rawItems || []);
+  if ($('incoming-order-items-count')) {
+    $('incoming-order-items-count').textContent = items.length;
+  }
+  const itemsContainer = $('incoming-order-items-list');
+  if (itemsContainer) {
+    if (items.length === 0) {
+      itemsContainer.innerHTML = '<div style="font-size:.8rem;color:var(--adm-muted);text-align:center;padding:.5rem 0;">No items loaded yet.</div>';
+    } else {
+      itemsContainer.innerHTML = items.map(i => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px dashed #f1f5f9;font-size:.85rem;">
+          <span style="font-weight:700;color:#1e293b;">${i.quantity}× ${escapeHtml(i.item_name || i.name)}</span>
+          <span style="font-weight:700;color:#059669;">₹${Number(i.line_total || (i.price * i.quantity) || 0).toFixed(0)}</span>
+        </div>
+      `).join('');
+    }
+  }
+
+  modal.classList.add('open');
+  modal.style.display = 'flex';
+}
+window.triggerIncomingOrderPrompt = triggerIncomingOrderPrompt;
+
+async function acceptIncomingOnlineOrder() {
+  if (!currentIncomingOrder) return;
+  const order = currentIncomingOrder;
+
+  try {
+    // 1. Update status to 'preparing' and ticket_status to 'HOLD'
+    await updateOrderStatus(order.id, 'preparing');
+    order.status = 'preparing';
+    order.ticket_status = 'HOLD';
+
+    // 2. Fetch order items for KOT
+    let items = getItemsForOrder(order.id);
+    if (!items || !items.length) {
+      const { data: dbItems } = await insforge.database.from('order_items').select('*').eq('order_id', order.id);
+      if (dbItems) items = dbItems;
+    }
+
+    // 3. Print Kitchen Order Ticket (KOT)
+    try {
+      await printKOT(order, items);
+      showAdminToast(`Order #${formatDailyOrderNumber(order)} accepted! KOT sent to kitchen. 🍳`, 'success');
+    } catch(printErr) {
+      console.warn('[Incoming] KOT print error:', printErr);
+      showAdminToast(`Order #${formatDailyOrderNumber(order)} accepted! (Printer offline - check print queue)`, 'info');
+    }
+
+    // 4. Mark notifications read
+    await markOrderNotificationsRead(order.id);
+
+    // 5. Close modal
+    closeIncomingOrderModal();
+
+    // 6. Refresh Panels
+    renderHoldOrdersPanel();
+    renderKitchenPanel();
+    renderOverview();
+    renderOrdersTable();
+    renderBillingQuickCards();
+  } catch(err) {
+    showAdminToast('Failed to accept order: ' + err.message, 'error');
+  }
+}
+window.acceptIncomingOnlineOrder = acceptIncomingOnlineOrder;
+
+async function rejectIncomingOnlineOrder() {
+  if (!currentIncomingOrder) return;
+  const order = currentIncomingOrder;
+
+  if (!confirm(`Are you sure you want to REJECT and cancel Order #${formatDailyOrderNumber(order)}?`)) {
+    return;
+  }
+
+  try {
+    await updateOrderStatus(order.id, 'cancelled');
+    order.status = 'cancelled';
+    order.ticket_status = 'CANCELLED';
+
+    await markOrderNotificationsRead(order.id);
+
+    showAdminToast(`Order #${formatDailyOrderNumber(order)} was rejected and cancelled.`, 'info');
+
+    closeIncomingOrderModal();
+
+    renderHoldOrdersPanel();
+    renderKitchenPanel();
+    renderOverview();
+    renderOrdersTable();
+    renderClosedOrdersPanel();
+    renderBillingQuickCards();
+  } catch(err) {
+    showAdminToast('Failed to reject order: ' + err.message, 'error');
+  }
+}
+window.rejectIncomingOnlineOrder = rejectIncomingOnlineOrder;
 
 async function loadData(isManual = false) {
   const isFirstLoad = !lastSyncTimestamp || isManual || (knownNotificationIds.size === 0 && knownOrderIds.size === 0);
@@ -3407,6 +3604,13 @@ function renderOrdersTable() {
                 </button>
               ` : '')}
 
+              <!-- 🔔 REVIEW & ACCEPT ONLINE ORDER BUTTON -->
+              ${order.status === 'pending' ? `
+                <button type="button" class="adm-btn adm-btn-primary adm-btn-sm" onclick="triggerIncomingOrderPrompt(orders.find(o => o.id === '${order.id}'))" style="background:#10b981;border-color:#10b981;color:#fff;padding:.3rem .55rem;font-size:0.75rem;font-weight:700;" title="Review, Accept & Print KOT">
+                  ✅ Review &amp; Accept
+                </button>
+              ` : ''}
+
               <!-- ✏️ EDIT CLOSED ORDER BUTTON -->
               ${(order.status === 'delivered' || order.status === 'completed' || order.status === 'closed' || order.status === 'cancelled' || order.payment_status === 'paid') ? `
                 <button type="button" class="adm-btn adm-btn-outline adm-btn-sm" onclick="openClosedOrderEditModal('${order.id}')" style="padding:.3rem .55rem;font-size:0.75rem;color:#4f46e5;border-color:#c7d2fe;background:#eef2ff;font-weight:700;" title="Edit and correct this order">
@@ -4336,11 +4540,14 @@ async function renderOrderDetail(orderId) {
                 : `<button type="button" class="adm-btn adm-btn-outline adm-btn-sm mark-unpaid-btn" style="border-color:#ff5b5b; color:#ff5b5b; padding:0.4rem 0.8rem; font-weight:600; cursor:pointer;">↩ Mark Unpaid</button>`
               }
             ` : `
-              ${order.status === 'pending' ? `<button type="button" class="adm-btn adm-btn-primary adm-btn-sm accept-order">✓ Accept Order</button>` : ''}
+              ${order.status === 'pending' ? `
+                <button type="button" class="adm-btn adm-btn-primary adm-btn-sm accept-order" style="background:#10b981;border-color:#10b981;font-weight:700;">✅ Accept &amp; Print KOT</button>
+                <button type="button" class="adm-btn adm-btn-danger adm-btn-sm reject-order" style="background:#ef4444;border-color:#ef4444;font-weight:700;">✕ Reject</button>
+              ` : ''}
               ${order.status === 'confirmed' ? `<button type="button" class="adm-btn adm-btn-primary adm-btn-sm prep-order">👨‍🍳 Start Preparing</button>` : ''}
               ${order.status === 'preparing' ? `<button type="button" class="adm-btn adm-btn-primary adm-btn-sm ready-order">✓ Mark Ready</button>` : ''}
               ${order.status === 'ready' ? `<button type="button" class="adm-btn adm-btn-primary adm-btn-sm deliver-order">✓ Mark Delivered</button>` : ''}
-              ${order.status !== 'cancelled' && order.status !== 'delivered' ? `<button type="button" class="adm-btn adm-btn-danger adm-btn-sm cancel-order">✕ Cancel</button>` : ''}
+              ${order.status !== 'cancelled' && order.status !== 'delivered' && order.status !== 'pending' ? `<button type="button" class="adm-btn adm-btn-danger adm-btn-sm cancel-order">✕ Cancel</button>` : ''}
               ${(order.payment_status || 'unpaid') === 'unpaid' ? `<button type="button" class="adm-btn adm-btn-success adm-btn-sm mark-paid-btn">💵 Mark As Paid</button>` : ''}
             `}
             <!-- 🗑️ PERMANENT DELETE BUTTON FOR ANY ORDER -->
@@ -4375,7 +4582,35 @@ async function renderOrderDetail(orderId) {
 
   content.querySelector('.btn-detail-create-pos-bill')?.addEventListener('click', () => createBillForOrder(order.id));
   content.querySelector('.detail-delete-order-btn')?.addEventListener('click', () => deleteUniversalOrder(order.id));
-  content.querySelector('.accept-order')?.addEventListener('click', () => updateOrderStatus(order.id, 'confirmed'));
+  content.querySelector('.accept-order')?.addEventListener('click', async () => {
+    await updateOrderStatus(order.id, 'preparing');
+    order.status = 'preparing';
+    order.ticket_status = 'HOLD';
+    let items = getItemsForOrder(order.id);
+    try {
+      await printKOT(order, items);
+      showAdminToast(`Order #${formatDailyOrderNumber(order)} accepted! KOT printed for kitchen. 🍳`, 'success');
+    } catch(e) {
+      showAdminToast(`Order #${formatDailyOrderNumber(order)} accepted! Order placed on hold in preparation.`, 'success');
+    }
+    renderHoldOrdersPanel();
+    renderOrdersTable();
+    renderKitchenPanel();
+    renderOverview();
+    renderOrderDetail(order.id);
+  });
+  content.querySelector('.reject-order')?.addEventListener('click', async () => {
+    if (confirm(`Reject and cancel Order #${formatDailyOrderNumber(order)}?`)) {
+      await updateOrderStatus(order.id, 'cancelled');
+      order.status = 'cancelled';
+      order.ticket_status = 'CANCELLED';
+      showAdminToast(`Order #${formatDailyOrderNumber(order)} rejected.`, 'info');
+      renderHoldOrdersPanel();
+      renderOrdersTable();
+      renderOverview();
+      renderOrderDetail(order.id);
+    }
+  });
   content.querySelector('.prep-order')?.addEventListener('click', () => updateOrderStatus(order.id, 'preparing'));
   content.querySelector('.ready-order')?.addEventListener('click', () => updateOrderStatus(order.id, 'ready'));
   content.querySelector('.deliver-order')?.addEventListener('click', () => updateOrderStatus(order.id, 'delivered'));
@@ -4929,7 +5164,7 @@ function initCustomersListeners() {
 
 function getHeldOrders() {
   return orders
-    .filter(o => o.status === 'hold')
+    .filter(o => o.status === 'hold' || o.status === 'preparing')
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // oldest first
 }
 
@@ -5138,7 +5373,7 @@ function renderHoldOrdersPanel() {
   const search = ($('hold-orders-search')?.value || '').toLowerCase().trim();
   const tableSessions = getActiveTableSessions();
   const nonTableHoldOrders = orders.filter(o => {
-    if (o.status !== 'hold') return false;
+    if (o.status !== 'hold' && o.status !== 'preparing') return false;
     const meta = parseNotesMetadata(o.notes, o);
     const isTable = meta.type === 'table' || o.order_type === 'table' || meta.tableNumber || o.table_number;
     return !isTable;
@@ -5267,7 +5502,10 @@ function renderHoldOrdersPanel() {
     const rawItems = getItemsForOrder(order.id);
     const items = consolidateOrderItems(rawItems);
     const parsedMeta = parseNotesMetadata(order.notes, order);
-    const typeLabel = parsedMeta.type === 'delivery' ? '🚗 Delivery Hold' : '🥡 Pickup Hold';
+    const isPrep = order.status === 'preparing';
+    const typeLabel = isPrep
+      ? (parsedMeta.type === 'delivery' ? '🍳 Delivery (In Prep)' : '🍳 Pickup (In Prep)')
+      : (parsedMeta.type === 'delivery' ? '🚗 Delivery Hold' : '🥡 Pickup Hold');
 
     const itemsHtml = items.map(i => `<li style="display:flex;justify-content:space-between;padding:2px 0;"><span>${i.quantity}× ${escapeHtml(i.item_name)}</span><span style="color:var(--adm-muted);font-size:.8rem;font-weight:600;">₹${Number(i.line_total).toFixed(2)}</span></li>`).join('');
 
@@ -5279,7 +5517,7 @@ function renderHoldOrdersPanel() {
               <p class="adm-hold-card-title">#${formatDailyOrderNumber(order)} · ${escapeHtml(order.customer_name || 'Walk-in')}</p>
             </div>
             <div style="font-size:.75rem;color:var(--adm-muted);margin-top:2px;">${escapeHtml(order.customer_phone || '—')}</div>
-            <span class="adm-pill" style="background:#fff3e6;color:#f2994a;margin-top:.25rem;display:inline-block;">${typeLabel}</span>
+            <span class="adm-pill" style="background:${isPrep ? '#ecfdf5' : '#fff3e6'};color:${isPrep ? '#059669' : '#f2994a'};border:1px solid ${isPrep ? '#a7f3d0' : '#fed7aa'};margin-top:.25rem;display:inline-block;font-weight:700;">${typeLabel}</span>
           </div>
           <span class="adm-hold-time">⏱ ${timeSince(order.created_at)}</span>
         </div>
@@ -7710,6 +7948,113 @@ function switchClosedEditAddTab(tab) {
 }
 window.switchClosedEditAddTab = switchClosedEditAddTab;
 
+let closedEditActiveCat = 'all';
+
+function renderClosedEditCategories() {
+  const pillBar = $('closed-edit-categories');
+  if (!pillBar) return;
+  const allItems = getCombinedFoodItems();
+  const availableCats = new Set(allItems.map(f => f.category).filter(Boolean));
+  const orderedCats = categoryTabOrder.filter(c => availableCats.has(c));
+  const extraCats = Array.from(availableCats).filter(c => !categoryTabOrder.includes(c));
+  const cats = ['all', ...orderedCats, ...extraCats];
+
+  pillBar.innerHTML = cats.map(cat => {
+    const lbl = cat === 'all' ? '🍽️ All Items' : ((categoryEmojis[cat] || '🍲') + ' ' + (categoryLabels[cat] || cat));
+    const isAct = cat === closedEditActiveCat || (closedEditActiveCat !== 'all' && (categoryAliases[closedEditActiveCat] || []).includes(cat));
+    const cls = isAct ? 'pos-cat-pill active' : 'pos-cat-pill';
+    return `<button type="button" class="${cls}" data-cat="${cat}">${lbl}</button>`;
+  }).join('');
+
+  pillBar.querySelectorAll('.pos-cat-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      closedEditActiveCat = pill.dataset.cat;
+      renderClosedEditCategories();
+      renderClosedEditFoodGrid($('closed-edit-dish-search')?.value);
+    });
+  });
+}
+
+function renderClosedEditFoodGrid(filterText) {
+  const grid = $('closed-edit-food-grid');
+  if (!grid) return;
+  const q = (filterText || '').toLowerCase().trim();
+  const source = getCombinedFoodItems();
+  const matchCats = categoryAliases[closedEditActiveCat] || [closedEditActiveCat];
+
+  const filtered = source.filter(f => {
+    const catLower = (f.category || '').toLowerCase();
+    const activeLower = (closedEditActiveCat || '').toLowerCase();
+    const matchesCat = (activeLower === 'all') ||
+      matchCats.includes(f.category) ||
+      matchCats.some(c => c && c.toLowerCase() === catLower) ||
+      catLower === activeLower;
+
+    const matchesQuery = !q ||
+      (f.name && f.name.toLowerCase().includes(q)) ||
+      (f.category && f.category.toLowerCase().includes(q)) ||
+      (categoryLabels[f.category] && categoryLabels[f.category].toLowerCase().includes(q)) ||
+      (f.description && f.description.toLowerCase().includes(q));
+
+    return matchesCat && matchesQuery;
+  });
+
+  const countBadge = $('closed-edit-dishes-count');
+  if (countBadge) countBadge.textContent = `${filtered.length} Dishes`;
+
+  if (!filtered.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--adm-muted);font-size:.8rem;padding:1.5rem 0;">No dishes found matching search.</div>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(f => {
+    const imgUrl = f.image || categoryImages[f.category] || '/images/food_starters.png';
+    const inOrder = closedEditingCart.find(i => (f.id && String(i.id) === String(f.id)) || (i.name && f.name && i.name.toLowerCase() === f.name.toLowerCase()));
+    const inOrderQty = inOrder ? inOrder.qty : 0;
+
+    return `
+      <button type="button" class="pos-food-tile-img" data-id="${f.id}" data-name="${escapeHtml(f.name)}" data-price="${f.price}">
+        <div class="pos-tile-img-box">
+          <img src="${imgUrl}" alt="${escapeHtml(f.name)}" onerror="this.src='/images/food_starters.png'" loading="lazy" />
+          ${inOrderQty > 0 ? `<span class="pos-tile-badge">${inOrderQty} in bill</span>` : ''}
+        </div>
+        <div class="pos-tile-body">
+          <span class="pos-tile-title" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+          <div class="pos-tile-foot">
+            <span class="pos-tile-price-tag">₹${Number(f.price).toFixed(0)}</span>
+            <span class="pos-tile-add-btn">+</span>
+          </div>
+        </div>
+      </button>
+    `;
+  }).join('');
+
+  grid.querySelectorAll('.pos-food-tile-img').forEach(tile => {
+    tile.addEventListener('click', () => {
+      const id = tile.dataset.id;
+      const name = tile.dataset.name;
+      const price = parseFloat(tile.dataset.price);
+      const existing = closedEditingCart.find(i => (id && String(i.id) === String(id)) || (i.name && name && i.name.toLowerCase() === name.toLowerCase()));
+      if (existing) {
+        existing.qty++;
+        existing.line_total = existing.price * existing.qty;
+      } else {
+        closedEditingCart.push({
+          order_item_id: `temp-${Date.now()}-${Math.random()}`,
+          id: id || null,
+          name,
+          price,
+          qty: 1,
+          line_total: price
+        });
+      }
+      renderClosedEditItems();
+      renderClosedEditFoodGrid($('closed-edit-dish-search')?.value);
+      showAdminToast(`Added "${name}" to bill 🛒`, 'success');
+    });
+  });
+}
+
 function populateClosedEditAddSelect(filterQuery = '') {
   const sel = $('closed-edit-add-select');
   if (!sel) return;
@@ -7724,7 +8069,7 @@ function populateClosedEditAddSelect(filterQuery = '') {
       (f.description && f.description.toLowerCase().includes(q));
   });
 
-  sel.innerHTML = '<option value="">— Select dish or combo (' + filtered.length + ' available) —</option>' +
+  sel.innerHTML = '<option value="">— Quick Select (' + filtered.length + ') —</option>' +
     filtered.map(f => {
       const emoji = f.isCombo ? '🍱 ' : (categoryEmojis[f.category] || '🍽️ ') + ' ';
       return `<option value="${f.id}" data-price="${f.price}" data-name="${escapeHtml(f.name)}">${emoji}${escapeHtml(f.name)} (₹${Number(f.price).toFixed(0)})</option>`;
@@ -7759,13 +8104,19 @@ async function openClosedOrderEditModal(orderId) {
 
   const parsed = parseNotesMetadata(order.notes, order);
   const tableNum = parsed.tableNumber || order.table_number || '';
-  const typeText = parsed.type === 'table' ? `🪑 Table ${tableNum || '—'}` : (parsed.type === 'delivery' ? '🚗 Delivery' : '🥡 Pickup');
+  const typeVal = parsed.type === 'table' ? 'table' : (parsed.type === 'delivery' ? 'delivery' : 'pickup');
 
   if ($('closed-edit-title')) $('closed-edit-title').innerHTML = `<span>✏️ Edit &amp; Correct Closed Order #${formatDailyOrderNumber(order)}</span>`;
-  if ($('closed-edit-cust-name')) $('closed-edit-cust-name').textContent = order.customer_name || 'Walk-in';
-  if ($('closed-edit-cust-phone')) $('closed-edit-cust-phone').textContent = order.customer_phone || '—';
-  if ($('closed-edit-type')) $('closed-edit-type').textContent = typeText;
   if ($('closed-edit-date')) $('closed-edit-date').textContent = new Date(order.created_at).toLocaleString('en-IN');
+  if ($('closed-edit-cust-name-input')) $('closed-edit-cust-name-input').value = order.customer_name || '';
+  if ($('closed-edit-cust-phone-input')) $('closed-edit-cust-phone-input').value = order.customer_phone || '';
+  if ($('closed-edit-type-select')) $('closed-edit-type-select').value = typeVal;
+  if ($('closed-edit-table-input')) $('closed-edit-table-input').value = tableNum;
+  if ($('closed-edit-payment-status-select')) $('closed-edit-payment-status-select').value = order.payment_status || 'paid';
+  if ($('closed-edit-order-status-select')) $('closed-edit-order-status-select').value = order.status || 'delivered';
+
+  const tableWrap = $('closed-edit-table-wrap');
+  if (tableWrap) tableWrap.style.display = (typeVal === 'table') ? 'block' : 'none';
 
   // Load existing items from cache or fetch from DB if missing
   let rawItems = getItemsForOrder(order.id);
@@ -7802,8 +8153,11 @@ async function openClosedOrderEditModal(orderId) {
   if ($('closed-edit-add-price')) $('closed-edit-add-price').value = '';
   if ($('closed-edit-add-qty')) $('closed-edit-add-qty').value = '1';
 
+  closedEditActiveCat = 'all';
   switchClosedEditAddTab('menu');
   populateClosedEditAddSelect();
+  renderClosedEditCategories();
+  renderClosedEditFoodGrid('');
   renderClosedEditItems();
 
   const modal = $('adm-closed-order-edit-modal');
@@ -7943,18 +8297,53 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
       }
     }
 
-    // 3. Recalculate order total
+    // 3. Recalculate order total & gather updated fields
     const s = getBillSettings();
     const subtotal = closedEditingCart.reduce((sum, i) => sum + i.price * i.qty, 0);
     const tax = subtotal * (s.cgstRate + s.sgstRate) / 100;
     const newGrandTotal = subtotal + tax;
 
-    await insforge.database.from('orders').update({
-      total_amount: newGrandTotal
-    }).eq('id', orderId);
+    const custName = $('closed-edit-cust-name-input')?.value?.trim() || order.customer_name || 'Customer';
+    const custPhone = $('closed-edit-cust-phone-input')?.value?.trim() || order.customer_phone || '';
+    const newType = $('closed-edit-type-select')?.value || order.order_type || 'table';
+    const newTableNum = $('closed-edit-table-input')?.value?.trim() || '';
+    const newPaymentStatus = $('closed-edit-payment-status-select')?.value || order.payment_status || 'paid';
+    const newStatus = $('closed-edit-order-status-select')?.value || order.status || 'delivered';
+
+    // Update notes string with new type/table tag
+    let updatedNotes = order.notes || '';
+    updatedNotes = updatedNotes.replace(/\[TABLE:[^\]]*\]/gi, '').replace(/\[DELIVERY\]/gi, '').replace(/\[SELF PICKUP\]/gi, '').trim();
+    if (newType === 'table') {
+      updatedNotes = `[TABLE: ${newTableNum || '1'}] ${updatedNotes}`.trim();
+    } else if (newType === 'delivery') {
+      updatedNotes = `[DELIVERY] ${updatedNotes}`.trim();
+    } else {
+      updatedNotes = `[SELF PICKUP] ${updatedNotes}`.trim();
+    }
+
+    const orderUpdates = {
+      customer_name: custName,
+      customer_phone: custPhone,
+      total_amount: newGrandTotal,
+      order_type: newType,
+      table_number: newType === 'table' ? (newTableNum || null) : null,
+      payment_status: newPaymentStatus,
+      status: newStatus,
+      notes: updatedNotes
+    };
+
+    try {
+      const { error: updErr } = await insforge.database.from('orders').update(orderUpdates).eq('id', orderId);
+      if (updErr && (updErr.message || '').includes('table_number')) {
+        delete orderUpdates.table_number;
+        await insforge.database.from('orders').update(orderUpdates).eq('id', orderId);
+      }
+    } catch(dbErr) {
+      console.warn('[Closed Edit] Failed updating order metadata in DB:', dbErr);
+    }
 
     // 4. Update in-memory arrays
-    order.total_amount = newGrandTotal;
+    Object.assign(order, orderUpdates);
     const otherItems = orderItems.filter(i => String(i.order_id) !== String(orderId));
     const freshOrderItems = closedEditingCart.map(i => ({
       id: i.order_item_id || `temp-edit-${Date.now()}`,
@@ -8340,6 +8729,10 @@ function initClosedOrdersListeners() {
   $('closed-orders-type-filter')?.addEventListener('change', renderClosedOrdersPanel);
   $('closed-orders-status-filter')?.addEventListener('change', renderClosedOrdersPanel);
   $('closed-orders-search')?.addEventListener('input', renderClosedOrdersPanel);
+  $('closed-orders-new-bill-btn')?.addEventListener('click', () => {
+    switchPanel('order-detail');
+    $('billing-new-btn')?.click();
+  });
   $('closed-orders-gst-export-btn')?.addEventListener('click', exportRestaurantGSTReportCSV);
   $('closed-orders-export-btn')?.addEventListener('click', exportClosedOrdersCSV);
   $('closed-orders-sheet-sync-btn')?.addEventListener('click', () => {
@@ -8357,13 +8750,20 @@ function initClosedOrdersListeners() {
   $('closed-edit-close-btn')?.addEventListener('click', closeClosedOrderEditModal);
   $('closed-edit-discard-btn')?.addEventListener('click', closeClosedOrderEditModal);
 
+  // Toggle Table wrap on Type change
+  $('closed-edit-type-select')?.addEventListener('change', function() {
+    const tableWrap = $('closed-edit-table-wrap');
+    if (tableWrap) tableWrap.style.display = (this.value === 'table') ? 'block' : 'none';
+  });
+
   // Tab Switching (Menu & Combos vs Custom Item)
   $('closed-edit-tab-menu-btn')?.addEventListener('click', () => switchClosedEditAddTab('menu'));
   $('closed-edit-tab-custom-btn')?.addEventListener('click', () => switchClosedEditAddTab('custom'));
 
-  // Search in Menu & Combos selector
+  // Search in Menu & Combos selector and visual grid
   $('closed-edit-dish-search')?.addEventListener('input', function() {
     populateClosedEditAddSelect(this.value);
+    renderClosedEditFoodGrid(this.value);
   });
 
   // Search filter within currently ordered items
@@ -13777,6 +14177,10 @@ function switchHoldModalTab(tab) {
       addBtn.style.background = '#6366f1';
       addBtn.style.color = '#fff';
     }
+    holdModalContext.activeCat = 'all';
+    if ($('hold-modal-search')) $('hold-modal-search').value = '';
+    renderHoldModalCategories();
+    renderHoldModalFoodGrid('');
   }
 }
 
@@ -13905,10 +14309,12 @@ function renderHoldModalCategories() {
   const allItems = getCombinedFoodItems();
   const availableCats = new Set(allItems.map(f => f.category).filter(Boolean));
   const orderedCats = categoryTabOrder.filter(c => availableCats.has(c));
-  const cats = ['all', ...orderedCats];
+  const extraCats = Array.from(availableCats).filter(c => !categoryTabOrder.includes(c));
+  const cats = ['all', ...orderedCats, ...extraCats];
   pillBar.innerHTML = cats.map(cat => {
-    const lbl = cat === 'all' ? '🍽️ All Items' : ((categoryEmojis[cat] || '') + ' ' + (categoryLabels[cat] || cat));
-    const cls = cat === holdModalContext.activeCat ? 'pos-cat-pill active' : 'pos-cat-pill';
+    const lbl = cat === 'all' ? '🍽️ All Items' : ((categoryEmojis[cat] || '🍲') + ' ' + (categoryLabels[cat] || cat));
+    const isAct = cat === holdModalContext.activeCat || (holdModalContext.activeCat !== 'all' && (categoryAliases[holdModalContext.activeCat] || []).includes(cat));
+    const cls = isAct ? 'pos-cat-pill active' : 'pos-cat-pill';
     return `<button type="button" class="${cls}" data-cat="${cat}">${lbl}</button>`;
   }).join('');
 
@@ -13921,21 +14327,62 @@ function renderHoldModalCategories() {
   });
 }
 
+function updateHoldModalFoodGridBadges() {
+  const grid = $('hold-modal-food-grid');
+  if (!grid) return;
+  const newItems = holdModalContext.newItemsCart;
+  grid.querySelectorAll('.hold-dish-card').forEach(card => {
+    const id = card.dataset.id;
+    const name = (card.dataset.name || '').toLowerCase();
+    const cartItem = newItems.find(i => (id && String(i.id) === String(id)) || (i.name && i.name.toLowerCase() === name));
+    const qty = cartItem ? cartItem.qty : 0;
+    
+    let badge = card.querySelector('.hold-dish-cart-badge');
+    if (qty > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'hold-dish-cart-badge';
+        card.querySelector('.hold-dish-img-box')?.appendChild(badge);
+      }
+      badge.textContent = `${qty} in cart`;
+      badge.style.display = 'inline-block';
+      card.classList.add('in-cart');
+    } else {
+      if (badge) badge.remove();
+      card.classList.remove('in-cart');
+    }
+  });
+}
+
 function renderHoldModalFoodGrid(filterText) {
   const grid = $('hold-modal-food-grid');
   if (!grid) return;
   const q = (filterText || '').toLowerCase().trim();
   const source = getCombinedFoodItems();
-  const filtered = source.filter(f =>
-    (holdModalContext.activeCat === 'all' || f.category === holdModalContext.activeCat) &&
-    (!q || (f.name && f.name.toLowerCase().includes(q)) || (f.category && f.category.toLowerCase().includes(q)))
-  );
+  const matchCats = categoryAliases[holdModalContext.activeCat] || [holdModalContext.activeCat];
+
+  const filtered = source.filter(f => {
+    const catLower = (f.category || '').toLowerCase();
+    const activeLower = (holdModalContext.activeCat || '').toLowerCase();
+    const matchesCat = (activeLower === 'all') ||
+      matchCats.includes(f.category) ||
+      matchCats.some(c => c && c.toLowerCase() === catLower) ||
+      catLower === activeLower;
+
+    const matchesQuery = !q ||
+      (f.name && f.name.toLowerCase().includes(q)) ||
+      (f.category && f.category.toLowerCase().includes(q)) ||
+      (categoryLabels[f.category] && categoryLabels[f.category].toLowerCase().includes(q)) ||
+      (f.description && f.description.toLowerCase().includes(q));
+
+    return matchesCat && matchesQuery;
+  });
 
   const countEl = $('hold-modal-items-count');
   if (countEl) countEl.textContent = `${filtered.length} Dishes`;
 
   if (!filtered.length) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--adm-muted);font-size:.82rem;padding:2rem 0;">No dishes found matching your search.</div>';
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--adm-muted);font-size:.85rem;padding:3rem 1rem;">No dishes found matching your search.</div>';
     return;
   }
 
@@ -13943,29 +14390,36 @@ function renderHoldModalFoodGrid(filterText) {
     const imgUrl = f.image || categoryImages[f.category] || '/images/food_starters.png';
     const cartItem = holdModalContext.newItemsCart.find(i => (f.id && String(i.id) === String(f.id)) || (i.name && f.name && i.name.toLowerCase() === f.name.toLowerCase()));
     const cartQty = cartItem ? cartItem.qty : 0;
+    const isVeg = isFoodVeg(f);
+    const catLabel = categoryLabels[f.category] || f.category || '';
+    const catEmoji = f.isCombo ? '🍱' : (categoryEmojis[f.category] || '🍽️');
 
     return `
-      <button type="button" class="pos-food-tile-img" data-id="${f.id}" data-name="${escapeHtml(f.name)}" data-price="${f.price}">
-        <div class="pos-tile-img-box">
-          <img src="${imgUrl}" alt="${escapeHtml(f.name)}" onerror="this.src='/images/food_starters.png'" loading="lazy" />
-          ${cartQty > 0 ? `<span class="pos-tile-badge">${cartQty} in cart</span>` : ''}
+      <div class="hold-dish-card ${cartQty > 0 ? 'in-cart' : ''}" data-id="${f.id}" data-name="${escapeHtml(f.name)}" data-price="${f.price}">
+        <div class="hold-dish-img-box">
+          <img src="${imgUrl}" alt="${escapeHtml(f.name)}" onerror="this.onerror=null;this.src='/images/food_starters.png';" />
+          <span class="hold-dish-veg-badge pos-veg-badge ${isVeg ? 'veg' : 'nonveg'}" title="${isVeg ? 'Vegetarian' : 'Non-Vegetarian'}">
+            <span class="pos-veg-dot"></span>
+          </span>
+          ${cartQty > 0 ? `<span class="hold-dish-cart-badge">${cartQty} in cart</span>` : ''}
         </div>
-        <div class="pos-tile-body">
-          <span class="pos-tile-title" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
-          <div class="pos-tile-foot">
-            <span class="pos-tile-price-tag">₹${Number(f.price).toFixed(0)}</span>
-            <span class="pos-tile-add-btn">+</span>
+        <div class="hold-dish-body">
+          <div class="hold-dish-category-tag">${catEmoji} ${escapeHtml(catLabel)}</div>
+          <div class="hold-dish-title" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+          <div class="hold-dish-footer">
+            <span class="hold-dish-price">₹${Number(f.price).toFixed(0)}</span>
+            <button type="button" class="hold-dish-add-btn" title="Add ${escapeHtml(f.name)}">+ Add</button>
           </div>
         </div>
-      </button>
+      </div>
     `;
   }).join('');
 
-  grid.querySelectorAll('.pos-food-tile-img').forEach(tile => {
-    tile.addEventListener('click', () => {
-      const id = tile.dataset.id;
-      const name = tile.dataset.name;
-      const price = parseFloat(tile.dataset.price);
+  grid.querySelectorAll('.hold-dish-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = card.dataset.id;
+      const name = card.dataset.name;
+      const price = parseFloat(card.dataset.price);
       const existing = holdModalContext.newItemsCart.find(i => (id && String(i.id) === String(id)) || (i.name && name && i.name.toLowerCase() === name.toLowerCase()));
       if (existing) {
         existing.qty++;
@@ -14047,7 +14501,7 @@ function updateHoldModalCartUI() {
     }
   }
 
-  renderHoldModalFoodGrid($('hold-modal-search')?.value);
+  updateHoldModalFoodGridBadges();
 }
 
 window.holdModalNewChangeQty = function(idx, delta) {
@@ -14267,6 +14721,17 @@ function initHoldModalListeners() {
   $('hold-modal-kot-btn')?.addEventListener('click', () => {
     saveHoldOrderCorrections(true);
   });
+
+  // Incoming Online Order (Accept / Reject) Modal Listeners
+  const incomingModal = $('adm-incoming-order-modal');
+  if (incomingModal) {
+    incomingModal.addEventListener('click', (e) => {
+      if (e.target === incomingModal) closeIncomingOrderModal();
+    });
+  }
+  $('incoming-order-close-btn')?.addEventListener('click', closeIncomingOrderModal);
+  $('incoming-order-accept-btn')?.addEventListener('click', acceptIncomingOnlineOrder);
+  $('incoming-order-reject-btn')?.addEventListener('click', rejectIncomingOnlineOrder);
 }
 
 // ── Quick Cards & Total Bills Table Renderers ────────────────────

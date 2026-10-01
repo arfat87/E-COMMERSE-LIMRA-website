@@ -923,6 +923,9 @@
               <p class="adm-page-sub" style="font-size:0.82rem;color:#64748b;margin-top:2px;">Settled customer bills, kitchen audit ledger, dish breakdowns, and GST records</p>
             </div>
             <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+              <button type="button" id="closed-orders-new-bill-btn" class="adm-btn adm-btn-primary" style="background:#10b981;border-color:#10b981;color:#fff;font-weight:700;font-size:.82rem;display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .85rem;border-radius:8px;" title="Create new order / bill in POS">
+                <span>➕</span> Create New Order / Bill
+              </button>
               <button type="button" id="closed-orders-gst-export-btn" class="adm-btn adm-btn-primary" style="background:#0f172a;border-color:#0f172a;color:#fff;font-weight:600;font-size:.82rem;display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .85rem;border-radius:8px;" title="Export restaurant GST report CSV">
                 <span>🧾</span> Export GST Report (.csv)
               </button>
@@ -3710,9 +3713,9 @@
 
 <!-- Manage & Edit Items in Hold Order / Table Session Modal -->
 <div id="adm-hold-add-modal" class="adm-hold-modal">
-  <div class="adm-hold-modal-content" style="max-width:980px;">
+  <div class="adm-hold-modal-content" style="max-width:1060px;width:95vw;height:90vh;max-height:860px;display:flex;flex-direction:column;overflow:hidden;">
     <!-- Modal Header -->
-    <div style="padding:1rem 1.25rem;background:#1e293b;color:#fff;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;">
+    <div style="padding:0.9rem 1.25rem;background:#1e293b;color:#fff;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;flex-shrink:0;">
       <div>
         <h3 id="hold-modal-title" style="font-size:1.15rem;font-weight:800;margin:0;display:flex;align-items:center;gap:.5rem;">
           <span>🍽️ Manage &amp; Edit Dishes</span>
@@ -3734,14 +3737,14 @@
     </div>
 
     <!-- Modal Body (2-Column Grid) -->
-    <div style="display:grid;grid-template-columns:1fr 340px;flex:1;overflow:hidden;background:#f8fafc;min-height:480px;">
+    <div style="display:grid;grid-template-columns:1fr 340px;flex:1;min-height:0;overflow:hidden;background:#f8fafc;">
       
       <!-- Left Column: Tab 1 (Edit/Cancel Items) or Tab 2 (Menu Browser) -->
-      <div id="hold-modal-left-pane" style="padding:1rem;display:flex;flex-direction:column;gap:.75rem;overflow-y:auto;border-right:1px solid var(--adm-border);">
+      <div id="hold-modal-left-pane" style="padding:1rem;display:flex;flex-direction:column;overflow:hidden;min-height:0;height:100%;border-right:1px solid var(--adm-border);">
         
         <!-- VIEW A: Edit & Cancel Existing Ordered Items -->
-        <div id="hold-modal-view-edit" style="display:flex;flex-direction:column;gap:.6rem;flex:1;">
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;">
+        <div id="hold-modal-view-edit" style="display:flex;flex-direction:column;gap:.6rem;flex:1;min-height:0;overflow:hidden;height:100%;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;flex-shrink:0;">
             <div style="display:flex;gap:.5rem;align-items:center;flex:1;">
               <input type="search" id="hold-modal-edit-search" class="adm-input" placeholder="🔍 Filter ordered dishes..." style="flex:1;font-size:.85rem;" />
             </div>
@@ -3750,26 +3753,26 @@
             </span>
           </div>
 
-          <div id="hold-modal-existing-items-list" style="display:flex;flex-direction:column;gap:.5rem;overflow-y:auto;max-height:420px;padding-right:2px;">
+          <div id="hold-modal-existing-items-list" style="display:flex;flex-direction:column;gap:.5rem;overflow-y:auto;flex:1;min-height:0;padding-right:4px;">
             <!-- Populated dynamically via JS -->
           </div>
         </div>
 
         <!-- VIEW B: Menu Browser (Add New Dishes) -->
-        <div id="hold-modal-view-add" style="display:none;flex-direction:column;gap:.75rem;flex:1;">
-          <!-- Search & Filter -->
-          <div style="display:flex;gap:.5rem;align-items:center;">
+        <div id="hold-modal-view-add" style="display:none;flex-direction:column;gap:.65rem;flex:1;min-height:0;overflow:hidden;height:100%;">
+          <!-- Search & Filter (Fixed) -->
+          <div style="display:flex;gap:.5rem;align-items:center;flex-shrink:0;">
             <input type="search" id="hold-modal-search" class="adm-input" placeholder="🔍 Search dishes by name or category..." style="flex:1;font-size:.85rem;" />
             <span id="hold-modal-items-count" style="font-size:.75rem;font-weight:700;color:#6366f1;background:#eef2ff;padding:.3rem .6rem;border-radius:999px;white-space:nowrap;">202 Dishes</span>
           </div>
 
-          <!-- Category Pills -->
-          <div id="hold-modal-categories" class="pos-cat-pill-bar" style="display:flex;gap:.35rem;overflow-x:auto;padding-bottom:.25rem;">
+          <!-- Category Pills (Fixed) -->
+          <div id="hold-modal-categories" class="pos-cat-pill-bar" style="display:flex;gap:.35rem;overflow-x:auto;padding-bottom:.35rem;flex-shrink:0;">
             <!-- Populated dynamically via JS -->
           </div>
 
-          <!-- Food Picture Grid -->
-          <div id="hold-modal-food-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.65rem;flex:1;min-height:340px;max-height:420px;overflow-y:auto;padding-right:4px;">
+          <!-- Food Picture Grid (100% Flex, Smooth Scroll, Beautiful Layout) -->
+          <div id="hold-modal-food-grid">
             <!-- Populated dynamically with picture cards -->
           </div>
         </div>
@@ -3777,7 +3780,7 @@
       </div>
 
       <!-- Right Column: Live Summary, Added New Dishes & Actions -->
-      <div style="padding:1rem;display:flex;flex-direction:column;justify-content:space-between;background:#fff;overflow-y:auto;">
+      <div style="padding:1rem;display:flex;flex-direction:column;justify-content:space-between;background:#fff;overflow-y:auto;min-height:0;height:100%;">
         <div>
           <!-- Newly Added Dishes Cart Header -->
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;border-bottom:1px solid var(--adm-border);padding-bottom:.4rem;">
@@ -3925,21 +3928,58 @@
     <!-- Modal Body (Scrollable Container) -->
     <div class="closed-edit-scroll-body" style="padding:1.1rem 1.25rem;display:flex;flex-direction:column;gap:.85rem;background:#f8fafc;flex:1 1 auto;overflow-y:auto;min-height:0;">
       
-      <!-- Customer Info Row -->
-      <div class="adm-card" style="padding:.75rem 1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;background:#fff;border:1px solid var(--adm-border);border-radius:10px;">
-        <div style="display:flex;gap:1.25rem;flex-wrap:wrap;font-size:.85rem;align-items:center;">
-          <div><span style="color:var(--adm-muted);">Customer:</span> <strong id="closed-edit-cust-name" style="color:#111827;">—</strong></div>
-          <div><span style="color:var(--adm-muted);">Phone:</span> <strong id="closed-edit-cust-phone" style="color:#111827;">—</strong></div>
-          <div><span style="color:var(--adm-muted);">Type:</span> <span id="closed-edit-type" class="adm-pill" style="background:#eef2ff;color:#4f46e5;font-weight:700;">—</span></div>
-          <div><span style="color:var(--adm-muted);">Placed:</span> <span id="closed-edit-date" style="color:#64748b;font-weight:600;">—</span></div>
+      <!-- Customer Info & Order Details Edit Row -->
+      <div class="adm-card" style="padding:.85rem 1rem;background:#fff;border:1px solid var(--adm-border);border-radius:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.55rem;">
+          <span style="font-size:.8rem;font-weight:800;color:#1e293b;text-transform:uppercase;letter-spacing:.5px;">👤 Customer &amp; Order Details</span>
+          <span id="closed-edit-date" style="font-size:.75rem;color:#64748b;font-weight:600;">—</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:.6rem;align-items:flex-end;">
+          <div>
+            <label class="adm-label" style="font-size:.75rem;font-weight:700;margin-bottom:3px;display:block;">Customer Name</label>
+            <input type="text" id="closed-edit-cust-name-input" class="adm-input" placeholder="Customer Name" style="width:100%;font-size:.82rem;padding:.38rem .55rem;" />
+          </div>
+          <div>
+            <label class="adm-label" style="font-size:.75rem;font-weight:700;margin-bottom:3px;display:block;">Phone Number</label>
+            <input type="tel" id="closed-edit-cust-phone-input" class="adm-input" placeholder="Phone Number" style="width:100%;font-size:.82rem;padding:.38rem .55rem;" />
+          </div>
+          <div>
+            <label class="adm-label" style="font-size:.75rem;font-weight:700;margin-bottom:3px;display:block;">Order Channel / Type</label>
+            <select id="closed-edit-type-select" class="adm-select" style="width:100%;font-size:.82rem;padding:.38rem .55rem;">
+              <option value="table">🪑 Dine-in Table</option>
+              <option value="delivery">🚗 Home Delivery</option>
+              <option value="pickup">🥡 Pickup / Takeaway</option>
+            </select>
+          </div>
+          <div id="closed-edit-table-wrap">
+            <label class="adm-label" style="font-size:.75rem;font-weight:700;margin-bottom:3px;display:block;">Table Number</label>
+            <input type="text" id="closed-edit-table-input" class="adm-input" placeholder="e.g. 1" style="width:100%;font-size:.82rem;padding:.38rem .55rem;" />
+          </div>
+          <div>
+            <label class="adm-label" style="font-size:.75rem;font-weight:700;margin-bottom:3px;display:block;">Payment Status</label>
+            <select id="closed-edit-payment-status-select" class="adm-select" style="width:100%;font-size:.82rem;padding:.38rem .55rem;">
+              <option value="paid">✅ Paid</option>
+              <option value="pending">⏳ Pending</option>
+              <option value="failed">❌ Unpaid / Failed</option>
+            </select>
+          </div>
+          <div>
+            <label class="adm-label" style="font-size:.75rem;font-weight:700;margin-bottom:3px;display:block;">Order Status</label>
+            <select id="closed-edit-order-status-select" class="adm-select" style="width:100%;font-size:.82rem;padding:.38rem .55rem;">
+              <option value="delivered">✓ Delivered / Settled</option>
+              <option value="cancelled">✕ Cancelled</option>
+              <option value="ready">🍽️ Food Ready</option>
+            </select>
+          </div>
         </div>
       </div>
 
       <!-- Add Dish or Custom Item Section -->
       <div class="adm-card" style="padding:.85rem 1rem;background:#fff;border:1px solid var(--adm-border);border-radius:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;flex-wrap:wrap;gap:.4rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem;">
           <div style="font-size:.82rem;font-weight:800;color:#1e293b;display:flex;align-items:center;gap:.35rem;">
             <span>➕ Add Dishes or Combos to this Order</span>
+            <span id="closed-edit-dishes-count" style="font-size:.72rem;background:#eef2ff;color:#6366f1;padding:1px 6px;border-radius:999px;font-weight:700;"></span>
           </div>
           <!-- Mode Tabs -->
           <div style="display:flex;gap:4px;background:#f1f5f9;padding:2px;border-radius:8px;">
@@ -3950,18 +3990,29 @@
 
         <!-- Mode A: From Combined Menu & Combos -->
         <div id="closed-edit-add-menu-pane" style="display:flex;flex-direction:column;gap:.5rem;">
+          <!-- Search & Select Row -->
           <div style="display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;">
-            <div style="flex:2;min-width:240px;position:relative;">
-              <input type="search" id="closed-edit-dish-search" class="adm-input" placeholder="🔍 Search menu item or combo package..." style="font-size:.82rem;margin-bottom:.35rem;" />
-              <select id="closed-edit-add-select" class="adm-select" style="width:100%;font-size:.82rem;">
-                <option value="">— Select dish or combo —</option>
-              </select>
+            <div style="flex:2;min-width:220px;">
+              <input type="search" id="closed-edit-dish-search" class="adm-input" placeholder="🔍 Search menu item by name or category..." style="font-size:.82rem;width:100%;" />
             </div>
             <div style="display:flex;gap:.35rem;align-items:center;">
-              <input type="number" id="closed-edit-add-price" class="adm-input" placeholder="Price (₹)" min="0" step="any" style="width:85px;font-size:.82rem;" />
-              <input type="number" id="closed-edit-add-qty" class="adm-input" placeholder="Qty" min="1" value="1" style="width:60px;font-size:.82rem;" />
+              <select id="closed-edit-add-select" class="adm-select" style="min-width:160px;font-size:.82rem;">
+                <option value="">— Quick Select —</option>
+              </select>
+              <input type="number" id="closed-edit-add-price" class="adm-input" placeholder="Price (₹)" min="0" step="any" style="width:80px;font-size:.82rem;" />
+              <input type="number" id="closed-edit-add-qty" class="adm-input" placeholder="Qty" min="1" value="1" style="width:55px;font-size:.82rem;" />
               <button type="button" id="closed-edit-add-btn" class="adm-btn adm-btn-primary adm-btn-sm" style="font-weight:700;font-size:.8rem;white-space:nowrap;background:#6366f1;border-color:#6366f1;">+ Add</button>
             </div>
+          </div>
+
+          <!-- Category Pills Bar (Easy Pick like Hold Section) -->
+          <div id="closed-edit-categories" class="pos-cat-pill-bar" style="display:flex;gap:.35rem;overflow-x:auto;padding-bottom:.25rem;margin-top:.2rem;">
+            <!-- Populated dynamically via JS -->
+          </div>
+
+          <!-- Visual Food Grid with Picture Cards -->
+          <div id="closed-edit-food-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:.55rem;max-height:220px;overflow-y:auto;padding-right:4px;margin-top:.2rem;">
+            <!-- Populated dynamically with picture cards -->
           </div>
         </div>
 
@@ -4031,6 +4082,91 @@
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- Incoming Online Order (Website Order) Accept / Reject Modal -->
+<div id="adm-incoming-order-modal" class="adm-hold-modal" style="display:none;align-items:center;justify-content:center;z-index:99999;">
+  <div class="adm-hold-modal-content" style="max-width:560px;width:95%;border-radius:16px;overflow:hidden;box-shadow:0 25px 60px rgba(0,0,0,0.45);border:2px solid #10b981;">
+    <!-- Modal Header -->
+    <div style="padding:1.1rem 1.35rem;background:linear-gradient(135deg, #064e3b 0%, #065f46 100%);color:#fff;display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;align-items:center;gap:.65rem;">
+        <span style="font-size:1.6rem;">🛎️</span>
+        <div>
+          <h3 id="incoming-order-modal-title" style="font-size:1.15rem;font-weight:800;margin:0;letter-spacing:-0.01em;">
+            New Online Order Received!
+          </h3>
+          <p id="incoming-order-modal-sub" style="font-size:.78rem;color:#a7f3d0;margin:2px 0 0 0;">
+            Review and accept to print Kitchen Order Ticket (KOT)
+          </p>
+        </div>
+      </div>
+      <button type="button" id="incoming-order-close-btn" style="background:rgba(255,255,255,0.15);border:none;color:#fff;font-size:1.1rem;width:30px;height:30px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="Close without action">✕</button>
+    </div>
+
+    <!-- Modal Body -->
+    <div style="padding:1.1rem 1.35rem;background:#f8fafc;display:flex;flex-direction:column;gap:.85rem;max-height:75vh;overflow-y:auto;">
+      <!-- Customer Info Card -->
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.85rem 1rem;display:flex;flex-direction:column;gap:.5rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:.7rem;color:#64748b;text-transform:uppercase;font-weight:700;">Customer</div>
+            <strong id="incoming-order-cust-name" style="font-size:.95rem;color:#0f172a;">Customer Name</strong>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:.7rem;color:#64748b;text-transform:uppercase;font-weight:700;">Channel</div>
+            <span id="incoming-order-type-badge" class="adm-pill" style="background:#ecfdf5;color:#059669;font-weight:700;font-size:.75rem;">🚗 Delivery</span>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:.84rem;border-top:1px dashed #e2e8f0;padding-top:.4rem;">
+          <div>
+            <span style="color:#64748b;">Phone:</span>
+            <strong id="incoming-order-cust-phone" style="color:#0f172a;">—</strong>
+          </div>
+          <div id="incoming-order-time" style="font-size:.75rem;color:#64748b;">Just now</div>
+        </div>
+
+        <div id="incoming-order-address-box" style="display:none;background:#f1f5f9;border-radius:8px;padding:.45rem .65rem;font-size:.78rem;color:#334155;">
+          <span style="font-weight:700;color:#0f172a;">📍 Address:</span>
+          <span id="incoming-order-address-text"></span>
+        </div>
+
+        <div id="incoming-order-notes-box" style="display:none;background:#fffbeb;border:1px solid #fef3c7;border-radius:8px;padding:.45rem .65rem;font-size:.78rem;color:#92400e;">
+          <span style="font-weight:700;">📝 Instructions:</span>
+          <span id="incoming-order-notes-text"></span>
+        </div>
+      </div>
+
+      <!-- Items Ordered -->
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.85rem 1rem;">
+        <div style="font-size:.75rem;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:.5rem;">
+          Dishes Ordered (<span id="incoming-order-items-count">0</span> items)
+        </div>
+        <div id="incoming-order-items-list" style="display:flex;flex-direction:column;gap:.4rem;max-height:180px;overflow-y:auto;">
+          <!-- Dynamically populated -->
+        </div>
+
+        <!-- Total Box -->
+        <div style="border-top:1.5px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem;display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <span style="font-size:.78rem;color:#64748b;">Grand Total:</span>
+            <span id="incoming-order-payment-method" style="margin-left:6px;font-size:.72rem;background:#f1f5f9;padding:2px 6px;border-radius:4px;color:#475569;font-weight:600;">COD</span>
+          </div>
+          <strong id="incoming-order-total-amt" style="font-size:1.25rem;color:#059669;font-weight:900;">₹0.00</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div style="padding:1rem 1.35rem;background:#fff;border-top:1px solid #e2e8f0;display:flex;gap:.75rem;justify-content:space-between;align-items:center;">
+      <button type="button" id="incoming-order-reject-btn" class="adm-btn adm-btn-danger" style="flex:1;padding:.75rem;font-weight:800;font-size:.88rem;background:#ef4444;border-color:#ef4444;display:flex;align-items:center;justify-content:center;gap:.35rem;">
+        <span>✕</span> Reject Order
+      </button>
+      <button type="button" id="incoming-order-accept-btn" class="adm-btn adm-btn-primary" style="flex:2;padding:.75rem;font-weight:800;font-size:.92rem;background:#10b981;border-color:#10b981;box-shadow:0 4px 14px rgba(16,185,129,0.35);display:flex;align-items:center;justify-content:center;gap:.4rem;">
+        <span>✅</span> Accept &amp; Print KOT
+      </button>
+    </div>
   </div>
 </div>
 
