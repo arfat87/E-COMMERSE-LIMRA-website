@@ -18,7 +18,7 @@ console.log("\x1b[36m%s\x1b[0m", "==============================================
 // 1. Launch Backend Server
 const backendProcess = spawn(
   process.platform === "win32" ? "npm.cmd" : "npm",
-  ["run", "start", "--prefix", "backend"],
+  ["run", "dev", "--prefix", "backend"],
   {
     cwd: ROOT_DIR,
     stdio: "inherit",

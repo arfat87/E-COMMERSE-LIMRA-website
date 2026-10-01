@@ -14338,6 +14338,7 @@ function updateHoldModalFoodGridBadges() {
     const qty = cartItem ? cartItem.qty : 0;
     
     let badge = card.querySelector('.hold-dish-cart-badge');
+    const addBtn = card.querySelector('.hold-dish-add-btn');
     if (qty > 0) {
       if (!badge) {
         badge = document.createElement('span');
@@ -14347,9 +14348,21 @@ function updateHoldModalFoodGridBadges() {
       badge.textContent = `${qty} in cart`;
       badge.style.display = 'inline-block';
       card.classList.add('in-cart');
+      if (addBtn) {
+        addBtn.textContent = `✓ ${qty} Added`;
+        addBtn.style.background = '#4f46e5';
+        addBtn.style.color = '#ffffff';
+        addBtn.style.borderColor = '#4f46e5';
+      }
     } else {
       if (badge) badge.remove();
       card.classList.remove('in-cart');
+      if (addBtn) {
+        addBtn.textContent = '+ Add';
+        addBtn.style.background = '';
+        addBtn.style.color = '';
+        addBtn.style.borderColor = '';
+      }
     }
   });
 }
@@ -14408,7 +14421,7 @@ function renderHoldModalFoodGrid(filterText) {
           <div class="hold-dish-title" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
           <div class="hold-dish-footer">
             <span class="hold-dish-price">₹${Number(f.price).toFixed(0)}</span>
-            <button type="button" class="hold-dish-add-btn" title="Add ${escapeHtml(f.name)}">+ Add</button>
+            <button type="button" class="hold-dish-add-btn" title="Add ${escapeHtml(f.name)}" style="${cartQty > 0 ? 'background:#4f46e5;color:#ffffff;border-color:#4f46e5;' : ''}">${cartQty > 0 ? `✓ ${cartQty} Added` : '+ Add'}</button>
           </div>
         </div>
       </div>

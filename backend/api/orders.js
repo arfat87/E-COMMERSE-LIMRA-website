@@ -126,7 +126,11 @@ export default async function handler(req, res) {
       const orderUuid = crypto.randomUUID();
       const orderNumber = generateOrderNumber();
       const cleanZone = tableZone || (numTable ? "indoor" : null);
-      const cleanPayStatus = sanitizePaymentStatus(paymentStatus);
+      let cleanPayStatus = sanitizePaymentStatus(paymentStatus);
+      if (txnRef && cleanPayStatus === "unpaid") {
+        cleanPayStatus = "paid";
+      }
+      const cleanPayMethod = paymentMethod ? String(paymentMethod).toLowerCase() : (txnRef ? "online" : "cash");
 
       let computedRound = 1;
       let isSubsequentRound = false;
@@ -236,7 +240,7 @@ export default async function handler(req, res) {
         table_number: numTable,
         table_zone: cleanZone,
         payment_status: cleanPayStatus,
-        payment_method: paymentMethod || "cash",
+        payment_method: cleanPayMethod,
         latitude: latitude ? Number(latitude) : null,
         longitude: longitude ? Number(longitude) : null,
         landmark: landmark || null,
@@ -311,7 +315,9 @@ export default async function handler(req, res) {
           total_amount: subtotal,
           items: orderItems,
           status: "pending",
-          payment_status: paymentStatus
+          payment_status: cleanPayStatus,
+          payment_method: cleanPayMethod,
+          txn_ref: txnRef || null
         }
       });
     }

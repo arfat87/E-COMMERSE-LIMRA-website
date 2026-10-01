@@ -172,6 +172,8 @@ export async function saveOrder({
   orderType = "delivery",
   tableNumber = null,
   tableZone = null,
+  paymentMethod = null,
+  paymentStatus = null,
   txnRef = null
 }) {
   if (!items || !items.length) {
@@ -188,6 +190,9 @@ export async function saveOrder({
       line_total: (Number(item.price || item.unit_price) || 0) * (Math.max(1, Number(item.qty || item.quantity) || 1))
     };
   });
+
+  const finalPayStatus = (txnRef || paymentStatus === "paid") ? "paid" : (paymentStatus || "unpaid");
+  const finalPayMethod = paymentMethod || (txnRef ? "online" : "cod");
 
   try {
     const result = await supabase.rpc("place_order", {
@@ -206,7 +211,15 @@ export async function saveOrder({
       p_txn_ref: txnRef
     });
 
-    if (!result.error && result.data) return result.data;
+    if (!result.error && result.data) {
+      if (finalPayStatus === "paid" && result.data.id) {
+        try {
+          await supabase.from("orders").update({ payment_status: "paid", txn_ref: txnRef }).eq("id", result.data.id);
+          result.data.payment_status = "paid";
+        } catch (e) {}
+      }
+      return result.data;
+    }
   } catch (e) {}
 
   // Fallback to backend /api/orders
@@ -225,6 +238,8 @@ export async function saveOrder({
       orderType,
       tableNumber,
       tableZone,
+      paymentMethod: finalPayMethod,
+      paymentStatus: finalPayStatus,
       txnRef
     })
   });
