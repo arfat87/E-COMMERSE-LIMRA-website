@@ -7,7 +7,7 @@
   <meta name="description" content="Browse the authentic menu and place food orders directly from your table at LIMRA Restaurant, Egra. Scan your table QR code, choose your dishes, and customize cooking instructions." />
   <meta name="keywords" content="LIMRA Restaurant table ordering, QR code dining, self-ordering menu, Egra biryani order, contact-free restaurant ordering" />
   <meta name="robots" content="index, follow" />
-  <meta name="theme-color" content="#f59e0b" />
+  <meta name="theme-color" content="#0c831f" />
   <link rel="canonical" href="https://limraresturent.in/table/" />
 
   <!-- Open Graph / Facebook -->
@@ -26,90 +26,139 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
   <link rel="icon" href="/images/logo.png" type="image/png" />
   <link rel="apple-touch-icon" href="/images/logo.png" />
   <style>
-    /* Custom premium styling for table ordering */
+    /* Clean Blinkit-Style Design System for Table Ordering */
     :root {
-      --tbl-bg: #0f172a;
-      --tbl-card: rgba(30, 41, 59, 0.7);
-      --tbl-border: rgba(255, 255, 255, 0.08);
-      --tbl-text: #f1f5f9;
-      --tbl-muted: #94a3b8;
-      --tbl-accent: #f59e0b; /* Golden accent */
-      --tbl-accent-rgb: 245, 158, 11;
-      --tbl-accent-hover: #d97706;
+      --tbl-bg: #f8fafc;
+      --tbl-card: #ffffff;
+      --tbl-border: #e2e8f0;
+      --tbl-text: #0f172a;
+      --tbl-muted: #64748b;
+      --tbl-accent: #0c831f; /* Signature Blinkit Emerald Green */
+      --tbl-accent-rgb: 12, 131, 31;
+      --tbl-accent-hover: #096a18;
+      --tbl-accent-light: #f0fdf4;
     }
 
     body.table-ordering-app {
       background: var(--tbl-bg);
       color: var(--tbl-text);
-      font-family: 'Inter', sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       min-height: 100vh;
       overflow-x: hidden;
       margin: 0;
       padding: 0;
     }
 
-    /* Glassmorphic Cards */
-    .glass-card {
-      background: var(--tbl-card);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+    /* Clean Card (replacing glass-card) */
+    .glass-card, .tbl-card {
+      background: #ffffff;
       border: 1px solid var(--tbl-border);
       border-radius: 20px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
 
-    /* Header Styling */
+    /* Sticky Blinkit Header */
     .tbl-header {
       border-bottom: 1px solid var(--tbl-border);
-      background: rgba(15, 23, 42, 0.8);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
     }
 
     /* Category scroll */
     .category-chip-container {
-      scrollbar-width: none; /* Firefox */
+      scrollbar-width: none;
+      -ms-overflow-style: none;
     }
     .category-chip-container::-webkit-scrollbar {
-      display: none; /* Chrome/Safari */
+      display: none;
     }
 
     .category-chip {
       white-space: nowrap;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid var(--tbl-border);
+      background: #ffffff;
+      color: #475569;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+    .category-chip:hover {
+      border-color: var(--tbl-accent);
+      color: var(--tbl-accent);
+      background: var(--tbl-accent-light);
     }
     .category-chip.active {
       background: var(--tbl-accent);
-      color: #0f172a;
-      font-weight: 600;
-      box-shadow: 0 4px 14px rgba(var(--tbl-accent-rgb), 0.3);
+      color: #ffffff;
+      font-weight: 700;
+      border-color: var(--tbl-accent);
+      box-shadow: 0 2px 10px rgba(var(--tbl-accent-rgb), 0.28);
     }
 
-    /* Food Item Grid */
+    /* Food Item Card */
     .food-card {
-      transition: all 0.3s ease;
+      background: #ffffff;
+      border: 1px solid #e8ecf1;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     }
     .food-card:hover {
-      transform: translateY(-4px);
-      border-color: rgba(var(--tbl-accent-rgb), 0.3);
+      transform: translateY(-3px);
+      border-color: rgba(var(--tbl-accent-rgb), 0.35);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
     }
 
-    /* Cart FAB */
+    /* Floating Cart Pill (Blinkit Style) */
+    .table-floating-cart-pill {
+      position: fixed;
+      bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+      left: 50%;
+      transform: translateX(-50%) translateY(140%);
+      z-index: 45;
+      width: calc(100% - 1.5rem);
+      max-width: 520px;
+      background: #0c831f;
+      color: #ffffff;
+      border-radius: 14px;
+      padding: 0.75rem 1.15rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 10px 28px rgba(12, 131, 31, 0.42), 0 2px 6px rgba(0, 0, 0, 0.1);
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+      opacity: 0;
+      pointer-events: none;
+      cursor: pointer;
+    }
+    .table-floating-cart-pill.visible {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .table-floating-cart-pill:active {
+      transform: translateX(-50%) scale(0.98);
+    }
+
+    /* Cart FAB Fallback */
     .cart-fab {
       box-shadow: 0 10px 25px -5px rgba(var(--tbl-accent-rgb), 0.4);
-      animation: float 3s ease-in-out infinite;
+      background: var(--tbl-accent);
+      color: #ffffff;
     }
 
-    @keyframes float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-6px); }
-    }
-
-    /* Table Map Generator Layout */
+    /* Restaurant Layout Map (Admin View) */
     .tbl-map-container {
       display: grid;
       grid-template-columns: 1.2fr 1fr;
@@ -121,10 +170,9 @@
       }
     }
 
-    /* Interactive Layout Grid */
     .restaurant-layout {
-      border: 2px dashed rgba(255, 255, 255, 0.1);
-      background: rgba(15, 23, 42, 0.4);
+      border: 2px dashed #cbd5e1;
+      background: #f8fafc;
       min-height: 500px;
       position: relative;
     }
@@ -136,7 +184,6 @@
       font-weight: 700;
     }
 
-    /* Table nodes */
     .layout-table-node {
       aspect-ratio: 1;
       display: flex;
@@ -144,12 +191,14 @@
       justify-content: center;
       font-weight: 700;
       font-size: 1.1rem;
-      border: 2px solid rgba(255, 255, 255, 0.15);
-      background: rgba(30, 41, 59, 0.8);
+      border: 2px solid #cbd5e1;
+      background: #ffffff;
+      color: #1e293b;
       border-radius: 50%;
       cursor: pointer;
       transition: all 0.2s ease;
       position: relative;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
     }
     .layout-table-node:hover {
       border-color: var(--tbl-accent);
@@ -160,11 +209,10 @@
     .layout-table-node.active {
       background: var(--tbl-accent);
       border-color: var(--tbl-accent);
-      color: #0f172a;
+      color: #ffffff;
       box-shadow: 0 0 20px rgba(var(--tbl-accent-rgb), 0.4);
     }
 
-    /* Door visual */
     .layout-door {
       background: #dc2626;
       color: #fff;
@@ -179,18 +227,19 @@
 
     /* Custom Input */
     .glass-input {
-      background: rgba(15, 23, 42, 0.5);
-      border: 1px solid var(--tbl-border);
+      background: #f8fafc;
+      border: 1.5px solid var(--tbl-border);
       color: var(--tbl-text);
-      transition: all 0.3s ease;
+      transition: all 0.2s ease;
     }
     .glass-input:focus {
+      background: #ffffff;
       border-color: var(--tbl-accent);
       outline: none;
-      box-shadow: 0 0 10px rgba(var(--tbl-accent-rgb), 0.15);
+      box-shadow: 0 0 0 3px rgba(var(--tbl-accent-rgb), 0.15);
     }
 
-    /* Zomato-style bottom sheet / detail drawer */
+    /* Bottom sheet / detail drawer */
     #table-detail-overlay {
       transition: opacity 0.3s ease;
     }
@@ -198,6 +247,8 @@
       transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
       transform: translateY(100%);
       border-radius: 28px 28px 0 0;
+      background: #ffffff;
+      color: #0f172a;
     }
     #table-detail-drawer.open {
       transform: translateY(0);
@@ -214,12 +265,11 @@
       }
     }
     
-    /* Scrollable recommendations strip */
     .rec-strip::-webkit-scrollbar {
       height: 4px;
     }
     .rec-strip::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.1);
+      background: #cbd5e1;
       border-radius: 10px;
     }
   </style>
@@ -230,16 +280,16 @@
   <!-- INVALID TABLE ERROR VIEW -->
   <!-- ==================================================== -->
   <div id="error-view" class="hidden min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-md glass-card p-8 text-center space-y-6">
-      <div class="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto text-4xl text-red-500">
+    <div class="w-full max-w-md glass-card p-8 text-center space-y-6 shadow-xl">
+      <div class="w-20 h-20 rounded-full bg-red-50 border border-red-200 flex items-center justify-center mx-auto text-4xl text-red-500">
         ⚠️
       </div>
       <div class="space-y-2">
-        <h2 class="text-xl font-bold font-outfit text-red-500" style="font-family:'Outfit', sans-serif;">Invalid Table Number</h2>
-        <p class="text-sm text-slate-300">Please scan the QR code located on your dining table to access the ordering menu.</p>
+        <h2 class="text-xl font-bold font-outfit text-red-600" style="font-family:'Outfit', sans-serif;">Invalid Table Number</h2>
+        <p class="text-sm text-slate-500">Please scan the QR code located on your dining table to access the ordering menu.</p>
       </div>
       <div class="pt-4">
-        <a href="/" class="inline-block px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold transition-all text-sm shadow-lg shadow-amber-500/20">
+        <a href="/" class="inline-block px-6 py-3 rounded-xl bg-[#0c831f] hover:bg-[#096a18] text-white font-bold transition-all text-sm shadow-md shadow-emerald-700/20">
           Go to LIMRA Home
         </a>
       </div>
@@ -250,40 +300,44 @@
   <!-- CUSTOMER ORDERING VIEW -->
   <!-- ==================================================== -->
   <div id="customer-view" class="hidden min-h-screen flex flex-col">
-    <!-- Header -->
-    <header class="tbl-header sticky top-0 z-40 px-3 sm:px-4 py-2.5 sm:py-3.5 flex items-center justify-between gap-2">
+    <!-- Blinkit Style Header -->
+    <header class="tbl-header sticky top-0 z-40 px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 shadow-xs">
       <div class="flex items-center gap-2.5 sm:gap-3 min-w-0">
-        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden flex items-center justify-center border border-amber-500/30 bg-slate-900 shadow-sm shrink-0">
+        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden flex items-center justify-center border border-slate-200 bg-white shadow-xs shrink-0">
           <img src="/images/logo.png" alt="LIMRA Logo" class="w-full h-full object-cover" />
         </div>
         <div class="min-w-0">
-          <h1 class="text-sm sm:text-lg font-bold font-outfit text-amber-500 flex items-center gap-1 truncate" style="font-family:'Outfit', sans-serif;">
-            LIMRA <span class="text-white">RESTAURANT</span>
+          <h1 class="text-sm sm:text-base font-extrabold font-outfit text-slate-900 flex items-center gap-1 truncate" style="font-family:'Outfit', sans-serif;">
+            <span class="text-[#0c831f]">LIMRA</span> <span class="text-slate-800">RESTAURANT</span>
           </h1>
-          <p class="text-[11px] sm:text-xs text-slate-400 font-semibold truncate" id="customer-table-number-label">Loading Table...</p>
+          <!-- Live Table Badge -->
+          <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] sm:text-xs font-bold truncate max-w-full">
+            <span class="w-2 h-2 rounded-full bg-[#0c831f] animate-pulse shrink-0"></span>
+            <span class="truncate" id="customer-table-number-label">Loading Table...</span>
+          </div>
         </div>
       </div>
 
-      <!-- Social & Review Header Quick Access Actions -->
+      <!-- Quick Access Actions -->
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <!-- Language Switcher Button -->
-        <button type="button" class="limra-lang-toggle-btn px-2.5 sm:px-3 py-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-200 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-sm cursor-pointer" title="Switch Language / ভাষা পরিবর্তন">
+        <button type="button" class="limra-lang-toggle-btn px-2.5 sm:px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer" title="Switch Language / ভাষা পরিবর্তন">
           🌐 বাংলা
         </button>
 
         <!-- Review Pill / Button -->
-        <button id="btn-header-review" type="button" aria-label="Rate Us on Google" title="Leave a Google Review" class="px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-sm cursor-pointer" data-i18n="tbl_success_review">
+        <button id="btn-header-review" type="button" aria-label="Rate Us on Google" title="Leave a Google Review" class="px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer" data-i18n="tbl_success_review">
           <span>⭐</span>
           <span class="text-[11px] sm:text-xs">Review</span>
         </button>
 
         <!-- Instagram Icon -->
-        <a href="https://www.instagram.com/limra_restaurant_" target="_blank" rel="noopener noreferrer" aria-label="LIMRA Instagram" title="Follow on Instagram" class="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-500 via-pink-600 to-purple-600 text-white flex items-center justify-center shadow-sm hover:opacity-90 hover:scale-105 active:scale-95 transition-all">
+        <a href="https://www.instagram.com/limra_restaurant_" target="_blank" rel="noopener noreferrer" aria-label="LIMRA Instagram" title="Follow on Instagram" class="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-500 via-pink-600 to-purple-600 text-white flex items-center justify-center shadow-xs hover:opacity-90 hover:scale-105 active:scale-95 transition-all">
           <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
         </a>
 
         <!-- Facebook Icon -->
-        <a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer" aria-label="LIMRA Facebook" title="Connect on Facebook" class="w-8 h-8 rounded-full bg-[#1877F2] text-white flex items-center justify-center shadow-sm hover:opacity-90 hover:scale-105 active:scale-95 transition-all">
+        <a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer" aria-label="LIMRA Facebook" title="Connect on Facebook" class="w-8 h-8 rounded-full bg-[#1877F2] text-white flex items-center justify-center shadow-xs hover:opacity-90 hover:scale-105 active:scale-95 transition-all">
           <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
         </a>
       </div>
@@ -291,52 +345,52 @@
 
 
     <!-- Main Content Grid -->
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-6 flex flex-col md:flex-row gap-6">
+    <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 flex flex-col md:flex-row gap-6">
       
       <!-- Left side: Categories & Menu -->
       <div class="flex-1 flex flex-col min-w-0">
-        <!-- Search bar -->
-        <div class="relative mb-6">
+        <!-- Blinkit Search bar -->
+        <div class="relative mb-4 sm:mb-5">
           <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
-          <input type="text" id="food-search-input" placeholder="Search dishes, drinks, desserts..." class="w-full pl-11 pr-4 py-3 rounded-2xl glass-input text-sm">
+          <input type="text" id="food-search-input" placeholder="Search dishes, drinks, desserts..." class="w-full pl-11 pr-4 py-3 rounded-2xl glass-input text-sm shadow-xs placeholder-slate-400">
         </div>
 
-        <!-- Horizontal Scrollable Categories -->
-        <div class="category-chip-container flex gap-2.5 overflow-x-auto pb-4 mb-6" id="categories-scroll-container">
+        <!-- Horizontal Scrollable Blinkit Category Carousel -->
+        <div class="category-chip-container flex gap-2 overflow-x-auto pb-3 mb-4 sm:mb-5" id="categories-scroll-container">
           <!-- JS generated chips -->
         </div>
 
-        <!-- Menu Title -->
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-bold font-outfit flex items-center gap-2" style="font-family:'Outfit', sans-serif;" id="menu-category-title">
+        <!-- Menu Title & Count Badge -->
+        <div class="flex items-center justify-between mb-3.5">
+          <h2 class="text-base sm:text-lg font-extrabold font-outfit text-slate-900 flex items-center gap-2" style="font-family:'Outfit', sans-serif;" id="menu-category-title">
             All Items
           </h2>
-          <span class="text-xs text-slate-400 font-medium" id="menu-count-badge">0 items</span>
+          <span class="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-bold" id="menu-count-badge">0 items</span>
         </div>
 
-        <!-- Menu Cards Grid (2 columns on mobile for easy browsing & ordering) -->
+        <!-- Menu Cards Grid (Clean 2-columns on mobile, 3-columns on desktop) -->
         <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-4" id="food-cards-grid">
           <!-- JS generated cards -->
         </div>
 
         <!-- Table Customer Social & Reviews Connect Banner -->
-        <div class="mt-8 p-5 rounded-2xl glass-card border border-white/10 space-y-4">
+        <div class="mt-8 p-5 rounded-2xl glass-card border border-slate-200 bg-white shadow-xs space-y-4">
           <div class="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
             <div>
-              <h4 class="text-sm font-bold font-outfit text-white flex items-center justify-center sm:justify-start gap-1.5" style="font-family:'Outfit', sans-serif;">
+              <h4 class="text-sm font-bold font-outfit text-slate-900 flex items-center justify-center sm:justify-start gap-1.5" style="font-family:'Outfit', sans-serif;">
                 <span>✨</span><span>Enjoying your food at LIMRA?</span>
               </h4>
-              <p class="text-xs text-slate-400">Share your dining reels, follow us for daily offers, or drop a quick Google review!</p>
+              <p class="text-xs text-slate-500">Share your dining reels, follow us for daily offers, or drop a quick Google review!</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap justify-center">
-              <button id="btn-banner-review" type="button" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all active:scale-95 cursor-pointer">
+              <button id="btn-banner-review" type="button" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer">
                 <span>⭐</span><span>Leave Review</span>
               </button>
-              <a href="https://www.instagram.com/limra_restaurant_" target="_blank" rel="noopener noreferrer" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-yellow-500 via-pink-600 to-purple-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all hover:opacity-95 active:scale-95">
+              <a href="https://www.instagram.com/limra_restaurant_" target="_blank" rel="noopener noreferrer" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-yellow-500 via-pink-600 to-purple-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all hover:opacity-95 active:scale-95">
                 <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
                 <span>Instagram</span>
               </a>
-              <a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer" class="px-3.5 py-2 rounded-xl bg-[#1877F2] text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all hover:opacity-95 active:scale-95">
+              <a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer" class="px-3.5 py-2 rounded-xl bg-[#1877F2] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all hover:opacity-95 active:scale-95">
                 <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
                 <span>Facebook</span>
               </a>
@@ -345,36 +399,36 @@
         </div>
       </div>
 
-      <!-- Right side: Desktop Cart Panel -->
+      <!-- Right side: Desktop Cart Tray Panel -->
       <div class="w-full md:w-[360px] lg:w-[400px] shrink-0 hidden md:block">
-        <div class="glass-card p-5 sticky top-24" style="max-height: calc(100vh - 120px); display: flex; flex-direction: column; height: 100%;">
-          <h3 class="text-base font-bold font-outfit mb-4 pb-3 border-b border-white/5 flex items-center justify-between" style="font-family:'Outfit', sans-serif;">
+        <div class="glass-card p-5 sticky top-24 border border-slate-200 bg-white shadow-xs rounded-2xl" style="max-height: calc(100vh - 120px); display: flex; flex-direction: column; height: 100%;">
+          <h3 class="text-base font-extrabold font-outfit mb-4 pb-3 border-b border-slate-100 flex items-center justify-between text-slate-900" style="font-family:'Outfit', sans-serif;">
             <span>🛒 Your Order Tray</span>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-white/5 text-slate-300" id="cart-count-desktop">0 items</span>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200" id="cart-count-desktop">0 items</span>
           </h3>
 
           <!-- Cart items container -->
-          <div class="flex-1 overflow-y-auto space-y-3 pr-1" id="cart-items-desktop-container" style="max-height: calc(100vh - 430px);">
+          <div class="flex-1 overflow-y-auto space-y-2.5 pr-1" id="cart-items-desktop-container" style="max-height: calc(100vh - 430px);">
             <!-- JS items -->
           </div>
 
           <!-- Totals & Place Order -->
-          <div class="mt-4 pt-4 border-t border-white/5 space-y-3">
+          <div class="mt-4 pt-4 border-t border-slate-100 space-y-3">
             <div class="flex justify-between items-center text-sm font-semibold">
-              <span class="text-slate-400">Total Amount</span>
-              <span class="text-lg text-amber-500 font-bold" id="cart-total-desktop">₹0.00</span>
+              <span class="text-slate-500">Item Subtotal</span>
+              <span class="text-base text-slate-900 font-extrabold" id="cart-total-desktop">₹0.00</span>
             </div>
-            <button id="btn-checkout-desktop" class="w-full py-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold transition-all text-sm shadow-lg shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
-              Place Table Order
+            <button id="btn-checkout-desktop" class="w-full py-3.5 rounded-xl bg-[#0c831f] hover:bg-[#096a18] active:scale-[0.99] text-white font-extrabold transition-all text-sm shadow-md shadow-emerald-700/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2">
+              <span>🍽️ Place Table Order</span>
             </button>
 
             <!-- Social links in tray -->
-            <div class="flex items-center justify-center gap-4 pt-1 text-slate-400 text-xs">
-              <a href="https://www.instagram.com/limra_restaurant_" target="_blank" rel="noopener noreferrer" class="hover:text-pink-400 flex items-center gap-1 transition-colors">
+            <div class="flex items-center justify-center gap-4 pt-1 text-slate-400 text-xs font-semibold">
+              <a href="https://www.instagram.com/limra_restaurant_" target="_blank" rel="noopener noreferrer" class="hover:text-pink-600 flex items-center gap-1 transition-colors">
                 <span>📸</span><span>Instagram</span>
               </a>
               <span>·</span>
-              <a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer" class="hover:text-blue-400 flex items-center gap-1 transition-colors">
+              <a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer" class="hover:text-blue-600 flex items-center gap-1 transition-colors">
                 <span>👍</span><span>Facebook</span>
               </a>
             </div>
@@ -384,33 +438,53 @@
 
     </main>
 
-    <!-- Mobile Floating Cart FAB -->
-    <div class="fixed bottom-6 right-6 md:hidden z-40">
-      <button id="cart-fab-btn" class="cart-fab w-14 h-14 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center relative shadow-xl">
+    <!-- Mobile Floating Quick Cart Pill (Iconic Blinkit Solid Green) -->
+    <div id="floating-cart-bar" class="table-floating-cart-pill md:hidden" role="button" aria-label="View Order Tray">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-white/20 text-white font-bold flex items-center justify-center text-sm shadow-xs border border-white/20">
+          🛍️
+        </div>
+        <div class="flex flex-col text-left">
+          <span id="floating-cart-count" class="text-[11px] font-bold text-emerald-100 tracking-wide uppercase">0 ITEMS IN TRAY</span>
+          <span id="floating-cart-amount" class="text-sm text-white font-black leading-tight">₹0.00</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5 text-xs font-black text-emerald-800 bg-white px-4 py-2 rounded-xl shadow-xs hover:bg-slate-50 active:scale-95 transition-all">
+        <span>View Tray</span>
+        <span class="text-sm leading-none">➔</span>
+      </div>
+    </div>
+
+    <!-- Fallback Mobile Cart FAB (Hidden when floating cart pill is active) -->
+    <div class="fixed bottom-6 right-6 md:hidden z-30 hidden">
+      <button id="cart-fab-btn" class="cart-fab w-14 h-14 rounded-full bg-[#0c831f] text-white flex items-center justify-center relative shadow-xl">
         <span class="text-xl">🛒</span>
-        <span class="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-red-500 text-white font-bold text-xs flex items-center justify-center border border-slate-950" id="cart-badge-mobile">0</span>
+        <span class="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-red-500 text-white font-bold text-xs flex items-center justify-center border border-white" id="cart-badge-mobile">0</span>
       </button>
     </div>
 
-    <!-- Mobile Cart Drawer Overlay -->
-    <div id="cart-drawer-overlay" class="fixed inset-0 bg-slate-950/80 z-50 backdrop-blur-sm hidden flex items-end justify-center">
-      <div class="w-full max-w-lg glass-card rounded-t-3xl p-5 space-y-4 max-h-[85vh] flex flex-col animate-slide-up">
-        <div class="flex items-center justify-between pb-2 border-b border-white/5">
-          <h3 class="text-base font-bold font-outfit" style="font-family:'Outfit', sans-serif;">🛒 Your Cart Tray</h3>
-          <button id="cart-drawer-close" class="text-slate-400 hover:text-slate-200 text-xl font-bold p-1">✕</button>
+    <!-- Mobile Cart Drawer Overlay (Clean Light Bottom Sheet) -->
+    <div id="cart-drawer-overlay" class="fixed inset-0 bg-slate-900/60 z-50 backdrop-blur-xs hidden flex items-end justify-center">
+      <div class="w-full max-w-lg bg-white rounded-t-3xl p-5 space-y-4 max-h-[85vh] flex flex-col border-t border-slate-200 shadow-2xl animate-slide-up">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🛒</span>
+            <h3 class="text-base font-extrabold font-outfit text-slate-900" style="font-family:'Outfit', sans-serif;">Your Order Tray</h3>
+          </div>
+          <button id="cart-drawer-close" class="text-slate-400 hover:text-slate-700 text-lg font-bold p-1 w-8 h-8 rounded-full flex items-center justify-center hover:bg-slate-100 transition-colors">✕</button>
         </div>
 
-        <div class="flex-1 overflow-y-auto space-y-3" id="cart-items-mobile-container">
+        <div class="flex-1 overflow-y-auto space-y-2.5" id="cart-items-mobile-container">
           <!-- items -->
         </div>
 
-        <div class="pt-4 border-t border-white/5 space-y-4">
+        <div class="pt-3 border-t border-slate-100 space-y-3">
           <div class="flex justify-between items-center text-sm font-semibold">
-            <span class="text-slate-400">Total Amount</span>
-            <span class="text-lg text-amber-500 font-bold" id="cart-total-mobile">₹0.00</span>
+            <span class="text-slate-500">Item Subtotal</span>
+            <span class="text-base text-slate-900 font-extrabold" id="cart-total-mobile">₹0.00</span>
           </div>
-          <button id="btn-checkout-mobile" class="w-full py-3.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-sm shadow-lg">
-            Place Table Order
+          <button id="btn-checkout-mobile" class="w-full py-3.5 rounded-xl bg-[#0c831f] active:scale-[0.99] text-white font-extrabold text-sm shadow-md shadow-emerald-700/20 flex items-center justify-center gap-2">
+            <span>🍽️ Place Table Order</span>
           </button>
         </div>
       </div>
@@ -420,72 +494,68 @@
   <!-- ==================================================== -->
   <!-- MODAL: PLACE ORDER INFORMATION -->
   <!-- ==================================================== -->
-  <div id="checkout-modal" class="fixed inset-0 bg-slate-950/80 z-50 backdrop-blur-md hidden flex items-center justify-center p-4">
-    <div class="w-full max-w-md glass-card p-6 space-y-5 animate-scale-up">
-      <div class="flex items-center justify-between pb-3 border-b border-white/5">
-        <h3 class="text-base font-bold font-outfit flex items-center gap-2" style="font-family:'Outfit', sans-serif;">
+  <div id="checkout-modal" class="fixed inset-0 bg-slate-900/60 z-50 backdrop-blur-xs hidden flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 space-y-5 text-slate-800 shadow-2xl animate-scale-up">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+        <h3 class="text-base font-extrabold font-outfit flex items-center gap-2 text-slate-900" style="font-family:'Outfit', sans-serif;">
           <span>📝 Confirm Table Order</span>
         </h3>
-        <button id="checkout-modal-close" class="text-slate-400 hover:text-slate-200 text-sm font-bold">✕</button>
+        <button id="checkout-modal-close" class="text-slate-400 hover:text-slate-700 text-lg font-bold w-8 h-8 rounded-full flex items-center justify-center hover:bg-slate-100 transition-colors">✕</button>
       </div>
 
       <form id="checkout-form" class="space-y-4">
         <div>
-          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Your Name </label>
-          <input type="text" name="name" placeholder="Guest" class="w-full px-4 py-3 rounded-xl glass-input text-sm">
+          <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Your Name (Optional)</label>
+          <input type="text" name="name" placeholder="Guest / Table Diner" class="w-full px-4 py-2.5 rounded-xl glass-input text-sm text-slate-900">
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Phone Number</label>
-          <input type="tel" name="phone" placeholder="Enter 10-digit mobile number" class="w-full px-4 py-3 rounded-xl glass-input text-sm">
+          <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Phone Number (Optional)</label>
+          <input type="tel" name="phone" placeholder="Enter 10-digit mobile number" class="w-full px-4 py-2.5 rounded-xl glass-input text-sm text-slate-900">
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Cooking Instructions (Optional)</label>
-          <textarea name="notes" placeholder="E.g., Make it spicy, No onions, etc." rows="2" class="w-full px-4 py-3 rounded-xl glass-input text-sm resize-none"></textarea>
+          <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Cooking Instructions (Optional)</label>
+          <textarea name="notes" placeholder="E.g., Less spicy, Extra gravy, No onions..." rows="2" class="w-full px-4 py-2.5 rounded-xl glass-input text-sm resize-none text-slate-900"></textarea>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Promo Coupon Code</label>
+          <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Promo Coupon Code</label>
           <div class="flex gap-2">
-            <input type="text" id="table-coupon-input" placeholder="Enter coupon code" class="flex-1 px-4 py-3 rounded-xl glass-input text-sm uppercase" style="text-transform:uppercase" />
-            <button type="button" id="btn-apply-coupon" class="px-4 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-all">
+            <input type="text" id="table-coupon-input" placeholder="Enter coupon code" class="flex-1 px-4 py-2.5 rounded-xl glass-input text-sm uppercase font-semibold text-slate-900" style="text-transform:uppercase" />
+            <button type="button" id="btn-apply-coupon" class="px-4 py-2.5 rounded-xl bg-[#0c831f] hover:bg-[#096a18] text-white font-bold text-xs transition-all shadow-xs cursor-pointer">
               Apply
             </button>
           </div>
           <div id="table-coupon-feedback" class="text-[11px] mt-1.5 hidden font-semibold"></div>
         </div>
 
-        <div class="rounded-xl p-4 space-y-2 bg-slate-900/60 border border-white/5 text-xs text-left">
-          <div class="flex justify-between text-slate-400">
-            <span>Subtotal</span>
-            <span class="font-semibold text-slate-200" id="modal-subtotal">₹0.00</span>
+        <div class="rounded-2xl p-4 space-y-2 bg-slate-50 border border-slate-200 text-xs text-left">
+          <div class="flex justify-between text-slate-600">
+            <span>Item Subtotal</span>
+            <span class="font-bold text-slate-900" id="modal-subtotal">₹0.00</span>
           </div>
-          <div class="flex justify-between text-emerald-500 hidden" id="modal-discount-row">
-            <span>Discount</span>
-            <span class="font-semibold" id="modal-discount">-₹0.00</span>
+          <div class="flex justify-between text-emerald-600 hidden" id="modal-discount-row">
+            <span>Promo Discount</span>
+            <span class="font-bold" id="modal-discount">-₹0.00</span>
           </div>
-          <div class="flex justify-between text-slate-400">
+          <div class="flex justify-between text-slate-600">
             <span>5% GST</span>
-            <span class="font-semibold text-slate-200" id="modal-gst">₹0.00</span>
+            <span class="font-bold text-slate-900" id="modal-gst">₹0.00</span>
           </div>
-          <!-- <div class="flex justify-between text-slate-400">
-            <span>5% off</span>
-            <span class="font-semibold text-slate-200" id="modal-gst">₹0.00</span>
-          </div> -->
-          <hr class="border-white/5 my-1">
-          <div class="flex justify-between text-sm font-bold text-slate-200">
+          <hr class="border-slate-200 my-1">
+          <div class="flex justify-between text-sm font-extrabold text-slate-900">
             <span>Total Payable</span>
-            <span class="text-amber-500" id="modal-total">₹0.00</span>
+            <span class="text-[#0c831f]" id="modal-total">₹0.00</span>
           </div>
         </div>
 
-        <div class="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 leading-relaxed flex gap-2">
+        <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 leading-relaxed flex gap-2">
           <span class="text-lg shrink-0">⚡</span>
-          <p>This order will be automatically linked to <strong>Table <span id="checkout-table-display">X</span></strong> (Zone: <span id="checkout-zone-display">Indoor</span>) and immediately sent to the kitchen. You can pay after dining.</p>
+          <p>This order is linked to <strong>Table <span id="checkout-table-display">X</span></strong> (<span id="checkout-zone-display">Indoor</span>) and will be sent immediately to the kitchen. You can pay after dining.</p>
         </div>
 
-        <button type="submit" id="btn-submit-order" class="w-full py-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold transition-all text-sm shadow-lg shadow-amber-500/20">
+        <button type="submit" id="btn-submit-order" class="w-full py-3.5 rounded-xl bg-[#0c831f] hover:bg-[#096a18] active:scale-[0.99] text-white font-extrabold transition-all text-sm shadow-md shadow-emerald-700/20 cursor-pointer">
           Confirm & Send to Kitchen
         </button>
       </form>
@@ -496,57 +566,57 @@
   <!-- VIEW: SUCCESS ORDER VIEW -->
   <!-- ==================================================== -->
   <div id="success-view" class="hidden min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-md glass-card p-8 text-center space-y-6">
-      <div class="w-20 h-20 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto text-4xl text-emerald-400 animate-bounce">
+    <div class="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-8 text-center space-y-6 shadow-2xl">
+      <div class="w-20 h-20 rounded-full bg-emerald-50 border-2 border-emerald-200 flex items-center justify-center mx-auto text-4xl text-[#0c831f] animate-bounce">
         ✓
       </div>
-      <div class="space-y-2">
-        <h2 class="text-2xl font-bold font-outfit text-emerald-400" style="font-family:'Outfit', sans-serif;">Order Sent to Kitchen!</h2>
-        <p class="text-sm text-slate-300">Your order has been received. Our chefs are preparing your food now.</p>
+      <div class="space-y-1.5">
+        <h2 class="text-2xl font-extrabold font-outfit text-slate-900" style="font-family:'Outfit', sans-serif;">Order Sent to Kitchen!</h2>
+        <p class="text-sm text-slate-500">Your order has been received. Our chefs are preparing your delicious food now.</p>
       </div>
 
-      <div class="p-4 rounded-xl bg-slate-900/60 border border-white/5 text-left text-xs space-y-2.5">
-        <div id="success-append-badge" class="hidden py-1.5 px-2.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold text-center text-[11px] mb-1">
+      <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-left text-xs space-y-2.5">
+        <div id="success-append-badge" class="hidden py-1.5 px-2.5 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold text-center text-[11px] mb-1">
           ✨ Additional dishes added to your active Table order!
         </div>
         <p class="flex justify-between">
-          <span class="text-slate-400">Order Number:</span>
-          <strong class="text-slate-200" id="success-order-number">#01</strong>
+          <span class="text-slate-500 font-medium">Order Number:</span>
+          <strong class="text-slate-900 font-extrabold" id="success-order-number">#01</strong>
         </p>
         <p class="flex justify-between">
-          <span class="text-slate-400">Serving Table:</span>
-          <strong class="text-amber-500" id="success-table-number">Table X</strong>
+          <span class="text-slate-500 font-medium">Serving Table:</span>
+          <strong class="text-[#0c831f] font-extrabold" id="success-table-number">Table X</strong>
         </p>
         <p class="flex justify-between">
-          <span class="text-slate-400">Diner Name:</span>
-          <strong class="text-slate-200" id="success-diner-name">John Doe</strong>
+          <span class="text-slate-500 font-medium">Diner Name:</span>
+          <strong class="text-slate-900 font-bold" id="success-diner-name">Guest</strong>
         </p>
       </div>
 
-      <div id="success-promo-box" class="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-left text-xs space-y-2 hidden">
-        <p class="font-bold text-amber-300">🎁 Special Offer for your Next Visit!</p>
-        <p class="text-slate-300 text-[11px]">Use code <strong class="text-amber-500 font-bold" id="success-promo-code">CODE</strong> to get <strong class="text-amber-400 font-bold" id="success-promo-pct">X%</strong> off on your next visit! Valid until <span id="success-promo-expiry">Date</span>.</p>
+      <div id="success-promo-box" class="p-4 rounded-xl bg-amber-50 border border-amber-200 text-left text-xs space-y-2 hidden">
+        <p class="font-bold text-amber-900">🎁 Special Offer for your Next Visit!</p>
+        <p class="text-slate-600 text-[11px]">Use code <strong class="text-amber-700 font-bold" id="success-promo-code">CODE</strong> to get <strong class="text-amber-800 font-bold" id="success-promo-pct">X%</strong> off on your next visit! Valid until <span id="success-promo-expiry">Date</span>.</p>
       </div>
 
       <!-- Social & Review Action Card inside Success View -->
-      <div class="p-4 rounded-2xl bg-gradient-to-b from-slate-900 to-slate-950 border border-amber-500/20 text-center space-y-3">
-        <p class="text-xs font-bold text-amber-400 flex items-center justify-center gap-1.5">
+      <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-3">
+        <p class="text-xs font-bold text-slate-800 flex items-center justify-center gap-1.5">
           <span>⭐</span><span>Loved your dining experience?</span>
         </p>
         <div class="flex items-center justify-center gap-2 flex-wrap">
-          <button id="btn-success-review" type="button" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer">
+          <button id="btn-success-review" type="button" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer">
             <span>⭐</span><span>Google Review</span>
           </button>
-          <a href="https://www.instagram.com/limra_restaurant_" target="_blank" rel="noopener noreferrer" class="p-2.5 rounded-xl bg-gradient-to-tr from-yellow-500 via-pink-600 to-purple-600 text-white flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all" title="Follow on Instagram">
+          <a href="https://www.instagram.com/limra_restaurant_" target="_blank" rel="noopener noreferrer" class="p-2.5 rounded-xl bg-gradient-to-tr from-yellow-500 via-pink-600 to-purple-600 text-white flex items-center justify-center shadow-xs hover:scale-105 active:scale-95 transition-all" title="Follow on Instagram">
             <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
           </a>
-          <a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer" class="p-2.5 rounded-xl bg-[#1877F2] text-white flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all" title="Connect on Facebook">
+          <a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer" class="p-2.5 rounded-xl bg-[#1877F2] text-white flex items-center justify-center shadow-xs hover:scale-105 active:scale-95 transition-all" title="Connect on Facebook">
             <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
           </a>
         </div>
       </div>
 
-      <button id="btn-order-more" class="w-full py-3.5 rounded-xl border border-white/10 hover:border-amber-500/30 text-slate-200 hover:text-amber-500 font-semibold transition-all text-sm">
+      <button id="btn-order-more" class="w-full py-3.5 rounded-xl border border-slate-200 hover:border-emerald-500 bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold transition-all text-sm cursor-pointer">
         Order More Items
       </button>
 
@@ -558,11 +628,11 @@
   <!-- ==================================================== -->
   <div id="owner-view" class="hidden min-h-screen flex flex-col">
     <!-- Header -->
-    <header class="tbl-header px-6 py-4 flex items-center justify-between">
+    <header class="tbl-header px-6 py-4 flex items-center justify-between shadow-xs">
       <div class="flex items-center gap-3">
-        <p class="adm-brand text-2xl font-bold" style="margin:0;">LIMRA<span>.</span></p>
-        <div class="h-6 w-px bg-white/10"></div>
-        <p class="text-sm text-slate-400 font-semibold">QR Code & Table Manager</p>
+        <p class="adm-brand text-2xl font-black text-slate-900" style="margin:0;"><span class="text-[#0c831f]">LIMRA</span><span>.</span></p>
+        <div class="h-6 w-px bg-slate-200"></div>
+        <p class="text-sm text-slate-500 font-bold">QR Code & Table Manager</p>
       </div>
       <a href="/admin.html" class="adm-btn adm-btn-secondary adm-btn-sm">
         Go to Admin Dashboard
@@ -570,27 +640,27 @@
     </header>
 
     <!-- Main Container -->
-    <main class="flex-1 max-w-7xl w-full mx-auto px-6 py-8 space-y-8">
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
       
       <!-- Welcome Intro -->
-      <div class="space-y-2">
-        <h2 class="text-2xl font-bold font-outfit text-white" style="font-family:'Outfit', sans-serif;">Table QR Code Generator</h2>
-        <p class="text-sm text-slate-400">Manage your table layout, select a table, and view/download its unique QR code link for customers to place self-orders.</p>
+      <div class="space-y-1">
+        <h2 class="text-2xl font-extrabold font-outfit text-slate-900" style="font-family:'Outfit', sans-serif;">Table QR Code Generator</h2>
+        <p class="text-sm text-slate-500">Manage your table layout, select a table, and view/download its unique QR code link for customers to place self-orders.</p>
       </div>
 
       <div class="tbl-map-container">
         
         <!-- Left Side: Interactive Map -->
-        <div class="glass-card p-6 flex flex-col">
-          <h3 class="text-lg font-bold font-outfit mb-4 flex items-center gap-2" style="font-family:'Outfit', sans-serif;">
+        <div class="glass-card p-6 flex flex-col border border-slate-200 bg-white shadow-xs">
+          <h3 class="text-lg font-bold font-outfit mb-4 flex items-center gap-2 text-slate-900" style="font-family:'Outfit', sans-serif;">
             <span>🗺️ Restaurant Table Map</span>
           </h3>
 
-          <div class="flex-1 rounded-2xl border border-white/5 overflow-hidden flex flex-col lg:flex-row min-h-[500px]">
+          <div class="flex-1 rounded-2xl border border-slate-200 overflow-hidden flex flex-col lg:flex-row min-h-[500px]">
             
             <!-- Outdoor Section -->
-            <div class="flex-1 p-5 border-r border-white/5 flex flex-col">
-              <p class="layout-area-title text-xs text-amber-500 mb-6 text-center">🌳 Outdoor Area (10 Tables)</p>
+            <div class="flex-1 p-5 border-r border-slate-200 flex flex-col bg-emerald-50/30">
+              <p class="layout-area-title text-xs text-emerald-800 mb-6 text-center font-bold">🌳 Outdoor Area (10 Tables)</p>
               
               <!-- Map Layout grid -->
               <div class="flex-1 relative flex flex-col justify-between items-center gap-6 py-4">
@@ -627,8 +697,8 @@
             </div>
 
             <!-- Indoor Section -->
-            <div class="flex-1 p-5 flex flex-col relative" style="background: rgba(30, 41, 59, 0.1);">
-              <p class="layout-area-title text-xs text-blue-400 mb-6 text-center">🏠 Indoor Area (9 Tables)</p>
+            <div class="flex-1 p-5 flex flex-col relative bg-slate-50/60">
+              <p class="layout-area-title text-xs text-blue-700 mb-6 text-center font-bold">🏠 Indoor Area (9 Tables)</p>
               
               <!-- Map Layout grid -->
               <div class="flex-1 relative flex flex-col justify-between items-center gap-6 py-4">
@@ -667,40 +737,40 @@
           
           <!-- Main Restaurant Entry visual at the very bottom center -->
           <div class="mt-4 flex justify-center w-full">
-            <span class="px-5 py-1.5 rounded-full bg-slate-800 text-white font-bold text-xs uppercase tracking-wider border border-white/5">
+            <span class="px-5 py-1.5 rounded-full bg-slate-100 text-slate-700 font-bold text-xs uppercase tracking-wider border border-slate-200">
               🚪 Main Restaurant Entrance
             </span>
           </div>
         </div>
 
         <!-- Right Side: Selected Table Info & QR Generator -->
-        <div class="glass-card p-6 flex flex-col justify-center items-center text-center space-y-6 min-h-[500px]">
+        <div class="glass-card p-6 flex flex-col justify-center items-center text-center space-y-6 min-h-[500px] border border-slate-200 bg-white shadow-xs">
           
           <!-- Placeholder when no table is active -->
           <div id="qr-placeholder" class="space-y-4 py-12">
             <span class="text-6xl block">📱</span>
-            <h4 class="text-base font-bold font-outfit text-slate-200">Select a Table to Generate</h4>
-            <p class="text-xs text-slate-400 max-w-xs mx-auto">Click on any table in the layout map to view its unique ordering URL and generate its high-quality QR code.</p>
+            <h4 class="text-base font-bold font-outfit text-slate-800">Select a Table to Generate</h4>
+            <p class="text-xs text-slate-500 max-w-xs mx-auto">Click on any table in the layout map to view its unique ordering URL and generate its high-quality QR code.</p>
           </div>
 
           <!-- Active QR Card -->
           <div id="qr-card" class="hidden w-full space-y-6">
             <div class="space-y-1">
-              <h4 class="text-xl font-bold font-outfit text-amber-500" style="font-family:'Outfit', sans-serif;" id="qr-table-title">Table 5</h4>
-              <p class="text-xs text-slate-400 uppercase tracking-wider" id="qr-table-subtitle">Indoor Area</p>
+              <h4 class="text-xl font-extrabold font-outfit text-[#0c831f]" style="font-family:'Outfit', sans-serif;" id="qr-table-title">Table 5</h4>
+              <p class="text-xs text-slate-500 uppercase tracking-wider font-bold" id="qr-table-subtitle">Indoor Area</p>
             </div>
 
-            <!-- QR code image container (glass background) -->
-            <div class="w-56 h-56 rounded-2xl bg-white p-3 mx-auto flex items-center justify-center shadow-xl">
+            <!-- QR code image container -->
+            <div class="w-56 h-56 rounded-2xl bg-white p-3 mx-auto flex items-center justify-center shadow-lg border border-slate-200">
               <img id="qr-code-image" src="" alt="Table QR Code" class="w-full h-full object-contain">
             </div>
 
             <!-- Table URL link box -->
             <div class="space-y-2">
-              <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider text-left">Scan Link URL</label>
+              <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider text-left">Scan Link URL</label>
               <div class="flex gap-2">
-                <input type="text" id="qr-url-input" readonly class="flex-1 px-3.5 py-2.5 rounded-xl glass-input text-xs font-mono select-all">
-                <button id="btn-copy-url" class="px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold transition-all text-xs">
+                <input type="text" id="qr-url-input" readonly class="flex-1 px-3.5 py-2.5 rounded-xl glass-input text-xs font-mono select-all text-slate-800">
+                <button id="btn-copy-url" class="px-4 rounded-xl bg-[#0c831f] hover:bg-[#096a18] text-white font-bold transition-all text-xs cursor-pointer">
                   Copy
                 </button>
               </div>
@@ -708,10 +778,10 @@
 
             <!-- Buttons -->
             <div class="flex gap-3 justify-center">
-              <button id="btn-print-qr" class="px-5 py-3 rounded-xl border border-white/10 hover:border-amber-500/30 text-slate-200 hover:text-amber-500 font-semibold transition-all text-xs flex items-center gap-1.5">
+              <button id="btn-print-qr" class="px-5 py-3 rounded-xl border border-slate-200 hover:border-emerald-500 bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold transition-all text-xs flex items-center gap-1.5 cursor-pointer">
                 🖨️ Print QR Label
               </button>
-              <a id="btn-download-qr" download="table_qr.png" href="#" class="px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold transition-all text-xs flex items-center gap-1.5">
+              <a id="btn-download-qr" download="table_qr.png" href="#" class="px-5 py-3 rounded-xl bg-[#0c831f] hover:bg-[#096a18] text-white font-bold transition-all text-xs flex items-center gap-1.5 shadow-xs cursor-pointer">
                 📥 Download PNG
               </a>
             </div>
@@ -724,46 +794,46 @@
   <!-- ==================================================== -->
   <!-- FULL-SCREEN OVERLAY: GOOGLE REVIEW PROMPT -->
   <!-- ==================================================== -->
-  <div id="google-review-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md transition-all duration-300">
-    <div class="relative w-full max-w-md glass-card p-6 sm:p-8 text-center space-y-6 border border-amber-500/30 bg-slate-900/95 shadow-2xl rounded-3xl animate-fade-in">
+  <div id="google-review-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs transition-all duration-300">
+    <div class="relative w-full max-w-md bg-white border border-slate-200 p-6 sm:p-8 text-center space-y-6 shadow-2xl rounded-3xl animate-fade-in text-slate-800">
       
       <!-- Skip Corner Button -->
-      <button id="btn-dismiss-review-corner" aria-label="Dismiss" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200 p-2 rounded-full hover:bg-white/5 transition-colors focus:outline-none">
+      <button id="btn-dismiss-review-corner" aria-label="Dismiss" class="absolute top-4 right-4 text-slate-400 hover:text-slate-700 p-2 rounded-full hover:bg-slate-100 transition-colors focus:outline-none">
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
 
       <!-- Brand Logo & 5-Star Highlight -->
       <div class="space-y-3 pt-2">
-        <div class="w-16 h-16 rounded-2xl overflow-hidden mx-auto border-2 border-amber-500/40 shadow-lg shadow-amber-500/20 bg-slate-950 flex items-center justify-center">
+        <div class="w-16 h-16 rounded-2xl overflow-hidden mx-auto border border-slate-200 shadow-md bg-white flex items-center justify-center">
           <img src="/images/logo.png" alt="LIMRA Logo" class="w-full h-full object-cover" />
         </div>
         
-        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-400 text-xs font-bold tracking-wide">
+        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold tracking-wide">
           <span>⭐</span><span>Google Review</span>
         </div>
 
-        <div class="flex justify-center gap-1.5 text-2xl text-amber-400">
+        <div class="flex justify-center gap-1.5 text-2xl text-amber-500">
           <span>★</span><span>★</span><span>★</span><span>★</span><span>★</span>
         </div>
       </div>
       
       <!-- Text Description -->
       <div class="space-y-2">
-        <h3 class="text-xl font-extrabold font-outfit text-white leading-snug" style="font-family:'Outfit', sans-serif;">
-          How was your experience at <span class="text-amber-400">LIMRA Restaurant</span>?
+        <h3 class="text-xl font-extrabold font-outfit text-slate-900 leading-snug" style="font-family:'Outfit', sans-serif;">
+          How was your experience at <span class="text-[#0c831f]">LIMRA Restaurant</span>?
         </h3>
-        <p class="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-sm mx-auto">
+        <p class="text-xs sm:text-sm text-slate-500 leading-relaxed max-w-sm mx-auto">
           Your order has been sent to our kitchen! We'd love to hear your feedback. A quick rating on Google helps us serve you even better.
         </p>
       </div>
 
       <!-- Action Buttons -->
       <div class="space-y-3 pt-1">
-        <a id="btn-submit-google-review" href="#" target="_blank" rel="noopener noreferrer" class="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 active:scale-[0.98] text-slate-950 font-extrabold text-sm tracking-wide flex items-center justify-center gap-2 shadow-xl shadow-amber-500/25 transition-all cursor-pointer">
+        <a id="btn-submit-google-review" href="#" target="_blank" rel="noopener noreferrer" class="w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 font-extrabold text-sm tracking-wide flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 transition-all cursor-pointer">
           <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           Leave a Review
         </a>
-        <button id="btn-close-google-review" type="button" class="w-full py-2.5 px-4 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors bg-transparent border-0 cursor-pointer">
+        <button id="btn-close-google-review" type="button" class="w-full py-2.5 px-4 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors bg-transparent border-0 cursor-pointer">
           Maybe Later
         </button>
       </div>
@@ -773,46 +843,46 @@
   <!-- ==================================================== -->
   <!-- MODAL/BOTTOM DRAWER: PRODUCT DETAILS & RECOMMENDATIONS -->
   <!-- ==================================================== -->
-  <div id="table-detail-overlay" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm opacity-0 transition-opacity duration-300"></div>
-  <div id="table-detail-drawer" class="hidden fixed inset-x-0 bottom-0 sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[480px] z-50 bg-slate-900 border-t sm:border-t-0 sm:border-l border-white/5 shadow-2xl flex flex-col max-h-[92vh] sm:max-h-screen text-slate-100">
+  <div id="table-detail-overlay" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs opacity-0 transition-opacity duration-300"></div>
+  <div id="table-detail-drawer" class="hidden fixed inset-x-0 bottom-0 sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[480px] z-50 bg-white border-t sm:border-t-0 sm:border-l border-slate-200 shadow-2xl flex flex-col max-h-[92vh] sm:max-h-screen text-slate-900">
     <!-- Header with expanded hit area close button -->
-    <div class="relative shrink-0 w-full aspect-[16/10] sm:aspect-[16/9] bg-neutral-950 flex items-center justify-center overflow-hidden">
+    <div class="relative shrink-0 w-full aspect-[16/10] sm:aspect-[16/9] bg-slate-100 flex items-center justify-center overflow-hidden">
       <img id="table-drawer-image" src="" alt="" class="w-full h-full object-cover">
       <span id="table-drawer-emoji" class="text-6xl absolute inset-0 flex items-center justify-center" style="display:none;">🍱</span>
       
-      <!-- Expanded Hit Area Close Button filling the top corner -->
-      <button id="table-drawer-close" aria-label="Close item details" class="absolute top-0 right-0 z-30 w-16 h-16 sm:w-16 sm:h-16 p-3.5 sm:p-4 flex items-start justify-end text-slate-100 cursor-pointer focus:outline-none select-none group">
-        <span class="w-9 h-9 rounded-full bg-slate-950/75 group-hover:bg-slate-950 group-active:scale-90 flex items-center justify-center shadow-lg backdrop-blur-md border border-white/20 transition-all">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      <!-- Expanded Hit Area Close Button -->
+      <button id="table-drawer-close" aria-label="Close item details" class="absolute top-0 right-0 z-30 w-16 h-16 sm:w-16 sm:h-16 p-3.5 sm:p-4 flex items-start justify-end text-slate-800 cursor-pointer focus:outline-none select-none group">
+        <span class="w-9 h-9 rounded-full bg-white/90 group-hover:bg-white group-active:scale-90 flex items-center justify-center shadow-md backdrop-blur-md border border-slate-200 transition-all font-bold">
+          ✕
         </span>
       </button>
 
-      <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-900 to-transparent h-16 pointer-events-none"></div>
+      <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-white to-transparent h-12 pointer-events-none"></div>
     </div>
 
     <!-- Scrollable content -->
     <div class="flex-1 overflow-y-auto px-6 pb-6 space-y-6">
       <!-- Title & Price Block -->
       <div class="space-y-2">
-        <div class="flex items-start justify-between gap-4 pt-4">
+        <div class="flex items-start justify-between gap-4 pt-3">
           <div class="space-y-1">
-            <h3 id="table-drawer-name" class="font-bold text-lg font-outfit text-slate-100 leading-tight"></h3>
-            <span id="table-drawer-category" class="inline-block px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] font-bold text-amber-500 uppercase tracking-widest"></span>
+            <h3 id="table-drawer-name" class="font-extrabold text-lg font-outfit text-slate-900 leading-tight"></h3>
+            <span id="table-drawer-category" class="inline-block px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[10px] font-bold text-emerald-800 uppercase tracking-wider"></span>
           </div>
-          <div id="table-drawer-price" class="text-lg font-black text-amber-400 flex items-baseline"></div>
+          <div id="table-drawer-price" class="text-xl font-black text-[#0c831f] flex items-baseline"></div>
         </div>
-        <p id="table-drawer-desc" class="text-xs text-slate-400 leading-relaxed"></p>
+        <p id="table-drawer-desc" class="text-xs text-slate-500 leading-relaxed"></p>
       </div>
 
       <!-- Included combo items block (if combo) -->
-      <div id="table-drawer-combo-items" class="hidden p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-2">
-        <div class="text-[10px] font-black uppercase tracking-wider text-amber-400">📦 Included Dishes in Combo Pack</div>
+      <div id="table-drawer-combo-items" class="hidden p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-2">
+        <div class="text-[10px] font-black uppercase tracking-wider text-emerald-800">📦 Included Dishes in Combo Pack</div>
         <div id="table-drawer-combo-items-list" class="flex flex-wrap gap-1.5"></div>
       </div>
 
       <!-- Action Bar -->
-      <div class="p-4 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between gap-4">
-        <span class="text-xs font-semibold text-slate-400">Quantity</span>
+      <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4">
+        <span class="text-xs font-bold text-slate-600">Quantity</span>
         <div id="table-drawer-actions-container" class="flex items-center gap-3">
           <!-- Dynamically populated Add Button or +/- controls -->
         </div>
@@ -820,7 +890,7 @@
 
       <!-- Dynamic Recommendations Strip -->
       <div id="table-drawer-recommendations-section" class="space-y-3 pt-2">
-        <h4 class="text-[10px] font-black uppercase tracking-wider text-amber-500/80 tracking-widest">Perfect Matches / Pairs Well With</h4>
+        <h4 class="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 tracking-wider">Perfect Matches / Pairs Well With</h4>
         <div id="table-drawer-recommendations-grid" class="space-y-2.5">
           <!-- Recommendations will render here -->
         </div>
@@ -831,49 +901,49 @@
   <!-- ══════════════════════════════════════════
        LANGUAGE SELECTION POPUP MODAL
   ══════════════════════════════════════════════ -->
-  <div id="language-selection-modal" class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md transition-all duration-300 hidden opacity-0 pointer-events-none">
-    <div class="relative w-full max-w-md rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl scale-95 transition-all duration-300 text-center animate-scale-up glass-card" style="background:#1e293b;">
+  <div id="language-selection-modal" class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs transition-all duration-300 hidden opacity-0 pointer-events-none">
+    <div class="relative w-full max-w-md rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-2xl scale-95 transition-all duration-300 text-center animate-scale-up bg-white text-slate-800">
       
       <!-- Close Corner Button -->
-      <button id="lang-modal-close-btn" aria-label="Close" class="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors">
+      <button id="lang-modal-close-btn" aria-label="Close" class="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
 
       <!-- Icon & Title -->
-      <div class="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-3xl shadow-sm bg-amber-500/15 border border-amber-500/30 text-amber-400">
+      <div class="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-3xl shadow-xs bg-emerald-50 border border-emerald-200 text-[#0c831f]">
         🌐
       </div>
       
-      <h3 class="font-display text-xl sm:text-2xl font-bold mb-1 text-white font-outfit" style="font-family:'Outfit', sans-serif;" data-i18n="lang_modal_title">
+      <h3 class="font-display text-xl sm:text-2xl font-extrabold mb-1 text-slate-900 font-outfit" style="font-family:'Outfit', sans-serif;" data-i18n="lang_modal_title">
         Choose Your Language / ভাষা বেছে নিন
       </h3>
-      <p class="text-xs sm:text-sm text-slate-400 mb-6" data-i18n="lang_modal_sub">
+      <p class="text-xs sm:text-sm text-slate-500 mb-6" data-i18n="lang_modal_sub">
         Select your preferred language to continue / চালিয়ে যেতে আপনার পছন্দের ভাষা নির্বাচন করুন
       </p>
 
       <!-- Language Cards -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-2">
         <!-- Bengali Option -->
-        <button id="lang-card-bn" type="button" class="group p-4 rounded-2xl border-2 text-left transition-all hover:scale-[1.02] active:scale-95 flex flex-col justify-between focus:outline-none cursor-pointer border-amber-500/40 bg-amber-500/10">
+        <button id="lang-card-bn" type="button" class="group p-4 rounded-2xl border-2 text-left transition-all hover:scale-[1.02] active:scale-95 flex flex-col justify-between focus:outline-none cursor-pointer border-emerald-500 bg-emerald-50/50">
           <div class="flex items-center justify-between mb-2">
             <span class="text-2xl">🇮🇳</span>
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-slate-950">বাংলা</span>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#0c831f] text-white">বাংলা</span>
           </div>
           <div>
-            <h4 class="font-bold text-base text-white leading-tight">বাংলা</h4>
-            <p class="text-[11px] text-amber-200/80 mt-0.5">সহজে বাংলায় অর্ডার করুন</p>
+            <h4 class="font-bold text-base text-slate-900 leading-tight">বাংলা</h4>
+            <p class="text-[11px] text-emerald-800 mt-0.5 font-medium">সহজে বাংলায় অর্ডার করুন</p>
           </div>
         </button>
 
         <!-- English Option -->
-        <button id="lang-card-en" type="button" class="group p-4 rounded-2xl border-2 text-left transition-all hover:scale-[1.02] active:scale-95 flex flex-col justify-between focus:outline-none cursor-pointer border-white/10 bg-slate-900/60">
+        <button id="lang-card-en" type="button" class="group p-4 rounded-2xl border-2 text-left transition-all hover:scale-[1.02] active:scale-95 flex flex-col justify-between focus:outline-none cursor-pointer border-slate-200 bg-slate-50">
           <div class="flex items-center justify-between mb-2">
             <span class="text-2xl">🇬🇧</span>
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">EN</span>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">EN</span>
           </div>
           <div>
-            <h4 class="font-bold text-base text-white leading-tight">English</h4>
-            <p class="text-[11px] text-slate-400 mt-0.5">Order food in English</p>
+            <h4 class="font-bold text-base text-slate-900 leading-tight">English</h4>
+            <p class="text-[11px] text-slate-500 mt-0.5 font-medium">Order food in English</p>
           </div>
         </button>
       </div>

@@ -236,13 +236,13 @@ function renderCategoryChips() {
   const allLabel = t('tbl_all');
 
   const specialsChipHtml = `
-    <button class="category-chip px-5 py-2.5 rounded-full text-xs font-semibold border border-white/5 bg-slate-900/60 text-slate-300 hover:border-white/10 ${selectedCategory === 'featured' ? 'active' : ''}" data-category="featured">
+    <button class="category-chip ${selectedCategory === 'featured' ? 'active' : ''}" data-category="featured">
       ${specialsLabel}
     </button>
   `;
 
   const allChipHtml = `
-    <button class="category-chip px-5 py-2.5 rounded-full text-xs font-semibold border border-white/5 bg-slate-900/60 text-slate-300 hover:border-white/10 ${selectedCategory === 'all' ? 'active' : ''}" data-category="all">
+    <button class="category-chip ${selectedCategory === 'all' ? 'active' : ''}" data-category="all">
       ${allLabel}
     </button>
   `;
@@ -252,7 +252,7 @@ function renderCategoryChips() {
     const emoji = categoryEmojis[cat] || '🍛';
     const isActive = selectedCategory === cat;
     return `
-      <button class="category-chip px-5 py-2.5 rounded-full text-xs font-semibold border border-white/5 bg-slate-900/60 text-slate-300 hover:border-white/10 ${isActive ? 'active' : ''}" data-category="${cat}">
+      <button class="category-chip ${isActive ? 'active' : ''}" data-category="${cat}">
         ${emoji} ${label}
       </button>
     `;
@@ -307,7 +307,7 @@ function renderMenu() {
         <div class="col-span-full py-16 text-center text-slate-400 space-y-4">
           <p class="text-5xl">🍱</p>
           <div class="space-y-1">
-            <p class="text-sm font-bold text-slate-200">No active Specials or Combo Deals today</p>
+            <p class="text-sm font-bold text-slate-700">No active Specials or Combo Deals today</p>
             <p class="text-xs text-slate-400">Click the "🍽️ All Items" tab above to view our complete menu!</p>
           </div>
         </div>
@@ -316,14 +316,14 @@ function renderMenu() {
       grid.innerHTML = `
         <div class="col-span-full py-12 text-center text-slate-400 space-y-2">
           <p class="text-3xl">🍲</p>
-          <p class="text-sm font-semibold">No food items match your search</p>
+          <p class="text-sm font-semibold text-slate-600">No food items match your search</p>
         </div>
       `;
     }
     return;
   }
 
-  // Render combo cards (Optimized for 2-column mobile and responsive multi-column layout)
+  // Render combo cards (Blinkit Clean Card Style)
   const combosHtml = filteredCombos.map(combo => {
     const cartItem = cart.find(c => c.item.id === `combo-${combo.id}` || String(c.item.id) === `combo-${combo.id}`);
     const qty = cartItem ? cartItem.quantity : 0;
@@ -335,33 +335,36 @@ function renderMenu() {
     const comboImg = combo.image_url || combo.image || '/images/food_biryani.png';
 
     return `
-      <div class="glass-card food-card p-2.5 sm:p-3.5 flex flex-col justify-between rounded-2xl border border-amber-500/25 cursor-pointer hover:border-amber-500/50 transition-all active:scale-[0.99] relative overflow-hidden" data-item-id="combo-${combo.id}">
+      <div class="food-card p-2.5 sm:p-3 flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white cursor-pointer hover:border-[#0c831f]/50 hover:shadow-md transition-all active:scale-[0.99] relative overflow-hidden" data-item-id="combo-${combo.id}">
         <div>
-          <div class="w-full aspect-[4/3] rounded-xl overflow-hidden shrink-0 border border-amber-500/20 bg-neutral-800 animate-pulse flex items-center justify-center relative mb-2">
-            <img src="${comboImg}" alt="${combo.name}" class="w-full h-full object-cover error-fallback" loading="lazy" decoding="async" onload="this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');">
+          <div class="w-full aspect-[4/3] rounded-xl overflow-hidden shrink-0 border border-slate-100 bg-neutral-100 animate-pulse flex items-center justify-center relative mb-2">
+            <img src="${comboImg}" alt="${combo.name}" class="w-full h-full object-cover error-fallback" loading="lazy" decoding="async" onload="this.parentElement.classList.remove('animate-pulse', 'bg-neutral-100');" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; this.parentElement.classList.remove('animate-pulse', 'bg-neutral-100');">
             <span class="text-3xl absolute inset-0 flex items-center justify-center" style="display:none;">🍱</span>
-            <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-amber-500 text-[9px] font-black text-slate-950 uppercase tracking-wider shadow-sm">🍱 Combo</span>
+            <span class="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md bg-amber-500 text-[10px] font-black text-slate-950 uppercase tracking-wider shadow-xs">🍱 Combo</span>
           </div>
           <div class="text-left">
-            <h4 class="font-bold text-xs sm:text-sm text-slate-100 line-clamp-2 leading-snug min-h-[2rem] sm:min-h-[2.5rem]" title="${combo.name}">${combo.name}</h4>
-            <p class="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 font-medium line-clamp-1 truncate" title="Includes: ${itemsListStr}">${itemsListStr}</p>
+            <div class="flex items-start gap-1">
+              <span class="text-xs mr-1 shrink-0">🍱</span>
+              <h4 class="font-bold text-xs sm:text-sm text-slate-800 line-clamp-2 leading-snug min-h-[2rem] sm:min-h-[2.5rem] flex-1" title="${combo.name}">${combo.name}</h4>
+            </div>
+            <p class="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 font-medium line-clamp-1 truncate" title="Includes: ${itemsListStr}">${itemsListStr}</p>
             <div class="flex items-baseline gap-1.5 my-1.5">
-              <span class="text-xs sm:text-sm font-black text-amber-400">₹${combo.price}</span>
-              ${hasDiscount ? `<span class="text-[10px] sm:text-xs font-normal text-slate-500 line-through">₹${combo.mrp}</span>` : ''}
+              <span class="text-xs sm:text-sm font-extrabold text-[#0c831f]">₹${combo.price}</span>
+              ${hasDiscount ? `<span class="text-[10px] sm:text-xs font-normal text-slate-400 line-through">₹${combo.mrp}</span>` : ''}
             </div>
           </div>
         </div>
 
-        <div class="pt-1 mt-auto">
+        <div class="pt-1 mt-auto flex justify-end">
           ${qty > 0 ? `
-            <div class="flex items-center justify-between w-full bg-slate-950/90 border border-amber-500/30 rounded-xl p-0.5">
-              <button type="button" aria-label="Decrease quantity" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-90 text-slate-200 flex items-center justify-center font-black text-xs sm:text-sm btn-cart-minus" data-item-id="combo-${combo.id}">−</button>
-              <span class="text-center font-bold text-xs sm:text-sm text-amber-400 px-1">${qty}</span>
-              <button type="button" aria-label="Increase quantity" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-90 text-slate-950 flex items-center justify-center font-black text-xs sm:text-sm btn-cart-plus" data-item-id="combo-${combo.id}">+</button>
+            <div class="card-stepper-btn" onclick="event.stopPropagation()">
+              <button type="button" aria-label="Decrease quantity" class="card-stepper-op btn-cart-minus" data-item-id="combo-${combo.id}">−</button>
+              <span class="card-stepper-val">${qty}</span>
+              <button type="button" aria-label="Increase quantity" class="card-stepper-op btn-cart-plus" data-item-id="combo-${combo.id}">+</button>
             </div>
           ` : `
-            <button type="button" class="w-full py-1.5 sm:py-2 px-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-xs flex items-center justify-center gap-1 shadow-sm transition-all btn-cart-add" data-item-id="combo-${combo.id}">
-              <span class="text-xs">＋</span><span>Add</span>
+            <button type="button" class="add-btn btn-cart-add w-full" data-item-id="combo-${combo.id}">
+              + ADD
             </button>
           `}
         </div>
@@ -369,7 +372,7 @@ function renderMenu() {
     `;
   }).join('');
 
-  // Render normal items (Optimized for 2-column mobile and responsive multi-column layout)
+  // Render normal items (Blinkit Clean Card Style with Veg/Non-Veg FSSAI dots)
   const itemsHtml = filtered.map(item => {
     const cartItem = cart.find(c => c.item.id === item.id || String(c.item.id) === String(item.id));
     const qty = cartItem ? cartItem.quantity : 0;
@@ -377,36 +380,44 @@ function renderMenu() {
     const emojiStr = item.emoji || '🍛';
     const isAvailable = item.available !== false;
     const catLabel = categoryLabels[item.category] || item.category;
+    const isVeg = item.veg === true || item.type === 'veg';
+    const vegDot = `<div class="food-type-icon ${isVeg ? '' : 'non-veg'}" title="${isVeg ? 'Veg' : 'Non-Veg'}" style="flex-shrink:0;margin-top:2px;"></div>`;
+    const hasDiscount = item.mrp && parseFloat(item.mrp) > parseFloat(item.price);
 
     return `
-      <div class="glass-card food-card p-2.5 sm:p-3.5 flex flex-col justify-between rounded-2xl border border-white/10 ${isAvailable ? 'hover:border-amber-500/40 cursor-pointer' : 'opacity-55 grayscale-[20%] cursor-not-allowed'} transition-all active:scale-[0.99] relative overflow-hidden" data-item-id="${item.id}">
+      <div class="food-card p-2.5 sm:p-3 flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white ${isAvailable ? 'hover:border-[#0c831f]/50 hover:shadow-md cursor-pointer' : 'opacity-60 grayscale-[20%] cursor-not-allowed'} transition-all active:scale-[0.99] relative overflow-hidden" data-item-id="${item.id}">
         <div>
-          <div class="w-full aspect-[4/3] rounded-xl overflow-hidden shrink-0 border border-white/5 bg-neutral-800 animate-pulse flex items-center justify-center relative mb-2">
-            <img src="${itemImage}" alt="${item.name}" class="w-full h-full object-cover error-fallback" loading="lazy" decoding="async" onload="this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; this.parentElement.classList.remove('animate-pulse', 'bg-neutral-800');">
+          <div class="w-full aspect-[4/3] rounded-xl overflow-hidden shrink-0 border border-slate-100 bg-neutral-100 animate-pulse flex items-center justify-center relative mb-2">
+            <img src="${itemImage}" alt="${item.name}" class="w-full h-full object-cover error-fallback" loading="lazy" decoding="async" onload="this.parentElement.classList.remove('animate-pulse', 'bg-neutral-100');" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; this.parentElement.classList.remove('animate-pulse', 'bg-neutral-100');">
             <span class="text-3xl absolute inset-0 flex items-center justify-center" style="display:none;">${emojiStr}</span>
-            <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-slate-950/80 backdrop-blur-md text-[9px] sm:text-[10px] font-bold text-slate-300 capitalize border border-white/10 truncate max-w-[85%]">${catLabel}</span>
+            <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-white/95 backdrop-blur-xs text-[9px] sm:text-[10px] font-bold text-slate-700 capitalize border border-slate-200 truncate max-w-[85%]">${catLabel}</span>
+            ${item.featured ? `<span class="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-amber-500 text-[9px] font-black text-slate-950 uppercase shadow-xs">⭐ Best</span>` : ''}
           </div>
           <div class="text-left">
-            <h4 class="font-bold text-xs sm:text-sm text-slate-100 line-clamp-2 leading-snug min-h-[2rem] sm:min-h-[2.5rem]" title="${item.name}">${item.name}</h4>
+            <div class="flex items-start gap-1">
+              ${vegDot}
+              <h4 class="font-bold text-xs sm:text-sm text-slate-800 line-clamp-2 leading-snug min-h-[2rem] sm:min-h-[2.5rem] flex-1" title="${item.name}">${item.name}</h4>
+            </div>
             <div class="flex items-baseline gap-1.5 my-1.5">
-              <span class="text-xs sm:text-sm font-black text-amber-400">₹${item.price}</span>
+              <span class="text-xs sm:text-sm font-extrabold text-[#0c831f]">₹${item.price}</span>
+              ${hasDiscount ? `<span class="text-[10px] sm:text-xs font-normal text-slate-400 line-through">₹${item.mrp}</span>` : ''}
             </div>
           </div>
         </div>
 
-        <div class="pt-1 mt-auto">
+        <div class="pt-1 mt-auto flex justify-end">
           ${isAvailable ? (qty > 0 ? `
-            <div class="flex items-center justify-between w-full bg-slate-950/90 border border-amber-500/30 rounded-xl p-0.5">
-              <button type="button" aria-label="Decrease quantity" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-90 text-slate-200 flex items-center justify-center font-black text-xs sm:text-sm btn-cart-minus" data-item-id="${item.id}">−</button>
-              <span class="text-center font-bold text-xs sm:text-sm text-amber-400 px-1">${qty}</span>
-              <button type="button" aria-label="Increase quantity" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-90 text-slate-950 flex items-center justify-center font-black text-xs sm:text-sm btn-cart-plus" data-item-id="${item.id}">+</button>
+            <div class="card-stepper-btn" onclick="event.stopPropagation()">
+              <button type="button" aria-label="Decrease quantity" class="card-stepper-op btn-cart-minus" data-item-id="${item.id}">−</button>
+              <span class="card-stepper-val">${qty}</span>
+              <button type="button" aria-label="Increase quantity" class="card-stepper-op btn-cart-plus" data-item-id="${item.id}">+</button>
             </div>
           ` : `
-            <button type="button" class="w-full py-1.5 sm:py-2 px-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-xs flex items-center justify-center gap-1 shadow-sm transition-all btn-cart-add" data-item-id="${item.id}">
-              <span class="text-xs">＋</span><span>Add</span>
+            <button type="button" class="add-btn btn-cart-add w-full" data-item-id="${item.id}">
+              + ADD
             </button>
           `) : `
-            <span class="w-full py-1.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-bold text-[10px] sm:text-xs text-center uppercase tracking-wider block">Sold Out</span>
+            <button class="add-btn w-full" disabled style="background:#f1f5f9; color:#94a3b8; border-color:#e2e8f0; cursor:not-allowed">Sold Out</button>
           `}
         </div>
       </div>
@@ -438,7 +449,7 @@ function renderMenu() {
   grid.querySelectorAll('.food-card').forEach(card => {
     card.style.cursor = 'pointer';
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.btn-cart-add, .btn-cart-plus, .btn-cart-minus')) return;
+      if (e.target.closest('.card-stepper-btn, .add-btn, .btn-cart-add, .btn-cart-plus, .btn-cart-minus')) return;
       const idVal = card.dataset.itemId;
       openTableDetailDrawer(idVal);
     });
@@ -519,7 +530,7 @@ function updateCartUI() {
     const feedback = $('#table-coupon-feedback');
     if (feedback) {
       feedback.textContent = `✗ Coupon cleared: Minimum bill of ₹${parseFloat(appliedCoupon.min_bill).toFixed(2)} required.`;
-      feedback.style.color = '#ff5b5b';
+      feedback.style.color = '#dc2626';
       show(feedback);
     }
   }
@@ -529,10 +540,24 @@ function updateCartUI() {
   const totalAmt = subtotal - discountAmt + gst;
 
   // Update Badges & Totals
-  $('#cart-count-desktop').textContent = `${totalQty} item${totalQty === 1 ? '' : 's'}`;
-  $('#cart-badge-mobile').textContent = totalQty;
-  $('#cart-total-desktop').textContent = `₹${subtotal.toFixed(2)}`;
-  $('#cart-total-mobile').textContent = `₹${subtotal.toFixed(2)}`;
+  if ($('#cart-count-desktop')) $('#cart-count-desktop').textContent = `${totalQty} item${totalQty === 1 ? '' : 's'}`;
+  if ($('#cart-badge-mobile')) $('#cart-badge-mobile').textContent = totalQty;
+  if ($('#cart-total-desktop')) $('#cart-total-desktop').textContent = `₹${subtotal.toFixed(2)}`;
+  if ($('#cart-total-mobile')) $('#cart-total-mobile').textContent = `₹${subtotal.toFixed(2)}`;
+
+  // Update Floating Quick Cart Pill (Blinkit Style)
+  const floatingBar = $('#floating-cart-bar');
+  if (floatingBar) {
+    if (totalQty > 0) {
+      floatingBar.classList.add('visible');
+      const countEl = $('#floating-cart-count');
+      const amtEl = $('#floating-cart-amount');
+      if (countEl) countEl.textContent = `${totalQty} ${totalQty === 1 ? 'ITEM' : 'ITEMS'} IN TRAY`;
+      if (amtEl) amtEl.textContent = `₹${totalAmt.toFixed(2)}`;
+    } else {
+      floatingBar.classList.remove('visible');
+    }
+  }
 
   // Update modal checkout breakdown
   if ($('modal-subtotal')) $('modal-subtotal').textContent = `₹${subtotal.toFixed(2)}`;
@@ -549,10 +574,18 @@ function updateCartUI() {
   if ($('modal-gst')) $('modal-gst').textContent = `₹${gst.toFixed(2)}`;
   if ($('modal-total')) $('modal-total').textContent = `₹${totalAmt.toFixed(2)}`;
 
-  // Enable/Disable Place Order Buttons
+  // Enable/Disable Place Order Buttons with dynamic price
   const hasItems = totalQty > 0;
-  $('#btn-checkout-desktop').disabled = !hasItems;
-  $('#btn-checkout-mobile').disabled = !hasItems;
+  const btnDesktop = $('#btn-checkout-desktop');
+  const btnMobile = $('#btn-checkout-mobile');
+  if (btnDesktop) {
+    btnDesktop.disabled = !hasItems;
+    btnDesktop.innerHTML = `<span>🍽️ Place Table Order (₹${totalAmt.toFixed(2)})</span>`;
+  }
+  if (btnMobile) {
+    btnMobile.disabled = !hasItems;
+    btnMobile.innerHTML = `<span>🍽️ Place Table Order (₹${totalAmt.toFixed(2)})</span>`;
+  }
 
   // Render Cart Listings
   renderCartListings(subtotal);
@@ -564,9 +597,10 @@ function renderCartListings(totalAmt) {
 
   if (cart.length === 0) {
     const emptyHtml = `
-      <div class="py-12 text-center text-slate-500 space-y-2 flex-1 flex flex-col justify-center items-center">
+      <div class="py-12 text-center text-slate-400 space-y-2 flex-1 flex flex-col justify-center items-center">
         <p class="text-4xl">🛒</p>
-        <p class="text-xs font-semibold">Your tray is empty</p>
+        <p class="text-xs font-bold text-slate-600">Your order tray is empty</p>
+        <p class="text-[11px] text-slate-400">Add dishes to place a table order</p>
       </div>
     `;
     desktopContainer.innerHTML = emptyHtml;
@@ -574,20 +608,32 @@ function renderCartListings(totalAmt) {
     return;
   }
 
-  const itemsHtml = cart.map(c => `
-    <div class="p-3 rounded-xl border border-white/5 bg-slate-900/40 flex items-center justify-between gap-3">
-      <div class="min-w-0 flex-1 text-left">
-        <p class="font-semibold text-xs truncate text-slate-200">${c.item.name}</p>
-        ${c.item.description ? `<p class="text-[9px] text-slate-400 mt-0.5 font-semibold truncate">${c.item.description}</p>` : ''}
-        <p class="text-[10px] text-amber-500 font-bold mt-1">₹${c.item.price} × ${c.quantity}</p>
+  const itemsHtml = cart.map(c => {
+    const isCombo = c.item.isCombo || (typeof c.item.id === 'string' && c.item.id.startsWith('combo-'));
+    const isVeg = c.item.veg === true || c.item.type === 'veg';
+    const vegDot = isCombo
+      ? `<span class="text-xs shrink-0">🍱</span>`
+      : `<div class="food-type-icon ${isVeg ? '' : 'non-veg'}" style="flex-shrink:0;"></div>`;
+
+    return `
+      <div class="p-2.5 sm:p-3 rounded-xl border border-slate-200 bg-white shadow-xs flex items-center justify-between gap-2.5">
+        <div class="min-w-0 flex-1 text-left">
+          <div class="flex items-center gap-1.5">
+            ${vegDot}
+            <p class="font-bold text-xs truncate text-slate-800">${c.item.name}</p>
+          </div>
+          <p class="text-[11px] text-[#0c831f] font-extrabold mt-1">₹${c.item.price} <span class="text-slate-400 font-normal">× ${c.quantity}</span></p>
+        </div>
+        <div class="shrink-0">
+          <div class="card-stepper-btn">
+            <button type="button" class="card-stepper-op btn-cart-minus" data-item-id="${c.item.id}" aria-label="Decrease quantity">−</button>
+            <span class="card-stepper-val">${c.quantity}</span>
+            <button type="button" class="card-stepper-op btn-cart-plus" data-item-id="${c.item.id}" aria-label="Increase quantity">+</button>
+          </div>
+        </div>
       </div>
-      <div class="flex items-center gap-1.5 shrink-0">
-        <button class="btn-cart-minus w-6 h-6 rounded-md bg-white/5 hover:bg-white/10 text-white flex items-center justify-center text-xs font-bold" data-item-id="${c.item.id}">-</button>
-        <span class="text-xs font-bold w-4 text-center">${c.quantity}</span>
-        <button class="btn-cart-plus w-6 h-6 rounded-md bg-amber-500 hover:bg-amber-600 text-slate-950 flex items-center justify-center text-xs font-bold" data-item-id="${c.item.id}">+</button>
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   desktopContainer.innerHTML = itemsHtml;
   mobileContainer.innerHTML = itemsHtml;
@@ -621,7 +667,12 @@ function setupCartUI() {
   cartUIInitialized = true;
 
   setupTableDetailDrawer();
-  // Mobile drawer controls
+
+  // Mobile floating cart bar & FAB controls
+  $('#floating-cart-bar')?.addEventListener('click', () => {
+    show($('#cart-drawer-overlay'));
+  });
+
   $('#cart-fab-btn')?.addEventListener('click', () => {
     show($('#cart-drawer-overlay'));
   });
@@ -1194,21 +1245,26 @@ function openTableDetailDrawer(itemId) {
       recGrid.innerHTML = '';
       recommendations.forEach(rec => {
         const recCard = document.createElement('div');
-        recCard.className = 'flex items-center gap-3 p-3 bg-white/5 border border-white/5 rounded-2xl hover:border-amber-500/30 transition-colors cursor-pointer';
+        recCard.className = 'flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-2xl hover:border-emerald-500/40 shadow-xs transition-colors cursor-pointer';
         
         const recImg = rec.image || '/images/food_biryani.png';
         const recEmoji = rec.emoji || '🍲';
+        const isRecVeg = rec.veg === true || rec.type === 'veg';
+        const recVegDot = `<div class="food-type-icon ${isRecVeg ? '' : 'non-veg'}" style="flex-shrink:0;"></div>`;
         
         recCard.innerHTML = `
-          <div class="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-white/5 bg-neutral-800 flex items-center justify-center relative">
+          <div class="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-slate-100 bg-neutral-100 flex items-center justify-center relative">
             <img src="${recImg}" alt="${rec.name}" class="w-full h-full object-cover error-fallback" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
             <span class="text-xl absolute inset-0 flex items-center justify-center" style="display:none;">${recEmoji}</span>
           </div>
           <div class="flex-1 min-w-0 text-left">
-            <h5 class="text-xs font-bold text-slate-100 truncate">${rec.name}</h5>
-            <span class="text-[10px] font-black text-amber-400">₹${rec.price}</span>
+            <div class="flex items-center gap-1.5">
+              ${recVegDot}
+              <h5 class="text-xs font-bold text-slate-800 truncate">${rec.name}</h5>
+            </div>
+            <span class="text-[11px] font-extrabold text-[#0c831f]">₹${rec.price}</span>
           </div>
-          <button class="rec-add-btn shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-amber-500 hover:bg-amber-600 active:scale-90 text-slate-950 font-bold text-sm shadow-md shadow-amber-500/10 transition-all">
+          <button class="rec-add-btn shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-[#0c831f] hover:bg-[#096a18] active:scale-90 text-white font-extrabold text-sm shadow-xs transition-all">
             +
           </button>
         `;
@@ -1231,12 +1287,12 @@ function openTableDetailDrawer(itemId) {
           // Checked micro-interaction
           const btn = e.currentTarget;
           btn.textContent = '✓';
-          btn.classList.replace('bg-amber-500', 'bg-slate-700');
-          btn.classList.replace('text-slate-950', 'text-amber-500');
+          btn.classList.replace('bg-[#0c831f]', 'bg-slate-200');
+          btn.classList.replace('text-white', 'text-slate-800');
           setTimeout(() => {
             btn.textContent = '+';
-            btn.classList.replace('bg-slate-700', 'bg-amber-500');
-            btn.classList.replace('text-amber-500', 'text-slate-950');
+            btn.classList.replace('bg-slate-200', 'bg-[#0c831f]');
+            btn.classList.replace('text-slate-800', 'text-white');
           }, 1200);
         });
 
@@ -1266,9 +1322,11 @@ function updateTableDrawerActions(item) {
 
   if (qty > 0) {
     container.innerHTML = `
-      <button class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center font-bold text-sm active:scale-95 transition-transform btn-drawer-minus">-</button>
-      <span class="w-6 text-center font-bold text-slate-100 text-sm">${qty}</span>
-      <button class="w-9 h-9 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 flex items-center justify-center font-bold text-sm active:scale-95 transition-transform btn-drawer-plus">+</button>
+      <div class="card-stepper-btn" style="min-width: 90px; padding: 0.35rem 0.6rem;">
+        <button type="button" class="card-stepper-op btn-drawer-minus" aria-label="Decrease quantity">−</button>
+        <span class="card-stepper-val" style="font-size: 0.95rem;">${qty}</span>
+        <button type="button" class="card-stepper-op btn-drawer-plus" aria-label="Increase quantity">+</button>
+      </div>
     `;
 
     container.querySelector('.btn-drawer-plus').addEventListener('click', () => {
@@ -1282,8 +1340,8 @@ function updateTableDrawerActions(item) {
     });
   } else {
     container.innerHTML = `
-      <button class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-bold text-xs transition-transform btn-drawer-add">
-        Add to Order
+      <button class="add-btn btn-drawer-add" style="padding: 0.5rem 1.25rem; font-size: 0.85rem;">
+        + ADD TO TRAY
       </button>
     `;
 
