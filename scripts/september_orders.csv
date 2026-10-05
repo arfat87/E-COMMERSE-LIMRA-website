@@ -1,0 +1,1230 @@
+Order Number,Date & Time,Customer Name,Phone,Order Type,Table,Status,Payment Status,Payment Mode,Consolidated Items,Food Taxable (INR),CGST (INR),SGST (INR),Total GST (INR),Total Amount (INR)
+6,"1/9/2026, 12:56:07",manik mandal,7363975172,table,1,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Hyderabadi Chicken Biryani (Full); 1x Water 500ml; 1x Water 1 Litre; 1x Chilli Chicken (Bone),335,8.38,8.37,16.75,351.75
+7,"1/9/2026, 12:59:11",limra,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+3,"1/9/2026, 13:12:16",ARMAN KHAN,8850188750,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+4,"1/9/2026, 13:32:33",limra,6296185113,delivery,,delivered,paid,Cash/UPI,15x Tandoori Laccha Paratha,675,16.88,16.88,33.76,718.75
+6,"1/9/2026, 14:08:58",ALKAS,7908835471,table,Table 4,delivered,paid,Cash/UPI,2x Egg Chicken Noodles,250,6.25,6.25,12.5,262.5
+7,"1/9/2026, 14:12:25",SUJATA,9933844862,delivery,,delivered,paid,Cash/UPI,2x EGG ROLL; 1x Egg Noodles; 1x Chilli Chicken (Bone),229.76,5.75,5.74,11.49,341.25
+9,"1/9/2026, 14:13:31",LIMRA,9876543210,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+10,"1/9/2026, 14:23:35",GOLAM RASUL,8388829585,table,Table 1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Paneer Tikka,325,8.13,8.13,16.26,341.25
+11,"1/9/2026, 14:26:48",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 2x Tandoori Chicken (Half),700,17.5,17.5,35,735
+12,"1/9/2026, 14:29:58",WIFI,1234567890,table,1,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Water 500ml; 1x Handi Chicken,220,5.5,5.5,11,231
+13,"1/9/2026, 14:44:54",A,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65; 1x Hyderabadi Chicken Biryani (Full),285,7.13,7.13,14.26,299.25
+14,"1/9/2026, 15:15:05",Table Table 2,9999999999,table,2,delivered,paid,Cash/UPI,5x Water 1 Litre; 2x Onion Salad; 1x CHICKEN NOODLS HALF; 1x thumsap,260,6.5,6.5,13,273
+14,"1/9/2026, 15:35:55",TAPOS JANA,8927351180,table,1,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Hyderabadi Chicken Biryani (Full),160,4,4,8,168
+15,"1/9/2026, 15:57:11",ALKAS,9999999999,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+16,"1/9/2026, 16:30:51",SIVSONKAR GHOSE,7557865503,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+17,"1/9/2026, 16:54:58",ARMAN KHAN,7478009745,pickup,,delivered,paid,Cash/UPI,2x THUMSUP; 2x Hyderabadi Chicken Biryani (Half); 1x Tandoori Chicken (Half),470,11.75,11.75,23.5,493.5
+18,"1/9/2026, 17:07:29",ATLA,8670367808,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 2x Hyderabadi Chicken Biryani (Full),670,16.75,16.75,33.5,853.5
+19,"1/9/2026, 17:47:02",A,1234567890,table,1,delivered,paid,Cash/UPI,1x COLD DRINGS; 2x Hyderabadi Chicken Biryani (Full); 1x Water 500ml,310,7.75,7.75,15.5,325.5
+20,"1/9/2026, 17:52:06",HASU,9733909774,delivery,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,141.25
+22,"1/9/2026, 18:05:44",PURNA,9733909774,pickup,,delivered,paid,Cash/UPI,2x Egg Chicken Noodles,250,6.25,6.25,12.5,262.5
+23,"1/9/2026, 18:23:14",ATAUR RAHAMAN KHAN,8250390518,table,5,delivered,paid,Cash/UPI,6x Hyderabadi Chicken Biryani (Full); 1x Butter Naan; 2x Tandoori Roti,905,22.63,22.62,45.25,950.25
+24,"1/9/2026, 18:47:12",SK,9638738090,pickup,,delivered,paid,Cash/UPI,1x MASALA COLD DRINK; 1x Tandoori Chicken (Quarter); 1x Tandoori Chicken (Full); 3x Masala Kulcha; 2x Garlic Naan; 1x Paneer 65,925,23.13,23.13,46.26,971.25
+25,"1/9/2026, 18:50:03",A,1234567890,delivery,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,141.25
+26,"1/9/2026, 18:52:03",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,162.25
+26,"1/9/2026, 18:55:24",SK,7501881903,delivery,,delivered,paid,Cash/UPI,2x Tandoori Chicken (Quarter),220,5.5,5.5,11,241
+27,"1/9/2026, 19:11:06",LIMRA,7477860018,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+29,"1/9/2026, 19:21:28",MONISANKAR CHOUHAN,8167503332,table,6,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x Lemon Chicken; 1x CHILLI CHICKEN HALF; 2x Butter Naan,730,18.25,18.25,36.5,766.5
+30,"1/9/2026, 19:22:04",A,9733909774,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+31,"1/9/2026, 19:26:36",A,9733909774,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+33,"1/9/2026, 20:42:24",A,9733909774,table,1,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 2x Hyderabadi Chicken Biryani (Half),480,12,12,24,504
+34,"1/9/2026, 20:45:13",Sk Arfat Ali,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+35,"1/9/2026, 20:47:57",AB,1234567890,table,3,delivered,paid,Cash/UPI,3x Tandoori Chicken (Quarter),330,8.25,8.25,16.5,346.5
+36,"1/9/2026, 20:56:21",LIMRA,8293415359,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+37,"1/9/2026, 21:03:06",IKBAL KHAN,9082356249,pickup,,delivered,paid,Cash/UPI,2x Butter Naan; 1x Butter Chicken Masala,285,7.13,7.13,14.26,299.25
+38,"1/9/2026, 21:04:37",LIM,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+502,"1/9/2026, 21:27:23",Jahangir,6289177150,table,7,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full); 1x Steam Rice,770,19.25,19.25,38.5,808.5
+503,"1/9/2026, 21:27:23",Jahangir,6289177150,table,7,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Half); 1x Egg Fried Rice,447.62,11.19,11.19,22.38,470
+504,"1/9/2026, 21:43:49",SK ANSAR,9749970567,table,2,delivered,paid,Cash/UPI,1x Mutton Kasa (Full); 3x Tandoori Roti,371.43,9.29,9.29,18.58,390
+507,"1/9/2026, 21:46:54",SK ANSAR,9749970567,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),104.76,2.62,2.62,5.24,110
+1,"2/9/2026, 13:20:47",limra,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+2,"2/9/2026, 13:24:43",sk ariyan,7365998386,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken Dry,145,3.63,3.63,7.26,152.25
+3,"2/9/2026, 13:25:23",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+4,"2/9/2026, 13:37:03",limera,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+5,"2/9/2026, 13:38:19",limra,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+6,"2/9/2026, 13:44:23",sukumar,1234567890,table,2,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Hyderabadi Chicken Biryani (Full),160,4,4,8,168
+7,"2/9/2026, 14:05:57",sk kaji,9932338930,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 2x chiken fride rice hafl,380,9.5,9.5,19,399
+8,"2/9/2026, 14:17:25",limra,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,210
+9,"2/9/2026, 14:35:40",sk saidul,8617805846,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+11,"2/9/2026, 15:56:52",ahyan,8927526435,table,1,delivered,paid,Cash/UPI,3x Tandoori Chicken (Half); 2x Butter Naan; 1x Water 1 Litre,720,18,18,36,756
+13,"2/9/2026, 16:03:59",sk sabir,7384190269,table,3,delivered,paid,Cash/UPI,5x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full); 2x Onion Salad,300,7.5,7.5,15,315
+15,"2/9/2026, 17:17:44",moadon bera,9002281423,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken Dry,145,3.63,3.63,7.26,152.25
+16,"2/9/2026, 17:31:04",asmina bibi,8001593688,pickup,,delivered,paid,Cash/UPI,3x ice cream; 1x Chilli Chicken (Bone); 2x Chicken 65,615,15.38,15.38,30.76,645.75
+17,"2/9/2026, 17:41:01",arman khan,1234567890,pickup,,delivered,paid,Cash/UPI,6x Butter Roti,120,3,3,6,126
+18,"2/9/2026, 18:03:28",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Handi Chicken,190,4.75,4.75,9.5,199.5
+19,"2/9/2026, 18:08:58",limra,1234567890,delivery,,delivered,paid,Cash/UPI,1x Crispy Chicken; 1x Hot & Sour Chicken Soup; 1x Egg Chicken Noodles,385,9.63,9.63,19.26,414.25
+21,"2/9/2026, 18:10:12",limra,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),130.48,3.26,3.26,6.52,147
+22,"2/9/2026, 18:12:38",limra,1234567890,delivery,,delivered,paid,Cash/UPI,5x Butter Naan; 1x Kadai Chicken; 1x Jeera Rice; 1x Tandoori Chicken (Half),645.48,16.14,16.13,32.27,687.75
+23,"2/9/2026, 18:23:03",a,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+23,"2/9/2026, 18:28:50",manik shaho,9933563299,table,5,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+25,"2/9/2026, 18:38:26",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65,145,3.63,3.63,7.26,152.25
+26,"2/9/2026, 19:16:44",limra,1234567890,table,Table 5,delivered,paid,Cash/UPI,1x Chicken Kosa (Full),170,4.25,4.25,8.5,178.5
+27,"2/9/2026, 19:25:10",limra,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Chicken 65,425,10.63,10.63,21.26,446.25
+28,"2/9/2026, 19:35:15",limera,1234567890,delivery,,delivered,paid,Cash/UPI,3x Chicken Fried Rice,375,9.38,9.38,18.76,403.75
+29,"2/9/2026, 19:36:59",limera,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+30,"2/9/2026, 19:53:35",limra,1234567890,table,5,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Khuska; 1x Tandoori Roti,385,9.63,9.62,19.25,404.25
+31,"2/9/2026, 19:56:50",sardik,7845717794,table,2,delivered,paid,Cash/UPI,1x COLD DRINGS; 3x Hyderabadi Chicken Biryani (Full); 2x Water 500ml; 1x Tandoori Chicken (Quarter); 1x Hyderabadi Chicken Biryani (Half),670,16.75,16.75,33.5,703.5
+32,"2/9/2026, 19:58:21",limera,1234567890,table,4,delivered,paid,Cash/UPI,2x Chilli Chicken (Bone); 6x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full); 2x Butter Naan; 1x COLD DRINGS,640,16,16,32,672
+33,"2/9/2026, 20:14:40",saruk,8597956008,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+34,"2/9/2026, 20:19:18",sanjoy kumar,9999999999,pickup,,delivered,paid,Cash/UPI,3x Egg Chicken Noodles,375,9.38,9.38,18.76,393.75
+35,"2/9/2026, 20:20:56",limra,8159009815,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+36,"2/9/2026, 20:22:41",milon maity,7063137113,pickup,,delivered,paid,Cash/UPI,1x Egg Noodles,100,2.5,2.5,5,105
+37,"2/9/2026, 20:43:30",raton das,9933845648,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+38,"2/9/2026, 20:46:38",bABU,1234567890,table,6,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half); 5x Hyderabadi Chicken Biryani (Full); 1x Water 500ml; 1x Hot Garlic Chicken Dry; 2x Water 1 Litre; 1x Tandoori Roti,1220,30.5,30.5,61,1281
+39,"2/9/2026, 20:51:21",JAYLAL KHA,9933151535,table,1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Tandoori Roti,225,5.63,5.62,11.25,236.25
+40,"2/9/2026, 20:59:00",SAHAJAN KJHAN,7477593232,table,4,delivered,paid,Cash/UPI,2x Chilli Chicken (Bone); 6x Water 1 Litre; 1x Chana Masala; 2x Butter Naan,590,14.75,14.75,29.5,619.5
+41,"2/9/2026, 21:12:36",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Paneer; 1x Tandoori Chicken (Full); 3x Butter Naan,650,16.25,16.25,32.5,682.5
+42,"2/9/2026, 21:17:42",limra,1234567890,table,9,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Water 500ml; 5x Hyderabadi Chicken Biryani (Full); 1x Mutton Biryani; 1x Butter Chicken Masala; 1x Khuska,1360,34,34,68,1428
+43,"2/9/2026, 21:30:05",L,1234567890,table,15,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+44,"2/9/2026, 21:39:49",L,1234567890,pickup,,delivered,paid,Cash/UPI,4x Tandoori Roti; 1x Dal Tadka,155,3.88,3.88,7.76,162.75
+45,"2/9/2026, 21:47:34",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Dal Tadka; 3x Tandoori Roti,140,3.5,3.5,7,147
+46,"2/9/2026, 21:57:05",L,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+47,"2/9/2026, 21:58:14",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Chilli Chicken (Bone); 2x Egg Fried Rice,555,13.88,13.88,27.76,582.75
+48,"2/9/2026, 22:07:48",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+49,"2/9/2026, 22:37:15",L,1234567890,pickup,,delivered,paid,Cash/UPI,3x Fry Papad; 4x Chicken 65; 1x Dragon Chicken; 1x Thums Up Glass,845,21.13,21.13,42.26,887.25
+50,"2/9/2026, 22:41:05",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+51,"2/9/2026, 22:49:22",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Dal Egg Tadka; 5x Tandoori Roti,180,4.5,4.5,9,189
+52,"2/9/2026, 22:56:34",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+53,"2/9/2026, 23:11:37",L,1234567890,table,Table 1,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Butter Roti,300,7.5,7.5,15,315
+54,"2/9/2026, 23:19:49",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+1,"3/9/2026, 12:57:27",limra,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Butter Chicken Masala,215,5.38,5.38,10.76,225.75
+2,"3/9/2026, 12:58:04",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+3,"3/9/2026, 13:26:52",limra,1234567890,table,Table 3,delivered,paid,Cash/UPI,2x Tandoori Chicken (Half); 1x Egg Fried Rice,520,13,13,26,546
+4,"3/9/2026, 13:28:14",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Dal Tadka,95,2.38,2.38,4.76,99.75
+5,"3/9/2026, 13:45:57",limra,1234567890,pickup,,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full); 1x Masala Kulcha,755,18.88,18.88,37.76,792.75
+6,"3/9/2026, 13:52:37",limra,1234567890,table,t 8,cancelled,paid,Cash/UPI,1x Chilli Chicken (Bone); 1x Chicken Kosa (Full),315,7.88,7.88,15.76,330.75
+7,"3/9/2026, 13:59:25",hasu da,1234567890,pickup,,delivered,paid,Cash/UPI,1x chilli chicken half; 1x Hyderabadi Chicken Biryani (Half),185,4.63,4.63,9.26,194.25
+8,"3/9/2026, 14:05:03",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+9,"3/9/2026, 14:08:09",limra,1234567890,table,t 9,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Butter Roti,300,7.5,7.5,15,315
+10,"3/9/2026, 14:59:43",muklesh,7908068757,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+11,"3/9/2026, 15:14:30",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,1x Masala Cold Drink; 1x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full); 1x Mutton Hyderabadi,565,14.13,14.13,28.26,593.25
+12,"3/9/2026, 15:17:28",limra,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Hyderabadi Chicken Biryani (Full),160,4,4,8,168
+13,"3/9/2026, 15:27:37",atla,1234567890,table,8,cancelled,paid,Cash/UPI,6x Hyderabadi Chicken Biryani (Full); 2x Water 1 Litre,880,22,22,44,924
+14,"3/9/2026, 17:03:39",ALKAS,7908835471,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+15,"3/9/2026, 17:19:25",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Mutton Kasa (Full),345,8.63,8.62,17.25,362.25
+1,"3/9/2026, 17:29:29",Guest,Dine-In,table,2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+19,"3/9/2026, 18:06:01",LIMRA,7478292989,table,6,delivered,paid,Cash/UPI,9x Hyderabadi Chicken Biryani (Full); 1x Hot & Sour Veg Soup,1335,33.38,33.37,66.75,1401.75
+20,"3/9/2026, 18:07:03",LIMRA,1234567890,table,t 7,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Egg Chicken Noodles,265,6.63,6.63,13.26,278.25
+21,"3/9/2026, 18:08:38",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter); 2x COLD DRINGS; 1x Butter Chicken Masala,365,9.13,9.12,18.25,383.25
+20,"3/9/2026, 18:15:18",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Chicken Fried Rice,250,6.25,6.25,12.5,262.5
+21,"3/9/2026, 18:29:31",sk raheman,9998189808,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x chicken noodls half; 1x Egg Chicken Noodles,335.48,8.39,8.38,16.77,362.25
+22,"3/9/2026, 18:34:53",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 2x Egg Chicken Noodles; 1x Chicken 65; 1x Chicken Kosa (Full),710,17.75,17.75,35.5,745.5
+23,"3/9/2026, 18:53:17",ayub khan,1234567890,delivery,,delivered,paid,Cash/UPI,20x chicken roll,1200,30,30,60,1270
+24,"3/9/2026, 18:54:53",prithosh patra,8101274401,table,Table 1,delivered,paid,Cash/UPI,6x Hyderabadi Chicken Biryani (Full); 1x Veg Schezwan Fried Rice,955,23.88,23.88,47.76,1002.75
+25,"3/9/2026, 18:59:01",l,1234567890,delivery,,delivered,paid,Cash/UPI,2x sprite; 1x Hyderabadi Chicken Biryani (Full); 1x Paneer Tikka; 1x Chicken Fried Rice,500.48,12.51,12.51,25.02,535.5
+28,"3/9/2026, 19:19:33",limra,1234567890,table,5,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Quarter); 1x Butter Roti,550,13.75,13.75,27.5,577.5
+29,"3/9/2026, 19:28:16",limra,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+30,"3/9/2026, 19:29:45",ll,1234567890,delivery,,delivered,paid,Cash/UPI,1x chicken 65; 1x Chicken Fried Rice,260.48,6.51,6.51,13.02,283.5
+31,"3/9/2026, 19:50:07",limra,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full),390,9.75,9.75,19.5,419.5
+32,"3/9/2026, 19:54:39",limra,1234567890,delivery,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,451
+33,"3/9/2026, 19:55:04",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+34,"3/9/2026, 19:59:01",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,1x Mutton Kasa (Half); 4x Tandoori Roti,295,7.38,7.38,14.76,309.75
+35,"3/9/2026, 20:02:21",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+36,"3/9/2026, 20:06:34",sabir,9108400208,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken Dry; 1x Tandoori Chicken (Full),535,13.38,13.38,26.76,561.75
+37,"3/9/2026, 20:07:17",mukter,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+38,"3/9/2026, 20:25:21",samir,9567291037,table,Table 6,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Full); 1x Butter Roti,1110,27.75,27.75,55.5,1165.5
+39,"3/9/2026, 20:36:00",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+38,"3/9/2026, 20:42:50",limra,1234567890,table,Table 5,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full); 1x Egg Fried Rice; 1x Butter Roti,680,17,17,34,714
+39,"3/9/2026, 20:46:11",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Kadai Chicken; 5x Butter Naan,365,9.13,9.13,18.26,383.25
+40,"3/9/2026, 20:47:17",l,1234567890,table,t 9,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Murg Chicken Tikka,445,11.13,11.13,22.26,467.25
+41,"3/9/2026, 21:02:40",dp,1234567890,table,4,delivered,paid,Cash/UPI,1x Chilli Chicken Dry; 1x Tandoori Chicken (Full),535,13.38,13.37,26.75,561.75
+42,"3/9/2026, 21:10:54",mantu,1234567890,pickup,,delivered,paid,Cash/UPI,1x Paneer Butter Masala,180,4.5,4.5,9,189
+43,"3/9/2026, 21:11:58",limra,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+44,"3/9/2026, 21:13:09",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+45,"3/9/2026, 21:29:52",l,1234567890,pickup,,delivered,paid,Cash/UPI,2x Chicken Fried Rice,250,6.25,6.25,12.5,262.5
+46,"3/9/2026, 21:33:56",l,1234567890,pickup,,delivered,paid,Cash/UPI,1x Dal Tadka,95,2.38,2.38,4.76,99.75
+47,"3/9/2026, 21:45:58",Table Table 2,9999999999,table,Table 2,delivered,paid,Cash/UPI,1x Malai Kabab,225,5.63,5.63,11.26,236.25
+48,"3/9/2026, 21:48:11",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Handi Chicken,190,4.75,4.75,9.5,199.5
+49,"3/9/2026, 21:59:41",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,5x Tandoori Roti; 1x Chana Masala,185,4.63,4.63,9.26,194.25
+50,"3/9/2026, 22:02:18",mukter,1234567890,table,Table 1,delivered,paid,Cash/UPI,2x Egg Chicken Noodles,250,6.25,6.25,12.5,262.5
+51,"3/9/2026, 22:17:35",l,1234567890,pickup,,delivered,paid,Cash/UPI,5x Butter Naan; 1x Butter Chicken Masala; 1x Chilli Chicken Dry,535,13.38,13.38,26.76,561.75
+53,"3/9/2026, 22:32:17",l,1234567890,table,t 9,delivered,paid,Cash/UPI,2x Tandoori Chicken (Full); 1x Butter Naan,815,20.38,20.38,40.76,855.75
+54,"3/9/2026, 23:06:19",limra,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x Chicken Kosa (Full); 1x Egg Fried Rice,270,6.75,6.75,13.5,283.5
+1,"4/9/2026, 13:15:09",habibur,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+2,"4/9/2026, 13:15:46",limra,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+3,"4/9/2026, 13:49:35",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+4,"4/9/2026, 13:51:07",limra,1234567890,table,Table 2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Paneer Tikka,465,11.63,11.63,23.26,488.25
+5,"4/9/2026, 13:59:51",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+6,"4/9/2026, 14:11:22",l,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+7,"4/9/2026, 14:13:11",limra,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+8,"4/9/2026, 14:27:40",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+9,"4/9/2026, 17:44:29",farjan,9136886259,table,Table 1,delivered,paid,Cash/UPI,1x Afgani Chicken (Half),230,5.75,5.75,11.5,241.5
+10,"4/9/2026, 17:48:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+11,"4/9/2026, 18:14:01",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+12,"4/9/2026, 18:17:55",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+13,"4/9/2026, 18:42:08",imran khan,7908312907,table,4,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Half),400,10,10,20,420
+14,"4/9/2026, 18:54:34",choto mosjn,1234567890,delivery,,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 4x Butter Naan,355,8.88,8.88,17.76,382.75
+15,"4/9/2026, 18:58:59",LIMRA,7319027511,delivery,,delivered,paid,Cash/UPI,2x Butter Naan; 1x Hyderabadi Chicken Biryani (Full); 1x Chilli Chicken (Bone),355,8.88,8.88,17.76,382.75
+16,"4/9/2026, 19:01:18",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,141.25
+17,"4/9/2026, 19:02:36",BISHJOJIT Satra,7047973936,table,5,delivered,paid,Cash/UPI,2x Tandoori Chicken (Quarter),220,5.5,5.5,11,231
+18,"4/9/2026, 19:41:07",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+19,"4/9/2026, 19:42:17",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+20,"4/9/2026, 19:43:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Murg Chicken Tikka; 1x Hyderabadi Chicken Biryani (Full); 1x Khuska; 1x Tandoori Chicken (Quarter),525,13.13,13.13,26.26,551.25
+2,"4/9/2026, 20:01:04",দেবব্রত মাইতি,8101038126,table,5,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Hyderabadi Chicken Biryani (Full),160,4,4,8,168
+23,"4/9/2026, 20:02:44",LIMRA,9635070968,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+23,"4/9/2026, 20:24:47",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Veg Noodles,80,2,2,4,84
+24,"4/9/2026, 20:29:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Khuska,90,2.25,2.25,4.5,94.5
+25,"4/9/2026, 20:40:26",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half); 1x Cheese Garlic Naan,260,6.5,6.5,13,273
+26,"4/9/2026, 20:49:06",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Kadai Paneer,350,8.75,8.75,17.5,367.5
+27,"4/9/2026, 21:03:22",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+28,"4/9/2026, 21:05:25",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Hot Garlic Chicken Dry,155,3.88,3.87,7.75,162.75
+29,"4/9/2026, 21:13:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+30,"4/9/2026, 21:14:00",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Kadai Chicken,190,4.75,4.75,9.5,199.5
+31,"4/9/2026, 21:27:17",Sk Arfat Ali,7501881903t,table,T 8,cancelled,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x Malai Kabab; 1x Butter Roti,665,16.63,16.63,33.26,698.25
+32,"4/9/2026, 21:29:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+33,"4/9/2026, 21:41:09",MUNNA BHAI,1234567890,table,1,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Half),400,10,10,20,420
+34,"4/9/2026, 21:49:30",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Lollipop,180,4.5,4.5,9,189
+35,"4/9/2026, 22:16:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+36,"4/9/2026, 22:19:04",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Lollipop; 1x Kadai Chicken; 1x Egg Fried Rice; 2x Butter Naan,540,13.5,13.5,27,567
+37,"4/9/2026, 22:23:53",LIMRA,1234567890,table,T 7,delivered,paid,Cash/UPI,2x Tandoori Chicken (Quarter),220,5.5,5.5,11,231
+38,"4/9/2026, 22:25:44",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+39,"4/9/2026, 22:33:53",LIMRA,1234567890,table,T 7,delivered,paid,Cash/UPI,2x Tandoori Chicken (Quarter),220,5.5,5.5,11,231
+40,"4/9/2026, 22:37:35",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Chilli Prawns,255,6.38,6.37,12.75,267.75
+41,"4/9/2026, 22:44:40",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 3x Tandoori Roti; 1x Malai Kabab; 1x Chana Masala; 4x Butter Naan,940,23.5,23.5,47,987
+42,"4/9/2026, 22:49:54",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Afgani Chicken (Half),620,15.5,15.5,31,651
+43,"4/9/2026, 23:16:09",L,1234567890,table,1,delivered,paid,Cash/UPI,1x Lemon Chicken,155,3.88,3.87,7.75,162.75
+45,"4/9/2026, 23:29:58",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full); 1x Butter Chicken Masala,775,19.38,19.37,38.75,813.75
+45,"4/9/2026, 23:31:35",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+1,"5/9/2026, 12:51:54",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Lollipop,180,4.5,4.5,9,189
+2,"5/9/2026, 13:36:52",DEBKUMAR MAITY,8159885232,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+3,"5/9/2026, 13:37:38",limra,1234567890,table,Table 6,delivered,paid,Cash/UPI,2x Egg Chicken Noodles; 1x Water 500ml,260,6.5,6.5,13,273
+4,"5/9/2026, 13:43:12",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+5,"5/9/2026, 13:43:47",L,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+6,"5/9/2026, 13:44:30",L,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chilli Mushroom; 1x Chilli Chicken (Bone),315,7.88,7.88,15.76,340.75
+7,"5/9/2026, 13:46:51",L,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 2x Hyderabadi Chicken Biryani (Full),490,12.25,12.25,24.5,524.5
+8,"5/9/2026, 14:07:35",IQBAL DA,1234567890,table,T 9,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x Hot & Sour Veg Soup,495,12.38,12.38,24.76,519.75
+9,"5/9/2026, 14:08:45",RAHUL ACHARJO,9999999999,table,Table 2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Green Salad,320,8,8,16,336
+10,"5/9/2026, 14:21:40",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+11,"5/9/2026, 14:58:02",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+12,"5/9/2026, 15:15:01",BABU,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+13,"5/9/2026, 15:17:06",L,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+14,"5/9/2026, 15:52:42",BIJOY,8769952833,table,Table 2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+15,"5/9/2026, 17:45:03",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65,145,3.63,3.63,7.26,152.25
+16,"5/9/2026, 17:49:23",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+17,"5/9/2026, 18:01:24",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full),390,9.75,9.75,19.5,409.5
+18,"5/9/2026, 18:13:16",limra,1234567890,pickup,,delivered,paid,Cash/UPI,2x Egg Chicken Noodles,250,6.25,6.25,12.5,262.5
+19,"5/9/2026, 18:25:16",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,8x Butter Naan; 2x Butter Chicken Masala,710,17.75,17.75,35.5,745.5
+20,"5/9/2026, 18:27:36",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,210
+21,"5/9/2026, 18:36:16",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x Butter Naan; 1x Kadai Chicken; 1x Murg Chicken Tikka; 2x CHICKEN ROLL,615,15.38,15.38,30.76,645.75
+22,"5/9/2026, 18:43:14",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chicken Fried Rice; 1x CHICKEN NOODLS HALF,205,5.13,5.13,10.26,225.25
+23,"5/9/2026, 18:44:04",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 2x Butter Naan,460,11.5,11.5,23,483
+24,"5/9/2026, 18:53:47",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+25,"5/9/2026, 18:59:08",L,1234567890,pickup,,delivered,paid,Cash/UPI,2x EGG ROLL,80,2,2,4,84
+26,"5/9/2026, 19:02:47",LIMRA,6294815055,table,Table 4,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Murg Chicken Tikka,445,11.13,11.13,22.26,467.25
+27,"5/9/2026, 19:15:41",AYUB KHAN,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chicken Lollipop; 3x Butter Naan; 1x Hot & Sour Chicken Soup,380,9.5,9.5,19,409
+28,"5/9/2026, 19:20:22",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles; 1x Hyderabadi Chicken Biryani (Half); 1x Hyderabadi Chicken Biryani (Full),365,9.13,9.13,18.26,383.25
+29,"5/9/2026, 19:23:21",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+30,"5/9/2026, 19:26:57",limra,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+31,"5/9/2026, 19:35:06",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+32,"5/9/2026, 19:37:09",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full),170,4.25,4.25,8.5,178.5
+3,"5/9/2026, 19:48:16",Guest,Dine-In,table,4,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full); 1x Afgani Chicken (Half),790,19.75,19.75,39.5,829.5
+34,"5/9/2026, 19:57:28",LIMRA,1234567890,table,T 8,cancelled,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+35,"5/9/2026, 19:58:42",L,1234567890,table,Table 2,delivered,paid,Cash/UPI,10x Hyderabadi Chicken Biryani (Full),1400,35,35,70,1470
+36,"5/9/2026, 20:07:28",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+37,"5/9/2026, 20:12:24",L,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+38,"5/9/2026, 20:19:39",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+39,"5/9/2026, 20:22:02",LL,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),130.48,3.26,3.26,6.52,147
+40,"5/9/2026, 20:24:11",L,9999999999,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+41,"5/9/2026, 20:38:07",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+42,"5/9/2026, 20:45:45",LIMRA,9932492841,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+43,"5/9/2026, 20:48:48",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+44,"5/9/2026, 20:51:54",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+45,"5/9/2026, 21:02:54",limra,1234567890,table,3,delivered,paid,Cash/UPI,2x Tandoori Chicken (Full),780,19.5,19.5,39,819
+46,"5/9/2026, 21:04:51",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+47,"5/9/2026, 21:08:45",LIMRA,1234567890,table,0,delivered,paid,Cash/UPI,3x Butter Naan; 1x Handi Chicken,295,7.38,7.38,14.76,309.75
+48,"5/9/2026, 21:17:21",L,1234567890,table,Table 5,delivered,paid,Cash/UPI,1x Mutton Kasa (Half),235,5.88,5.88,11.76,246.75
+5,"5/9/2026, 21:20:46",Sriyam giri,6297128986,table,7,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),133.33,3.33,3.33,6.66,140
+50,"5/9/2026, 21:22:10",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+51,"5/9/2026, 21:23:05",L,1234567890,pickup,,delivered,paid,Cash/UPI,2x Butter Naan,70,1.75,1.75,3.5,73.5
+52,"5/9/2026, 21:24:08",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Green Salad,320,8,8,16,336
+53,"5/9/2026, 21:26:55",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+54,"5/9/2026, 21:31:28",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x Crispy Veg,115,2.88,2.88,5.76,120.75
+55,"5/9/2026, 21:39:33",LIMRA,1234567890,table,8,cancelled,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Murg Chicken Tikka,305,7.63,7.62,15.25,320.25
+57,"5/9/2026, 21:48:54",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHICKEN NOODLS HALF,80,2,2,4,84
+58,"5/9/2026, 21:54:01",L,1234567890,pickup,,delivered,paid,Cash/UPI,2x Butter Naan,70,1.75,1.75,3.5,73.5
+58,"5/9/2026, 22:13:23",LL,1234567890,delivery,,delivered,paid,Cash/UPI,3x Butter Naan; 1x Chicken 65; 1x Kadai Chicken,440,11,11,22,472
+59,"5/9/2026, 22:39:06",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Veg Noodles,80,2,2,4,84
+1,"6/9/2026, 12:51:09",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 2x Hyderabadi Chicken Biryani (Full),380,9.5,9.5,19,399
+2,"6/9/2026, 12:52:21",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+3,"6/9/2026, 13:47:31",LIMRA,1234567890,table,T 9,delivered,paid,Cash/UPI,6x Hyderabadi Chicken Biryani (Full); 2x Water 1 Litre,880,22,22,44,924
+4,"6/9/2026, 13:47:59",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+5,"6/9/2026, 13:48:31",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Chicken Fried Rice,250,6.25,6.25,12.5,262.5
+6,"6/9/2026, 15:36:30",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 2x Butter Naan,460,11.5,11.5,23,483
+7,"6/9/2026, 15:40:00",BIJOY,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+8,"6/9/2026, 16:17:56",MASIYA,7001731863,pickup,,delivered,paid,Cash/UPI,1x Chicken 65,145,3.63,3.63,7.26,152.25
+9,"6/9/2026, 16:52:26",GOLA,8116142002,table,2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Chicken Szechuan Noodles,415,10.38,10.37,20.75,435.75
+10,"6/9/2026, 18:09:36",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+11,"6/9/2026, 18:18:47",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full),700,17.5,17.5,35,745
+12,"6/9/2026, 18:19:20",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+13,"6/9/2026, 18:19:51",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+14,"6/9/2026, 18:27:28",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+15,"6/9/2026, 18:58:24",LIMRA,1234567890,table,T 9,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x Handi Chicken,610,15.25,15.25,30.5,640.5
+16,"6/9/2026, 19:03:31",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x Tandoori Roti,435,10.88,10.87,21.75,456.75
+17,"6/9/2026, 19:15:38",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Masala Cold Drink; 1x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full); 1x Mutton Hyderabadi,565,14.13,14.12,28.25,593.25
+18,"6/9/2026, 19:18:15",KODA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+19,"6/9/2026, 19:40:19",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+20,"6/9/2026, 19:41:36",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+21,"6/9/2026, 19:45:31",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x LIMRA Special Thali,395,9.88,9.87,19.75,414.75
+22,"6/9/2026, 19:52:59",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,7x Hyderabadi Chicken Biryani (Full); 1x Egg Fried Rice,1080,27,27,54,1134
+23,"6/9/2026, 19:59:44",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,2x Butter Naan; 1x Butter Chicken Masala,285,7.13,7.12,14.25,299.25
+24,"6/9/2026, 20:00:19",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Chicken Fried Rice,515,12.88,12.88,25.76,540.75
+25,"6/9/2026, 20:03:31",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full); 1x Fry Papad,715,17.88,17.87,35.75,750.75
+26,"6/9/2026, 20:10:29",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Murg Chicken Tikka,165,4.13,4.13,8.26,173.25
+27,"6/9/2026, 20:12:07",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Chicken Kosa (Full); 1x Egg Fried Rice,270,6.75,6.75,13.5,283.5
+28,"6/9/2026, 20:20:05",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+30,"6/9/2026, 20:44:00",LIMRA,1234567890,table,7,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half),300,7.5,7.5,15,315
+30,"6/9/2026, 20:54:40",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full),700,17.5,17.5,35,735
+31,"6/9/2026, 21:01:05",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+32,"6/9/2026, 21:22:50",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Khuska,90,2.25,2.25,4.5,94.5
+33,"6/9/2026, 21:37:18",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF,85,2.13,2.13,4.26,89.25
+34,"6/9/2026, 21:41:55",BIJOY,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHICKEN F RICE HALF,80,2,2,4,84
+9,"7/9/2026, 12:18:14",Sk Manik,8653071683,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),133.33,3.34,3.33,6.67,140
+5,"7/9/2026, 12:26:14",saber,8207075182,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Chicken Fried Rice,265,6.63,6.63,13.26,278.25
+3,"7/9/2026, 13:51:36",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+4,"7/9/2026, 14:25:48",LIMRA,9999999999,table,t 8,cancelled,paid,Cash/UPI,2x Egg Chicken Noodles; 1x Water 500ml,260,6.5,6.5,13,273
+5,"7/9/2026, 14:26:38",limra,1234567890,table,Table 3,delivered,paid,Cash/UPI,6x Butter Roti,120,3,3,6,126
+6,"7/9/2026, 14:28:07",Arif Shaikh,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+7,"7/9/2026, 17:34:57",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full),390,9.75,9.75,19.5,409.5
+8,"7/9/2026, 17:35:57",limra,9999999999,table,Table 2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+9,"7/9/2026, 17:36:36",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,210
+10,"7/9/2026, 17:37:03",LIMRA,1234567890,table,Table 5,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+11,"7/9/2026, 18:05:12",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+12,"7/9/2026, 18:06:29",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full),560,14,14,28,588
+13,"7/9/2026, 18:24:48",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x COLD DRINGS; 2x Hyderabadi Chicken Biryani (Full); 1x Water 500ml,310,7.75,7.75,15.5,325.5
+14,"7/9/2026, 18:25:39",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full); 1x Fry Papad,715,17.88,17.87,35.75,750.75
+15,"7/9/2026, 18:37:16",LIMRA,1234567890T 8,table,T 8,cancelled,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+16,"7/9/2026, 18:37:44",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 1x Chicken Fried Rice,270,6.75,6.75,13.5,283.5
+17,"7/9/2026, 18:51:12",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 1x Egg Chicken Noodles; 1x Butter Naan; 1x Chicken Fried Rice,430,10.75,10.75,21.5,451.5
+10,"7/9/2026, 19:15:09",Ananda kar,7364029247,table,1,delivered,paid,Cash/UPI,4x Chicken Fried Rice,500,12.5,12.5,25,525
+19,"7/9/2026, 19:20:56",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+11,"7/9/2026, 19:34:33",Guest,Dine-In,table,8,cancelled,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+21,"7/9/2026, 19:36:30",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+22,"7/9/2026, 19:38:11",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+23,"7/9/2026, 19:38:52",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+24,"7/9/2026, 19:51:56",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Kadai Paneer,175,4.38,4.38,8.76,183.75
+25,"7/9/2026, 20:23:28",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,2x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full); 1x Onion Salad; 1x Mutton Kasa (Full),555,13.88,13.87,27.75,582.75
+26,"7/9/2026, 20:44:16",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chana Masala; 5x Tandoori Roti,185,4.63,4.63,9.26,194.25
+27,"7/9/2026, 20:45:29",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Chicken Fried Rice; 1x CHICKEN F RICE HALF,330,8.25,8.25,16.5,346.5
+28,"7/9/2026, 20:46:35",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x Thums Up Glass,445,11.13,11.12,22.25,467.25
+29,"7/9/2026, 21:37:25",LIMRA,9999999999,table,3,delivered,paid,Cash/UPI,2x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full),180,4.5,4.5,9,189
+30,"7/9/2026, 21:53:14",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+31,"7/9/2026, 22:16:53",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 2x Chicken Fried Rice; 2x Chicken 65,820,20.5,20.5,41,861
+32,"7/9/2026, 22:28:18",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full); 1x Chilli Chicken (Bone); 1x Water 1 Litre; 1x Chana Masala,975,24.38,24.37,48.75,1023.75
+33,"7/9/2026, 22:45:46",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+34,"7/9/2026, 23:18:57",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+1,"8/9/2026, 12:39:49",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+2,"8/9/2026, 13:00:02",LIMRA,9999999999,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 2x Hyderabadi Chicken Biryani (Full),425,10.63,10.63,21.26,446.25
+3,"8/9/2026, 13:02:58",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Jeera Rice; 1x Dal Fry,165,4.13,4.13,8.26,173.25
+4,"8/9/2026, 13:03:33",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+5,"8/9/2026, 13:06:19",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Malai Kabab; 1x Chilli Chicken Dry,370,9.25,9.25,18.5,388.5
+6,"8/9/2026, 13:07:26",LIMRA,1234567890,table,t 8,cancelled,paid,Cash/UPI,1x Hot & Sour Veg Soup,75,1.88,1.88,3.76,78.75
+7,"8/9/2026, 13:19:20",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,160,4,4,8,168
+8,"8/9/2026, 13:23:07",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Dragon Chicken,195,4.88,4.88,9.76,204.75
+9,"8/9/2026, 13:24:51",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+10,"8/9/2026, 13:45:56",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+11,"8/9/2026, 13:46:29",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF,85,2.13,2.13,4.26,89.25
+12,"8/9/2026, 14:03:48",LIMRA,1234567890,table,T 9,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,160,4,4,8,168
+13,"8/9/2026, 14:05:51",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+14,"8/9/2026, 14:07:52",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Half); 1x Kadai Chicken,540,13.5,13.5,27,647
+15,"8/9/2026, 14:09:40",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+16,"8/9/2026, 14:34:52",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+17,"8/9/2026, 17:53:45",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Hyderabadi Chicken Biryani (Full); 1x Hyderabadi Chicken Biryani (Half),450,11.25,11.25,22.5,472.5
+18,"8/9/2026, 17:55:35",LIMRA,9999999999,table,Table 1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter); 1x Tandoori Chicken (Half),320,8,8,16,336
+19,"8/9/2026, 18:06:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+20,"8/9/2026, 18:31:10",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+21,"8/9/2026, 18:33:16",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF,85,2.13,2.13,4.26,89.25
+22,"8/9/2026, 18:39:10",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+23,"8/9/2026, 18:39:53",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+24,"8/9/2026, 18:40:28",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x COLD DRINGS; 2x Hyderabadi Chicken Biryani (Half),220,5.5,5.5,11,241
+25,"8/9/2026, 19:08:01",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+26,"8/9/2026, 19:15:48",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+27,"8/9/2026, 19:18:57",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 2x Chicken Fried Rice; 1x Mix Fried Rice,795,19.88,19.87,39.75,834.75
+28,"8/9/2026, 19:23:04",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 2x Butter Naan,280,7,7,14,304
+29,"8/9/2026, 19:24:44",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Noodles,100,2.5,2.5,5,105
+30,"8/9/2026, 19:38:40",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+31,"8/9/2026, 19:47:02",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full),700,17.5,17.5,35,735
+32,"8/9/2026, 20:04:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+33,"8/9/2026, 20:18:15",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,10x Butter Naan,350,8.75,8.75,17.5,367.5
+34,"8/9/2026, 20:25:00",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Lollipop,180,4.5,4.5,9,189
+35,"8/9/2026, 20:26:14",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 2x Tandoori Chicken (Half); 1x Butter Chicken Masala; 3x Tandoori Roti,1070,26.75,26.75,53.5,1123.5
+36,"8/9/2026, 20:39:54",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles; 1x Chicken Tikka Masala; 4x Tandoori Roti,370,9.25,9.25,18.5,388.5
+37,"8/9/2026, 20:56:44",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice; 1x CHICKEN NOODLS HALF,205,5.13,5.13,10.26,215.25
+38,"8/9/2026, 20:57:14",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+39,"8/9/2026, 20:59:54",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHICKEN NOODLS HALF,80,2,2,4,84
+40,"8/9/2026, 22:01:06",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+41,"8/9/2026, 22:07:23",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+42,"8/9/2026, 22:12:28",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Khuska,90,2.25,2.25,4.5,94.5
+43,"8/9/2026, 22:21:12",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half),300,7.5,7.5,15,315
+44,"8/9/2026, 22:49:51",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+1,"9/9/2026, 12:50:03",manik,9093468059,table,Table 2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Chicken Masala,460,11.5,11.5,23,483
+2,"9/9/2026, 13:00:16",rehena bibi,9933321026,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+3,"9/9/2026, 13:23:51",limra,9999999999,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Chilli Chicken (Bone); 1x Tandoori Chicken (Quarter),645,16.13,16.12,32.25,677.25
+4,"9/9/2026, 13:33:54",limra,9735769519,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+5,"9/9/2026, 13:42:51",LIMRA,1234567890,table,8,cancelled,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Half); 1x Kadai Chicken,540,13.5,13.5,27,567
+6,"9/9/2026, 14:01:22",HASU DA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+7,"9/9/2026, 14:20:20",ARIYAN,8695269663,table,8,cancelled,paid,Cash/UPI,1x Malai Kabab; 1x Kadai Paneer; 1x Butter Kulcha; 2x Water 1 Litre,475,11.88,11.87,23.75,498.75
+8,"9/9/2026, 14:21:38",LIMRA,7908835471,table,Table 2,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half),300,7.5,7.5,15,315
+9,"9/9/2026, 14:35:43",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+10,"9/9/2026, 14:45:32",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Chicken Tikka Masala; 1x Handi Chicken; 1x Plain Naan; 1x Butter Naan,440,11,11,22,462
+11,"9/9/2026, 17:37:15",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x EGG ROLL; 2x CHICKEN ROLL,280,7,7,14,294
+12,"9/9/2026, 17:37:52",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHICKEN NOODLS HALF,80,2,2,4,84
+13,"9/9/2026, 17:40:57",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Water 1 Litre; 3x Hyderabadi Chicken Biryani (Half),530,13.25,13.25,26.5,556.5
+14,"9/9/2026, 17:53:24",LIMRA,9514783105,table,Table 3,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Hot & Sour Veg Soup,465,11.63,11.63,23.26,488.25
+15,"9/9/2026, 18:21:21",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Murg Chicken Tikka; 3x Hyderabadi Chicken Biryani (Full),750,18.75,18.75,37.5,797.5
+16,"9/9/2026, 18:26:15",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+17,"9/9/2026, 18:49:18",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Tandoori Roti; 1x Dal Fry; 1x Butter Naan,150,3.75,3.75,7.5,167.5
+18,"9/9/2026, 18:58:25",LIMRA,8428411316,table,Table 5,delivered,paid,Cash/UPI,1x Murg Chicken Tikka,165,4.13,4.13,8.26,173.25
+19,"9/9/2026, 19:02:47",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,160,4,4,8,168
+20,"9/9/2026, 19:04:50",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice; 1x CHILLI CHICKEN HALF,210,5.25,5.25,10.5,220.5
+21,"9/9/2026, 19:20:23",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+22,"9/9/2026, 19:45:03",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 4x Tandoori Roti,160,4,4,8,178
+23,"9/9/2026, 20:01:52",MUKTER,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+24,"9/9/2026, 20:10:44",LIMRA,7001162415,table,6,delivered,paid,Cash/UPI,"1x Kabab Platter (Malai, Haryali, Tikka, Sikhari, Tangdi); 1x Tandoori Chicken (Full)",1080,27,27,54,1134
+25,"9/9/2026, 20:13:45",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,230.5
+26,"9/9/2026, 20:27:33",LIMRA,1234567890,table,Table 4,delivered,paid,Cash/UPI,"1x Kabab Platter (Malai, Haryali, Tikka, Sikhari, Tangdi); 1x Afgani Chicken (Full); 1x Butter Naan",1150,28.75,28.75,57.5,1207.5
+27,"9/9/2026, 20:28:11",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65,145,3.63,3.63,7.26,152.25
+28,"9/9/2026, 20:30:25",KALIA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF; 2x Butter Naan,155,3.88,3.88,7.76,162.75
+29,"9/9/2026, 20:51:32",LIMRA,1234567890,table,T 7,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,160,4,4,8,168
+30,"9/9/2026, 20:52:01",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+31,"9/9/2026, 21:08:36",BIJOY MURMU,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+32,"9/9/2026, 21:31:47",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,5x Butter Naan; 1x Butter Chicken Masala,390,9.75,9.75,19.5,409.5
+33,"9/9/2026, 21:42:04",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+34,"9/9/2026, 21:53:59",Table Table 2,9999999999,table,Table 2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Water 1 Litre,120,3,3,6,126
+35,"9/9/2026, 22:01:04",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Reshmi Kabab,210,5.25,5.25,10.5,230.5
+36,"9/9/2026, 22:51:23",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Butter Chicken Masala,215,5.38,5.38,10.76,225.75
+38,"9/9/2026, 22:52:44",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+38,"9/9/2026, 22:54:08",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Tandoori Roti,45,1.13,1.13,2.26,47.25
+1,"10/9/2026, 12:40:58",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+2,"10/9/2026, 12:41:33",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+3,"10/9/2026, 12:42:34",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+4,"10/9/2026, 13:15:19",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+5,"10/9/2026, 13:24:34",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken Dry,145,3.63,3.63,7.26,152.25
+6,"10/9/2026, 13:26:55",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,1x Handi Chicken; 1x Tandoori Chicken (Half); 2x Chilli Chicken (Bone); 1x Tandoori Chicken (Quarter); 1x Water 500ml,810,20.25,20.25,40.5,850.5
+7,"10/9/2026, 13:29:21",LIMRA,9735291386,table,1,delivered,paid,Cash/UPI,1x Dal Tadka; 1x Tandoori Chicken (Half); 3x Butter Naan,410,10.25,10.25,20.5,430.5
+8,"10/9/2026, 13:33:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+9,"10/9/2026, 13:37:24",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+10,"10/9/2026, 14:09:46",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Chicken Masala,460,11.5,11.5,23,483
+11,"10/9/2026, 14:23:15",LIMRA,1234567890T,table,T 8,cancelled,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Kadai Paneer,315,7.88,7.88,15.76,330.75
+12,"10/9/2026, 14:48:13",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+13,"10/9/2026, 15:12:00",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Dragon Chicken; 1x Mutton Kasa (Full); 1x Handi Chicken; 1x Masala Cold Drink; 2x Water 1 Litre,805,20.13,20.12,40.25,845.25
+14,"10/9/2026, 16:14:51",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Mutton Kasa (Half); 1x Dal Tadka,610,15.25,15.25,30.5,640.5
+15,"10/9/2026, 16:54:56",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+16,"10/9/2026, 17:25:25",LIMRA,9382279692,table,Table 3,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Chicken Tikka Masala; 1x Hyderabadi Chicken Biryani (Full),535,13.38,13.38,26.76,561.75
+17,"10/9/2026, 18:02:28",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Hyderabadi Chicken Biryani (Full),240,6,6,12,252
+18,"10/9/2026, 18:38:40",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,210
+19,"10/9/2026, 18:46:56",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+20,"10/9/2026, 18:48:26",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,3x Butter Naan; 1x Tandoori Chicken (Half); 1x Butter Chicken Masala,530,13.25,13.25,26.5,566.5
+21,"10/9/2026, 19:20:20",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Chicken Masala,460,11.5,11.5,23,483
+22,"10/9/2026, 19:31:19",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Mutton Kasa (Half); 3x Butter Naan,340,8.5,8.5,17,357
+23,"10/9/2026, 19:32:02",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+24,"10/9/2026, 19:40:39",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Dal Egg Tadka; 1x Butter Chicken Masala; 1x Tandoori Chicken (Quarter); 2x Tandoori Roti,460,11.5,11.5,23,483
+25,"10/9/2026, 19:48:22",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Butter Naan,105,2.63,2.63,5.26,110.25
+26,"10/9/2026, 19:49:00",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+27,"10/9/2026, 20:15:45",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+28,"10/9/2026, 20:37:50",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Dragon Chicken; 2x Butter Naan,655,16.38,16.37,32.75,687.75
+29,"10/9/2026, 20:39:40",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Butter Naan,70,1.75,1.75,3.5,73.5
+30,"10/9/2026, 20:43:51",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x chilli chicken half; 2x Butter Naan,155,3.88,3.87,7.75,162.75
+31,"10/9/2026, 20:49:04",LIMRA,1234567890,table,7,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full),560,14,14,28,588
+32,"10/9/2026, 21:09:11",M,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+33,"10/9/2026, 21:37:05",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter); 1x Hyderabadi Chicken Biryani (Full),250,6.25,6.25,12.5,262.5
+34,"10/9/2026, 21:46:56",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Chilli Chicken (Bone); 4x Butter Naan,495,12.38,12.38,24.76,519.75
+35,"10/9/2026, 22:51:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Dal Tadka,95,2.38,2.38,4.76,99.75
+36,"10/9/2026, 22:59:13",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Butter Chicken Masala; 1x Chilli Chicken (Bone); 1x chilli chicken half,655,16.38,16.37,32.75,687.75
+37,"10/9/2026, 23:00:36",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Chilli Chicken (Bone); 2x Water 500ml,375,9.38,9.37,18.75,393.75
+1,"11/9/2026, 12:18:25",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+2,"11/9/2026, 12:48:13",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,5x Butter Naan,175,4.38,4.38,8.76,193.75
+3,"11/9/2026, 12:50:57",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+4,"11/9/2026, 13:19:22",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,160,4,4,8,168
+5,"11/9/2026, 13:30:26",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+6,"11/9/2026, 13:39:25",LIMRA,1234567890,table,Table  8,cancelled,paid,Cash/UPI,1x Chicken Tikka Masala; 1x Handi Chicken; 1x Plain Naan; 1x Butter Naan,440,11,11,22,462
+7,"11/9/2026, 13:40:39",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Kadai Chicken; 1x Kadai Paneer; 1x Jeera Rice; 1x Tandoori Laccha Paratha,490,12.25,12.25,24.5,514.5
+8,"11/9/2026, 13:41:15",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+9,"11/9/2026, 13:44:53",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+10,"11/9/2026, 13:45:19",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+11,"11/9/2026, 13:45:45",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+12,"11/9/2026, 14:04:29",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+13,"11/9/2026, 14:18:53",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Kadai Chicken; 1x Dal Fry; 1x Tandoori Laccha Paratha,320,8,8,16,336
+14,"11/9/2026, 14:31:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+15,"11/9/2026, 14:56:58",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+16,"11/9/2026, 15:51:42",sk sakip,9999999999,table,Table 5,delivered,paid,Cash/UPI,2x Tandoori Chicken (Quarter),220,5.5,5.5,11,231
+17,"11/9/2026, 16:17:38",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+19,"11/9/2026, 16:18:44",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+20,"11/9/2026, 17:05:41",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chicken 65; 1x Butter Chicken Masala; 6x Butter Naan,560.48,14.01,14.01,28.02,598.5
+21,"11/9/2026, 17:10:04",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chicken Lollipop; 1x Chicken Fried Rice; 1x Hyderabadi Chicken Biryani (Full),445,11.13,11.13,22.26,477.25
+22,"11/9/2026, 17:45:33",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Tandoori Chicken (Half); 1x Dal Fry,510,12.75,12.75,25.5,535.5
+23,"11/9/2026, 18:38:23",l,1234567890,table,1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+24,"11/9/2026, 18:39:05",limra,1234567890,delivery,,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 5x Butter Naan,390,9.75,9.75,19.5,419.5
+25,"11/9/2026, 18:39:36",limra,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+26,"11/9/2026, 18:43:12",limra,1234567890,pickup,,delivered,paid,Cash/UPI,2x Egg Chicken Noodles,250,6.25,6.25,12.5,262.5
+27,"11/9/2026, 18:52:25",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+28,"11/9/2026, 18:53:46",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+29,"11/9/2026, 19:03:28",limra,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Hyderabadi Chicken Biryani (Half),240,6,6,12,262
+30,"11/9/2026, 19:08:39",limra,1234567890,delivery,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,451
+31,"11/9/2026, 19:17:32",limra,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+32,"11/9/2026, 19:28:25",LIMRA,1234567890,table,T 7,delivered,paid,Cash/UPI,1x Dal Tadka; 1x Tandoori Chicken (Half); 3x Butter Naan,410,10.25,10.25,20.5,430.5
+33,"11/9/2026, 19:30:54",LIMRA,1234567890,table,Table 5,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Tandoori Roti,405,10.13,10.13,20.26,425.25
+34,"11/9/2026, 19:51:20",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Hyderabadi Chicken Biryani (Half),240,6,6,12,252
+35,"11/9/2026, 19:55:52",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 2x Hyderabadi Chicken Biryani (Full),670,16.75,16.75,33.5,703.5
+36,"11/9/2026, 20:01:53",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chicken Fried Rice; 1x Hyderabadi Chicken Biryani (Full),265,6.63,6.63,13.26,288.25
+37,"11/9/2026, 20:08:40",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+38,"11/9/2026, 20:12:18",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,1x Chicken Tikka Masala,185,4.63,4.62,9.25,194.25
+39,"11/9/2026, 20:12:56",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 2x Chicken Fried Rice; 1x Tandoori Chicken (Quarter),505,12.63,12.63,25.26,540.25
+40,"11/9/2026, 20:26:16",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65; 1x Tandoori Chicken (Half),355,8.88,8.88,17.76,372.75
+41,"11/9/2026, 20:40:05",LIMRA,1234567890,table,7,delivered,paid,Cash/UPI,1x Sikhari Kabab; 1x Butter Naan,230,5.75,5.75,11.5,241.5
+42,"11/9/2026, 20:58:56",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+43,"11/9/2026, 21:02:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+44,"11/9/2026, 21:10:48",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full),170,4.25,4.25,8.5,178.5
+12,"11/9/2026, 21:14:27",Guest,Dine-In,table,3,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Butter Chicken Masala; 1x Garlic Naan; 1x Butter Naan,685.71,17.14,17.14,34.28,720
+46,"11/9/2026, 21:19:09",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Reshmi Kabab; 1x Butter Chicken Masala; 1x Butter Naan,460,11.5,11.5,23,483
+49,"11/9/2026, 21:29:29",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,2x Kadai Chicken; 1x Kadai Paneer; 1x Chilli Chicken (Bone); 1x Water 1 Litre,720,18,18,36,756
+52,"11/9/2026, 22:44:39",L,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full),390,9.75,9.75,19.5,409.5
+53,"11/9/2026, 22:45:44",LIMRA,1234567890,table,T 9,delivered,paid,Cash/UPI,1x Mutton Kasa (Half); 3x Butter Naan,340,8.5,8.5,17,357
+54,"11/9/2026, 22:46:43",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Chicken 65; 1x Tandoori Chicken (Half),355,8.88,8.88,17.76,372.75
+55,"11/9/2026, 22:47:18",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+52,"11/9/2026, 22:53:37",limra,1234567890,table,2,delivered,paid,Cash/UPI,1x Kadai Chicken; 1x Kadai Paneer; 1x Chilli Mushroom; 2x Chicken Fried Rice; 1x Water 500ml,795,19.88,19.87,39.75,834.75
+53,"11/9/2026, 22:59:02",limra,1234567890,table,1,delivered,paid,Cash/UPI,1x Handi Chicken; 1x Plain Naan; 1x Water 500ml,230,5.75,5.75,11.5,241.5
+1,"12/9/2026, 13:07:42",limra,1234567890,table,8,cancelled,paid,Cash/UPI,1x Chicken Fried Rice; 1x Tandoori Chicken (Quarter); 1x Tandoori Chicken (Half),445,11.13,11.12,22.25,467.25
+2,"12/9/2026, 13:11:29",haso,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Hyderabadi Chicken Biryani (Full),240,6,6,12,252
+3,"12/9/2026, 13:18:01",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Khuska,230,5.75,5.75,11.5,241.5
+4,"12/9/2026, 13:19:21",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+5,"12/9/2026, 14:11:10",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+6,"12/9/2026, 15:00:48",limra,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+7,"12/9/2026, 15:15:16",limra,1234567890,table,table 8,cancelled,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Khuska,230,5.75,5.75,11.5,241.5
+8,"12/9/2026, 16:22:42",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+9,"12/9/2026, 17:29:22",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Noodles,100,2.5,2.5,5,105
+10,"12/9/2026, 17:32:08",limra,1234567890,table,Table 2,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half),300,7.5,7.5,15,315
+11,"12/9/2026, 17:36:30",limra,1234567890,table,1,delivered,paid,Cash/UPI,1x Crispy Chicken; 2x Butter Roti,205,5.13,5.12,10.25,215.25
+12,"12/9/2026, 17:43:49",L,1234567890,pickup,,delivered,paid,Cash/UPI,2x Egg Chicken Noodles,250,6.25,6.25,12.5,262.5
+13,"12/9/2026, 17:48:37",limra,1234567890,table,Table 3,delivered,paid,Cash/UPI,2x Egg Chicken Noodles; 2x Chicken Fried Rice,500,12.5,12.5,25,525
+15,"12/9/2026, 18:16:23",limra,1234567890,table,4,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 4x Tandoori Roti,450,11.25,11.25,22.5,472.5
+16,"12/9/2026, 18:27:30",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+17,"12/9/2026, 18:40:52",limra,1234567890,table,8,cancelled,paid,Cash/UPI,1x Mutton Kasa (Half); 1x Tandoori Chicken (Full); 1x Chicken Manchurian; 1x Thums Up Glass; 1x Water 500ml,805,20.13,20.12,40.25,845.25
+18,"12/9/2026, 18:41:42",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+19,"12/9/2026, 19:15:42",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+20,"12/9/2026, 19:16:56",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Tandoori Chicken (Half); 1x Hyderabadi Chicken Biryani (Half),700,17.5,17.5,35,735
+21,"12/9/2026, 19:24:35",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+22,"12/9/2026, 19:45:37",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Half),400,10,10,20,420
+23,"12/9/2026, 19:46:20",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 3x Hyderabadi Chicken Biryani (Full),565,14.13,14.13,28.26,603.25
+24,"12/9/2026, 19:50:05",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 4x Plain Naan,260,6.5,6.5,13,273
+25,"12/9/2026, 19:51:57",P,1234567890,pickup,,delivered,paid,Cash/UPI,3x Plain Naan; 1x Chilli Chicken (Bone),235,5.88,5.88,11.76,246.75
+26,"12/9/2026, 19:52:23",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+27,"12/9/2026, 19:53:46",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF; 2x Butter Naan; 1x Hyderabadi Chicken Biryani (Full); 1x Hyderabadi Chicken Biryani (Half),395,9.88,9.88,19.76,414.75
+28,"12/9/2026, 19:57:42",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,220
+29,"12/9/2026, 19:58:36",LIMRA,9739083418,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+30,"12/9/2026, 19:59:54",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Szechuan Chicken; 1x Kadai Mushroom; 1x Kadai Chicken; 1x Mix Fried Rice; 1x chicken 65; 1x Tandoori Roti,1235,30.88,30.87,61.75,1296.75
+31,"12/9/2026, 20:01:12",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles; 1x Murg Chicken Tikka; 1x Hyderabadi Chicken Biryani (Half),390,9.75,9.75,19.5,419.5
+32,"12/9/2026, 20:12:24",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,210
+33,"12/9/2026, 20:42:09",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+34,"12/9/2026, 21:00:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full),170,4.25,4.25,8.5,178.5
+35,"12/9/2026, 21:08:59",P,1234567890,table,4,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,160,4,4,8,168
+36,"12/9/2026, 21:12:58",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Half),490,12.25,12.25,24.5,514.5
+37,"12/9/2026, 21:17:32",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF; 2x Butter Naan; 1x Hyderabadi Chicken Biryani (Full); 1x Hyderabadi Chicken Biryani (Half),395,9.88,9.88,19.76,414.75
+38,"12/9/2026, 21:29:43",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Plain Naan; 1x Butter Chicken Masala,305,7.63,7.63,15.26,320.25
+39,"12/9/2026, 21:38:20",lim,9999999999,table,8,cancelled,paid,Cash/UPI,1x Kadai Chicken; 1x Chicken Masala; 1x Chicken Lollipop; 1x Chana Masala; 1x Chicken Fried Rice; 1x CHICKEN NOODLS HALF; 1x Masala Kulcha,920,23,23,46,966
+40,"12/9/2026, 21:38:56",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+41,"12/9/2026, 22:04:12",limra,1234567890,table,Table 1,delivered,paid,Cash/UPI,15x Tandoori Laccha Paratha,675,16.88,16.88,33.76,708.75
+42,"12/9/2026, 22:05:02",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Butter Naan; 1x Butter Chicken Masala,250,6.25,6.25,12.5,262.5
+1,"13/9/2026, 13:02:50",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full),560,14,14,28,588
+2,"13/9/2026, 13:14:16",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+3,"13/9/2026, 13:17:45",LL,1234567890,table,Table 2,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Half),400,10,10,20,420
+4,"13/9/2026, 13:46:09",ll,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+5,"13/9/2026, 14:18:51",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+7,"13/9/2026, 14:45:18",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,160,4,4,8,168
+8,"13/9/2026, 14:52:01",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+9,"13/9/2026, 14:52:31",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+10,"13/9/2026, 15:03:25",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x Chicken 65; 1x Tandoori Chicken (Half),355,8.88,8.88,17.76,372.75
+11,"13/9/2026, 15:08:20",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Mutton Biryani,245,6.13,6.13,12.26,257.25
+12,"13/9/2026, 17:19:22",IRYAD,9239462962,delivery,,delivered,paid,Cash/UPI,6x Butter Naan; 1x Tandoori Chicken (Full); 2x Chilli Chicken (Bone); 9x Hyderabadi Chicken Biryani (Full),2026.19,50.66,50.65,101.31,2257.5
+13,"13/9/2026, 17:44:52",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hot & Sour Chicken Soup,95,2.38,2.38,4.76,99.75
+14,"13/9/2026, 17:45:24",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65,145,3.63,3.63,7.26,152.25
+15,"13/9/2026, 17:46:16",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,160,4,4,8,168
+16,"13/9/2026, 18:04:04",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+17,"13/9/2026, 18:06:33",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Water 1 Litre,120,3,3,6,126
+18,"13/9/2026, 18:10:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+18,"13/9/2026, 18:22:22",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Chicken 65; 1x Tandoori Chicken (Half); 1x Water 500ml,365,9.13,9.12,18.25,383.25
+19,"13/9/2026, 18:26:09",LIMRA,7501881903,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,125.5
+20,"13/9/2026, 18:27:30",LIMRA,8597719147,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 4x Hyderabadi Chicken Biryani (Full); 2x Butter Naan; 1x Chilli Chicken (Bone); 1x Malai Kabab,1152.86,28.82,28.82,57.64,1270.5
+21,"13/9/2026, 18:33:37",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Handi Chicken; 1x Murg Chicken Tikka; 1x Egg Chicken Noodles; 1x Thums Up Glass,715,17.88,17.87,35.75,750.75
+22,"13/9/2026, 18:58:24",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Murg Chicken Tikka,165,4.13,4.13,8.26,183.25
+23,"13/9/2026, 18:59:01",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 4x Butter Naan; 1x Tandoori Chicken (Half),565,14.13,14.13,28.26,603.25
+24,"13/9/2026, 19:00:50",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,3x Chicken Fried Rice,375,9.38,9.38,18.76,403.75
+25,"13/9/2026, 19:01:23",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+26,"13/9/2026, 19:05:06",P,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+27,"13/9/2026, 19:10:03",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Butter Chicken Masala; 1x Chicken Kosa (Full); 1x Hot & Sour Chicken Soup; 1x Masala Kulcha,745,18.63,18.62,37.25,782.25
+28,"13/9/2026, 19:14:31",LIMRA,1234567890,table,8,cancelled,paid,Cash/UPI,1x Dragon Chicken; 1x Tandoori Chicken (Half); 2x Chicken Fried Rice; 1x Chilli Chicken (Bone); 2x Tandoori Roti,830,20.75,20.75,41.5,871.5
+29,"13/9/2026, 19:15:23",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Lemon Chicken; 1x Paneer Pulao; 1x Masala Kulcha,725,18.13,18.12,36.25,761.25
+30,"13/9/2026, 19:16:31",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Mix Fried Rice,155,3.88,3.88,7.76,162.75
+15,"13/9/2026, 19:32:25",Athar,9564543623,table,1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Butter Chicken Masala; 2x Butter Naan; 1x Water 500ml,685,17.13,17.12,34.25,719.25
+32,"13/9/2026, 19:39:44",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+33,"13/9/2026, 19:51:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+34,"13/9/2026, 19:54:39",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+35,"13/9/2026, 19:58:52",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+36,"13/9/2026, 20:00:22",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Chicken Fried Rice,250,6.25,6.25,12.5,262.5
+37,"13/9/2026, 20:01:53",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Water 500ml,290,7.25,7.25,14.5,304.5
+39,"13/9/2026, 20:21:10",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,1x Kadai Chicken; 1x Chicken Masala; 1x Chicken Lollipop; 1x Chilli Chicken (Bone); 3x Chicken Fried Rice; 1x Egg Chicken Noodles; 1x Water 500ml,1205,30.13,30.12,60.25,1265.25
+40,"13/9/2026, 20:24:03",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter); 2x Butter Naan,180,4.5,4.5,9,199
+41,"13/9/2026, 20:32:59",LIMRA,1234567890,table,15,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Malai Kabab; 1x Chana Masala; 1x Butter Kulcha; 1x Tandoori Roti,775,19.38,19.37,38.75,813.75
+42,"13/9/2026, 20:34:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+43,"13/9/2026, 20:36:50",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+44,"13/9/2026, 20:43:40",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+45,"13/9/2026, 20:45:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Masala Cold Drink,70,1.75,1.75,3.5,73.5
+46,"13/9/2026, 20:46:40",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half),300,7.5,7.5,15,315
+48,"13/9/2026, 21:37:05",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Paneer Tikka,325,8.13,8.12,16.25,341.25
+49,"13/9/2026, 22:08:06",P,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 1x Kadai Chicken; 6x Butter Naan; 1x Paneer Butter Masala,715.48,17.89,17.88,35.77,761.25
+50,"13/9/2026, 22:25:46",KADER KHAN [AMDEI],9883973767,table,4,delivered,paid,Cash/UPI,"2x Kabab Platter (Malai, Haryali, Tikka, Sikhari, Tangdi); 2x Tandoori Chicken (Quarter); 1x Egg Fried Rice",1700,42.5,42.5,85,1785
+1,"14/9/2026, 13:32:35",sk arsad,9679413959,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Half),350,8.75,8.75,17.5,367.5
+2,"14/9/2026, 13:33:05",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+3,"14/9/2026, 13:33:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+4,"14/9/2026, 13:43:01",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,2x Tandoori Chicken (Quarter),220,5.5,5.5,11,231
+5,"14/9/2026, 13:44:38",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Mutton Kasa (Full); 1x Dal Fry,430,10.75,10.75,21.5,451.5
+6,"14/9/2026, 13:45:04",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Handi Chicken; 1x Tandoori Chicken (Half); 1x Water 500ml,410,10.25,10.25,20.5,430.5
+7,"14/9/2026, 13:47:27",Table Table 9,9999999999,table,9,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half),300,7.5,7.5,15,315
+8,"14/9/2026, 13:50:21",limra,1234567890,table,1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 500ml,150,3.75,3.75,7.5,157.5
+9,"14/9/2026, 14:16:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+10,"14/9/2026, 14:36:41",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,3x Tandoori Chicken (Quarter),330,8.25,8.25,16.5,346.5
+11,"14/9/2026, 15:06:20",Table Table 3,9999999999,table,3,delivered,paid,Cash/UPI,3x Tandoori Chicken (Quarter),330,8.25,8.25,16.5,346.5
+12,"14/9/2026, 15:55:52",BANIA,1234567890,pickup,,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full); 1x Kadai Chicken; 1x Chilli Chicken (Bone),895,22.38,22.38,44.76,939.75
+13,"14/9/2026, 16:55:40",limra,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Pineapple Juice,65,1.63,1.63,3.26,68.25
+14,"14/9/2026, 17:16:07",limra,1234567890,table,T 8,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Kadai Chicken,580,14.5,14.5,29,609
+15,"14/9/2026, 17:31:32",limra,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Paneer Tikka,325,8.13,8.13,16.26,341.25
+16,"14/9/2026, 17:46:20",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHICKEN NOODLS HALF,80,2,2,4,84
+17,"14/9/2026, 18:37:53",limra,1234567890,table,8,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Hyderabadi Chicken Biryani (Full); 1x Kadai Chicken,540,13.5,13.5,27,567
+18,"14/9/2026, 18:38:26",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+19,"14/9/2026, 18:40:31",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,"1x Kabab Platter (Malai, Haryali, Tikka, Sikhari, Tangdi)",690,17.25,17.25,34.5,724.5
+20,"14/9/2026, 18:49:27",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,"2x Kabab Platter (Malai, Haryali, Tikka, Sikhari, Tangdi); 1x Tandoori Chicken (Full); 1x Water 1 Litre",1790,44.75,44.75,89.5,1879.5
+21,"14/9/2026, 18:57:23",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+22,"14/9/2026, 19:01:57",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+23,"14/9/2026, 19:18:55",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Khuska,305,7.63,7.62,15.25,320.25
+24,"14/9/2026, 19:23:28",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 5x Tandoori Roti,465,11.63,11.62,23.25,488.25
+25,"14/9/2026, 19:47:59",TAHERA,8590596599,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+26,"14/9/2026, 19:48:51",HASO,1234567890,pickup,,delivered,paid,Cash/UPI,2x Butter Naan; 1x Hyderabadi Chicken Biryani (Half); 1x CHILLI CHICKEN HALF,255,6.38,6.38,12.76,267.75
+27,"14/9/2026, 19:52:28",LIMRA,9933971274,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+28,"14/9/2026, 19:56:25",Table Table 2,9999999999,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Dragon Chicken; 1x Chilli Chicken (Bone); 2x Tandoori Roti,580,14.5,14.5,29,609
+29,"14/9/2026, 19:58:14",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+30,"14/9/2026, 20:11:39",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+31,"14/9/2026, 20:11:41",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+32,"14/9/2026, 20:14:43",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,160,4,4,8,168
+33,"14/9/2026, 20:22:19",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Chicken 65,290,7.25,7.25,14.5,304.5
+34,"14/9/2026, 20:27:39",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Hyderabadi Chicken Biryani (Full); 1x Kadai Chicken,540,13.5,13.5,27,567
+35,"14/9/2026, 20:31:20",KALIA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x CHILLI CHICKEN HALF,185,4.63,4.63,9.26,194.25
+36,"14/9/2026, 20:56:02",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+37,"14/9/2026, 21:20:17",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Chicken Kosa (Full); 1x Egg Chicken Noodles; 1x Butter Naan,545,13.63,13.62,27.25,572.25
+38,"14/9/2026, 22:02:57",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+39,"14/9/2026, 22:29:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+40,"14/9/2026, 22:30:01",L,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+41,"14/9/2026, 22:31:03",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,1x Malai Kabab; 1x Butter Chicken Masala; 1x Butter Roti,460,11.5,11.5,23,483
+1,"15/9/2026, 13:00:54",LIMRA,8167420107,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+2,"15/9/2026, 13:01:28",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+3,"15/9/2026, 13:03:24",LIMRA,7585920586,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+4,"15/9/2026, 13:20:53",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chana Masala,110,2.75,2.75,5.5,115.5
+5,"15/9/2026, 13:25:09",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Chicken Fried Rice; 2x Butter Naan,585,14.63,14.62,29.25,614.25
+6,"15/9/2026, 13:41:17",tairan,9645659719,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,220
+7,"15/9/2026, 13:47:26",haso bhai,3219719881,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+8,"15/9/2026, 13:53:51",limra,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full),170,4.25,4.25,8.5,178.5
+9,"15/9/2026, 14:13:32",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chana Masala; 1x Chicken Kosa (Full),280,7,7,14,304
+10,"15/9/2026, 15:29:45",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Half); 1x Chicken Fried Rice,615,15.38,15.38,30.76,645.75
+11,"15/9/2026, 15:57:37",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+12,"15/9/2026, 17:22:58",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+13,"15/9/2026, 17:54:54",LIMRA,8653677603,delivery,,delivered,paid,Cash/UPI,2x Butter Naan; 1x Tandoori Chicken (Half); 1x COLD DRINGS,300,7.5,7.5,15,325
+14,"15/9/2026, 18:22:00",Table Table 1,9999999999,table,1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x CHICKEN NOODLS HALF; 2x Water 1 Litre,260,6.5,6.5,13,273
+15,"15/9/2026, 18:26:24",LIMRA,9724281360,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full),390,9.75,9.75,19.5,419.5
+16,"15/9/2026, 18:29:19",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,3x Tandoori Roti; 1x Dal Fry,130,3.25,3.25,6.5,146.5
+17,"15/9/2026, 19:17:56",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+18,"15/9/2026, 19:20:26",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+17,"15/9/2026, 19:25:54",Aksar,9800198428,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 2x Chicken Fried Rice; 1x Mix Fried Rice,795,19.88,19.87,39.75,834.75
+20,"15/9/2026, 19:44:17",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+21,"15/9/2026, 19:50:06",LIMRA,1234567890,table,Table 5,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,160,4,4,8,168
+22,"15/9/2026, 20:03:43",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF,85,2.13,2.13,4.26,89.25
+23,"15/9/2026, 20:15:19",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Tandoori Roti,45,1.13,1.13,2.26,47.25
+24,"15/9/2026, 20:20:37",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Hyderabadi Chicken Biryani (Full),240,6,6,12,262
+25,"15/9/2026, 20:25:34",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+26,"15/9/2026, 20:30:43",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Hyderabadi Chicken Biryani (Full),240,6,6,12,252
+27,"15/9/2026, 20:39:22",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Egg Chicken Noodles,375,9.38,9.38,18.76,393.75
+29,"15/9/2026, 20:42:39",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Kadai Chicken; 1x Chilli Chicken (Bone); 4x Butter Naan,865,21.63,21.62,43.25,908.25
+30,"15/9/2026, 20:45:53",l,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+30,"15/9/2026, 21:01:58",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 4x Tandoori Roti; 1x Water 1 Litre,220,5.5,5.5,11,231
+31,"15/9/2026, 21:15:06",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x Tandoori Roti; 1x Chana Masala,170,4.25,4.25,8.5,178.5
+32,"15/9/2026, 21:27:59",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Mutton Kasa (Full); 1x Kadai Chicken; 1x Hyderabadi Chicken Biryani (Half),635,15.88,15.87,31.75,666.75
+33,"15/9/2026, 21:47:03",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,324
+34,"15/9/2026, 21:49:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+35,"15/9/2026, 21:50:35",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+36,"15/9/2026, 21:52:25",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Hyderabadi Chicken Biryani (Half); 1x Water 1 Litre,260,6.5,6.5,13,273
+37,"15/9/2026, 21:54:14",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+38,"15/9/2026, 21:59:14",LIMRA,7602502027,table,6,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full); 3x Hyderabadi Chicken Biryani (Half); 2x Butter Chicken Masala; 6x Butter Naan,1640,41,41,82,1722
+39,"15/9/2026, 22:00:18",jabo,9002011755,delivery,,delivered,paid,Cash/UPI,2x Butter Naan; 1x Chana Masala; 2x Masala Kulcha,290,7.25,7.25,14.5,314.5
+40,"15/9/2026, 22:04:38",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+1,"16/9/2026, 12:37:17",LIMRA,8230941235,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+3,"16/9/2026, 12:58:06",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+4,"16/9/2026, 13:28:30",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Hyderabadi Chicken Biryani (Full),240,6,6,12,252
+4,"16/9/2026, 13:53:42",LIMRA,1234567890,table,t 8,delivered,paid,Cash/UPI,1x Dragon Chicken,195,4.88,4.88,9.76,204.75
+5,"16/9/2026, 13:54:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+6,"16/9/2026, 14:16:11",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+7,"16/9/2026, 17:17:51",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Tandoori Chicken (Half); 1x Butter Naan; 1x Water 500ml,470,11.75,11.75,23.5,493.5
+8,"16/9/2026, 17:52:40",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,2x Tandoori Chicken (Full); 1x Chicken Fried Rice,905,22.63,22.62,45.25,950.25
+9,"16/9/2026, 18:13:16",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles; 1x Hot & Sour Chicken Soup,220,5.5,5.5,11,241
+10,"16/9/2026, 18:14:01",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+11,"16/9/2026, 18:35:56",l,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Roti; 1x Tandoori Chicken (Half),225,5.63,5.63,11.26,236.25
+12,"16/9/2026, 18:40:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65; 2x Hyderabadi Chicken Biryani (Full),425,10.63,10.63,21.26,446.25
+13,"16/9/2026, 18:49:01",LIMRA,9999999999,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 2x Chicken Fried Rice,395,9.88,9.88,19.76,414.75
+14,"16/9/2026, 19:06:05",jerthan,8945080620,delivery,,delivered,paid,Cash/UPI,1x CHICKEN NOODLS HALF; 1x Chicken Fried Rice,205,5.13,5.13,10.26,225.25
+16,"16/9/2026, 19:12:50",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Dal Egg Tadka,105,2.63,2.63,5.26,110.25
+17,"16/9/2026, 19:17:04",musteri khatun,7047198444,pickup,,delivered,paid,Cash/UPI,1x Sikhari Kabab; 6x Butter Naan; 1x CHICKEN F RICE HALF; 1x Dal Tadka,580,14.5,14.5,29,609
+18,"16/9/2026, 19:36:33",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+7,"16/9/2026, 19:56:12",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Chilli Chicken (Bone); 1x Butter Naan; 1x Water 500ml,405,10.13,10.12,20.25,425.25
+8,"16/9/2026, 19:56:33",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+9,"16/9/2026, 19:58:11",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Chicken Kosa (Full); 1x Egg Chicken Noodles; 2x Butter Naan,755,18.88,18.87,37.75,792.75
+10,"16/9/2026, 20:22:28",moulana,9932886985,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+11,"16/9/2026, 20:23:23",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 2x Butter Naan,285,7.13,7.13,14.26,299.25
+12,"16/9/2026, 20:39:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHICKEN F RICE HALF,80,2,2,4,84
+13,"16/9/2026, 20:41:24",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Butter Chicken Masala; 4x Butter Naan,745,18.63,18.62,37.25,782.25
+14,"16/9/2026, 20:42:28",Table Table 1,9999999999,table,1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x COLD DRINGS,120,3,3,6,126
+15,"16/9/2026, 20:50:29",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+17,"16/9/2026, 21:02:47",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF; 4x Tandoori Roti,145,3.63,3.63,7.26,152.25
+18,"16/9/2026, 21:07:10",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+19,"16/9/2026, 21:08:07",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+7,"16/9/2026, 21:17:46",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Chilli Chicken (Bone); 1x Egg Noodles,455,11.38,11.37,22.75,477.75
+8,"16/9/2026, 21:20:26",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+9,"16/9/2026, 21:22:10",LIMRA,1234567890,table,t 7,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,210
+10,"16/9/2026, 21:23:27",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Handi Chicken; 1x Tandoori Chicken (Quarter),510,12.75,12.75,25.5,535.5
+34,"16/9/2026, 22:02:54",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,141.25
+35,"16/9/2026, 22:03:32",mukter,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+34,"16/9/2026, 22:29:02",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full); 8x Tandoori Roti; 1x Chana Masala,400,10,10,20,420
+35,"16/9/2026, 22:29:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full); 2x Tandoori Roti,200,5,5,10,210
+36,"16/9/2026, 22:30:54",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full),170,4.25,4.25,8.5,178.5
+37,"16/9/2026, 22:34:13",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Butter Roti,40,1,1,2,42
+38,"16/9/2026, 22:43:31",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Butter Chicken Masala; 1x Murg Chicken Tikka,660,16.5,16.5,33,693
+39,"16/9/2026, 22:58:25",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Chicken Masala; 1x Chicken Lollipop; 2x Hyderabadi Chicken Biryani (Half); 2x Butter Naan,630,15.75,15.75,31.5,661.5
+1,"17/9/2026, 12:28:50",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Chicken Lollipop,180,4.5,4.5,9,189
+2,"17/9/2026, 12:31:07",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Water 500ml,110,2.75,2.75,5.5,115.5
+3,"17/9/2026, 12:48:31",l,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+4,"17/9/2026, 12:48:50",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+5,"17/9/2026, 12:49:43",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+6,"17/9/2026, 13:13:30",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+7,"17/9/2026, 14:33:06",LIMRA,9999999999,table,Table 1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 500ml,150,3.75,3.75,7.5,157.5
+8,"17/9/2026, 14:34:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,9x Hyderabadi Chicken Biryani (Full),1260,31.5,31.5,63,1323
+9,"17/9/2026, 14:55:56",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+10,"17/9/2026, 16:18:08",jerthan,8016098706,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Half); 1x Hyderabadi Chicken Biryani (Full),265,6.63,6.63,13.26,278.25
+11,"17/9/2026, 16:26:24",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+12,"17/9/2026, 16:27:17",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+13,"17/9/2026, 16:27:48",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+14,"17/9/2026, 16:28:55",LIMRA,1234567890,table,table 8,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+15,"17/9/2026, 17:06:22",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 3x Butter Naan,250,6.25,6.25,12.5,262.5
+16,"17/9/2026, 17:48:21",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Paneer Tikka,325,8.13,8.13,16.26,341.25
+17,"17/9/2026, 18:02:07",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+18,"17/9/2026, 18:21:54",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Chicken 65,285,7.13,7.13,14.26,299.25
+19,"17/9/2026, 18:28:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x CHICKEN ROLL,240,6,6,12,252
+20,"17/9/2026, 18:39:31",LIMRA,1234567890,table,Table 5,delivered,paid,Cash/UPI,2x Egg Chicken Noodles,250,6.25,6.25,12.5,262.5
+21,"17/9/2026, 18:50:24",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+23,"17/9/2026, 19:16:41",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Butter Naan,70,1.75,1.75,3.5,73.5
+23,"17/9/2026, 19:17:56",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+24,"17/9/2026, 19:21:37",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter); 1x Hyderabadi Chicken Biryani (Full),250,6.25,6.25,12.5,262.5
+25,"17/9/2026, 19:22:17",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+26,"17/9/2026, 19:23:32",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Chicken 65; 1x Dal Tadka,455,11.38,11.37,22.75,477.75
+27,"17/9/2026, 19:25:12",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+28,"17/9/2026, 19:35:01",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,2x Tandoori Chicken (Half); 1x Dragon Chicken; 1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,775,19.38,19.37,38.75,813.75
+29,"17/9/2026, 19:46:31",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Kadai Chicken; 1x Lemon Chicken; 1x Butter Naan; 1x Water 1 Litre,790,19.75,19.75,39.5,829.5
+30,"17/9/2026, 19:50:29",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+31,"17/9/2026, 19:57:45",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 4x Tandoori Roti,200,5,5,10,210
+32,"17/9/2026, 20:04:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Sikhari Kabab,195,4.88,4.88,9.76,204.75
+33,"17/9/2026, 20:16:14",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Egg Chicken Noodles,250,6.25,6.25,12.5,262.5
+35,"17/9/2026, 20:28:01",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Butter Naan,105,2.63,2.63,5.26,110.25
+36,"17/9/2026, 20:47:23",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 2x Butter Naan,350,8.75,8.75,17.5,367.5
+37,"17/9/2026, 20:50:11",munna da,8926577726,table,Table 1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 2x Hyderabadi Chicken Biryani (Full); 1x Kadai Chicken; 1x Dal Tadka,955,23.88,23.88,47.76,1002.75
+38,"17/9/2026, 20:52:13",LIMRA,1234567890,table,15,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x CHICKEN F RICE HALF,295,7.38,7.37,14.75,309.75
+39,"17/9/2026, 20:53:55",ARIF,9739083418,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+40,"17/9/2026, 20:57:30",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chana Masala,110,2.75,2.75,5.5,125.5
+41,"17/9/2026, 21:02:54",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Malai Kabab; 1x Butter Chicken Masala,440,11,11,22,462
+41,"17/9/2026, 21:08:07",l,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chana Masala; 4x Butter Naan,250,6.25,6.25,12.5,272.5
+42,"17/9/2026, 21:09:30",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,3x Butter Naan; 1x Chicken Kosa (Full),265.48,6.64,6.63,13.27,288.75
+43,"17/9/2026, 21:20:04",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+44,"17/9/2026, 21:39:47",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Egg Chicken Noodles; 1x Dal Fry; 1x Tandoori Roti,440,11,11,22,462
+45,"17/9/2026, 22:21:53",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x COLD DRINGS,160,4,4,8,168
+46,"17/9/2026, 22:56:20",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Chicken Kosa (Half); 1x Hyderabadi Chicken Biryani (Full),265,6.63,6.62,13.25,278.25
+1,"18/9/2026, 12:39:38",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+2,"18/9/2026, 12:40:56",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65; 2x Hyderabadi Chicken Biryani (Full),425,10.63,10.63,21.26,446.25
+3,"18/9/2026, 12:41:49",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+4,"18/9/2026, 12:42:39",l,8850188750,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,210
+5,"18/9/2026, 12:56:37",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+6,"18/9/2026, 13:49:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+7,"18/9/2026, 14:24:53",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Chilli Chicken (Bone),285,7.13,7.13,14.26,299.25
+8,"18/9/2026, 14:25:30",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+9,"18/9/2026, 16:12:02",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x Chicken Fried Rice; 1x CHICKEN NOODLS HALF,205,5.13,5.13,10.26,215.25
+10,"18/9/2026, 16:13:56",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Dragon Chicken; 1x Chicken Fried Rice,710,17.75,17.75,35.5,745.5
+11,"18/9/2026, 17:37:27",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Chicken 65,145,3.63,3.62,7.25,152.25
+12,"18/9/2026, 17:45:29",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,1x Chicken Tikka Masala,185,4.63,4.62,9.25,194.25
+13,"18/9/2026, 17:49:01",sk arif,7047300454,pickup,,delivered,paid,Cash/UPI,1x cold drings; 4x Tandoori Laccha Paratha; 5x Hyderabadi Chicken Biryani (Full); 1x Chicken Lollipop; 1x Chilli Chicken (Bone); 1x Paneer Tikka; 1x Tandoori Chicken (Full); 2x Butter Naan,1870,46.75,46.75,93.5,1963.5
+14,"18/9/2026, 17:54:38",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Egg Chicken Noodles,375,9.38,9.38,18.76,393.75
+15,"18/9/2026, 18:25:03",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Khuska,90,2.25,2.25,4.5,94.5
+16,"18/9/2026, 18:48:51",L,9547656059,table,8,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+17,"18/9/2026, 18:54:01",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Chicken Kosa (Full),310,7.75,7.75,15.5,325.5
+18,"18/9/2026, 19:02:40",LIMRA,8158943663,table,3,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Kadai Chicken; 1x Chicken 65,725,18.13,18.12,36.25,761.25
+19,"18/9/2026, 19:28:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+20,"18/9/2026, 19:31:37",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+21,"18/9/2026, 19:36:07",LIMRA,7365007944,table,1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Handi Chicken; 1x Murg Chicken Tikka,565,14.13,14.12,28.25,593.25
+22,"18/9/2026, 19:36:45",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+23,"18/9/2026, 19:40:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+24,"18/9/2026, 19:41:36",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,1x Paneer 65,135,3.38,3.37,6.75,141.75
+25,"18/9/2026, 19:43:26",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+26,"18/9/2026, 19:45:06",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chana Masala; 1x Butter Naan; 1x Plain Naan; 2x Chicken Fried Rice; 1x CHILLI CHICKEN HALF,510,12.75,12.75,25.5,535.5
+28,"18/9/2026, 19:58:14",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+29,"18/9/2026, 20:03:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x tangdi kabab half; 1x Kadai Chicken; 5x Butter Naan,545,13.63,13.63,27.26,572.25
+30,"18/9/2026, 20:07:10",ll,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+31,"18/9/2026, 20:08:53",l,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Haryali Kabab; 1x Murg Chicken Tikka,445,11.13,11.13,22.26,477.25
+32,"18/9/2026, 20:10:23",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 1x Hyderabadi Chicken Biryani (Half),245,6.13,6.13,12.26,257.25
+33,"18/9/2026, 20:22:28",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+34,"18/9/2026, 20:30:04",l,1234567890,table,4,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Dragon Chicken; 1x Chana Masala,520,13,13,26,546
+35,"18/9/2026, 20:31:35",LIMRA,7029788979,table,1,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Reshmi Kabab; 1x Water 1 Litre,445,11.13,11.12,22.25,467.25
+36,"18/9/2026, 20:46:25",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Tandoori Chicken (Half); 1x Water 500ml,610,15.25,15.25,30.5,640.5
+19,"18/9/2026, 20:51:22",Sk Samiul,9800876024,delivery,,delivered,unpaid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),260.95,6.53,6.52,13.05,280
+38,"18/9/2026, 21:10:44",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,2x Butter Chicken Masala; 2x Crispy Chicken; 1x Plain Naan,790,19.75,19.75,39.5,829.5
+9,"18/9/2026, 21:22:25",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Paneer; 1x Veg Fried Rice,250,6.25,6.25,12.5,262.5
+10,"18/9/2026, 21:23:17",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+41,"18/9/2026, 21:32:36",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 3x Hyderabadi Chicken Biryani (Half),440,11,11,22,462
+42,"18/9/2026, 21:41:07",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+43,"18/9/2026, 21:41:44",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+44,"18/9/2026, 22:01:36",LIMRA,8158064078,table,4,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full),390,9.75,9.75,19.5,409.5
+45,"18/9/2026, 22:03:15",limra,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Chicken Fried Rice; 1x Chilli Chicken (Bone),270,6.75,6.75,13.5,283.5
+45,"18/9/2026, 22:30:25",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,1x Water 500ml; 1x MEONIS; 3x Butter Naan; 1x Chilli Chicken Dry; 1x Tandoori Chicken (Quarter),400,10,10,20,420
+46,"18/9/2026, 22:31:02",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+1,"19/9/2026, 12:31:51",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x COLD DRINGS; 5x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Half),950,23.75,23.75,47.5,997.5
+2,"19/9/2026, 12:32:52",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 2x Chicken Fried Rice,395,9.88,9.88,19.76,414.75
+3,"19/9/2026, 12:34:38",rajnagar,7029858188,delivery,,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full); 5x Tandoori Laccha Paratha; 1x Kadai Paneer,960,24,24,48,1138
+4,"19/9/2026, 12:35:28",nurul babu,1234567890,pickup,,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full),560,14,14,28,588
+5,"19/9/2026, 13:15:14",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+6,"19/9/2026, 13:22:14",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter); 1x Chilli Mushroom; 1x Egg Chicken Noodles,405,10.13,10.12,20.25,425.25
+7,"19/9/2026, 13:23:51",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Tandoori Chicken (Half); 1x Dal Tadka; 1x Egg Noodles,620,15.5,15.5,31,651
+8,"19/9/2026, 13:24:28",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Chicken 65; 1x Water 1 Litre,305,7.63,7.62,15.25,320.25
+9,"19/9/2026, 13:32:13",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+10,"19/9/2026, 13:45:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+11,"19/9/2026, 13:48:11",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Butter Chicken Masala; 1x Crispy Chicken; 1x CHILLI CHICKEN HALF; 1x CHICKEN ROLL,915,22.88,22.87,45.75,960.75
+12,"19/9/2026, 14:08:40",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+13,"19/9/2026, 14:12:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+14,"19/9/2026, 14:17:44",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,210
+15,"19/9/2026, 14:49:28",LIMRA,8250390518,table,Table 2,delivered,paid,Cash/UPI,1x Malai Kabab; 1x Butter Chicken Masala; 1x Tandoori Laccha Paratha,485,12.13,12.13,24.26,509.25
+16,"19/9/2026, 14:53:11",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Tandoori Chicken (Half); 1x Egg Noodles,525,13.13,13.12,26.25,551.25
+17,"19/9/2026, 15:32:40",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half),300,7.5,7.5,15,315
+18,"19/9/2026, 17:33:04",LIMRA,9500187352,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+19,"19/9/2026, 17:34:20",munna bhai,9933320897,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+20,"19/9/2026, 17:49:57",limra,1234567890,pickup,,delivered,paid,Cash/UPI,2x Veg Noodles,160,4,4,8,168
+21,"19/9/2026, 18:22:13",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Hyderabadi Chicken Biryani (Full); 6x Tandoori Roti; 4x Butter Naan; 1x Chicken Kosa (Full); 1x Chicken 65,705,17.63,17.63,35.26,740.25
+22,"19/9/2026, 18:32:01",LIMRA,9932329450,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+23,"19/9/2026, 18:36:37",LIMRA,8293910730,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+24,"19/9/2026, 18:47:15",LIMRA,9002012083,delivery,,delivered,paid,Cash/UPI,2x Butter Naan; 1x CHILLI CHICKEN HALF; 1x Hyderabadi Chicken Biryani (Half),255,6.38,6.38,12.76,277.75
+25,"19/9/2026, 18:49:40",LIMRA,9832204372,table,3,delivered,paid,Cash/UPI,1x Kadai Chicken; 2x Egg Chicken Noodles; 1x Lime Mint Mojito,490,12.25,12.25,24.5,514.5
+26,"19/9/2026, 18:51:37",li,9726687758,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+28,"19/9/2026, 18:55:58",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Tandoori Roti,45,1.13,1.13,2.26,47.25
+29,"19/9/2026, 18:57:07",LIMRA,9046597831,pickup,,delivered,paid,Cash/UPI,4x Butter Naan; 1x Paneer Pulao; 1x Kadai Chicken,455,11.38,11.38,22.76,477.75
+29,"19/9/2026, 18:59:17",Table Table 4,9999999999,table,4,delivered,paid,Cash/UPI,1x Kadai Chicken; 1x Chilli Chicken (Bone); 1x Chicken 65; 1x Paneer Pulao,605,15.13,15.12,30.25,635.25
+30,"19/9/2026, 19:12:22",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,2x Chicken Fried Rice; 1x Kadai Chicken,440,11,11,22,462
+31,"19/9/2026, 19:15:00",LIMRA,1234567890,table,9,delivered,paid,Cash/UPI,2x Tandoori Chicken (Half); 1x Water 1 Litre,440,11,11,22,462
+32,"19/9/2026, 19:18:00",haso,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chana Masala; 3x Tandoori Roti; 1x Butter Naan,190,4.75,4.75,9.5,199.5
+33,"19/9/2026, 19:29:46",mistri,9685659719,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+34,"19/9/2026, 19:31:22",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x Tandoori Roti,60,1.5,1.5,3,63
+35,"19/9/2026, 19:35:50",LIMRA,8918385611,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+36,"19/9/2026, 19:41:35",LIMRA,9832710110,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Boneless),155,3.88,3.88,7.76,162.75
+37,"19/9/2026, 19:45:33",mubasir khan,8926577726,delivery,,delivered,paid,Cash/UPI,6x Hyderabadi Chicken Biryani (Full),840,21,21,42,982
+39,"19/9/2026, 20:05:05",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Lollipop,180,4.5,4.5,9,189
+40,"19/9/2026, 20:07:55",arayur,8250390518,table,1,delivered,paid,Cash/UPI,2x Tandoori Chicken (Half); 1x Tandoori Chicken (Quarter),530,13.25,13.25,26.5,556.5
+41,"19/9/2026, 20:18:41",BANIA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+42,"19/9/2026, 20:27:14",santonu,8900123491,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 2x Butter Chicken Masala,640,16,16,32,732
+43,"19/9/2026, 20:31:43",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,7x Hyderabadi Chicken Biryani (Full); 1x Chicken Masala; 1x Tandoori Chicken (Half),1370,34.25,34.25,68.5,1438.5
+44,"19/9/2026, 20:32:35",Table Table 7,9999999999,table,7,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full); 1x Butter Chicken Masala,775,19.38,19.37,38.75,813.75
+45,"19/9/2026, 20:42:17",LIMRA,7076549893,pickup,,delivered,paid,Cash/UPI,1x Crispy Chicken; 3x Plain Naan,255,6.38,6.38,12.76,267.75
+46,"19/9/2026, 20:56:52",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,230.5
+47,"19/9/2026, 21:14:29",LIMRA,9641665768,table,6,delivered,paid,Cash/UPI,3x Butter Naan; 1x Handi Chicken; 1x Tandoori Chicken (Half); 1x Chilli Chicken (Bone); 2x Egg Fried Rice,850,21.25,21.25,42.5,892.5
+48,"19/9/2026, 21:23:04",new,1234567890,table,2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Murg Chicken Tikka,305,7.63,7.62,15.25,320.25
+49,"19/9/2026, 21:23:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+50,"19/9/2026, 21:53:25",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65; 1x Chicken Fried Rice,270,6.75,6.75,13.5,283.5
+51,"19/9/2026, 22:11:21",Table Table 1,9999999999,table,1,delivered,paid,Cash/UPI,8x Butter Naan; 1x Butter Chicken Masala; 1x Chilli Chicken Dry; 1x Dal Egg Tadka; 5x Tandoori Roti,820,20.5,20.5,41,861
+52,"19/9/2026, 22:14:14",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles; 1x Chicken Fried Rice,250,6.25,6.25,12.5,262.5
+53,"19/9/2026, 22:30:11",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full); 1x Murg Chicken Tikka,335,8.38,8.38,16.76,351.75
+55,"19/9/2026, 22:57:51",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,7x Chicken Fried Rice,875,21.88,21.87,43.75,918.75
+1,"20/9/2026, 12:55:01",limra,1234567890,table,Table 3,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Half),400,10,10,20,420
+2,"20/9/2026, 13:09:52",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+3,"20/9/2026, 13:20:35",LIMRA,9739083418,table,Table 2,delivered,paid,Cash/UPI,1x Kadai Chicken,190,4.75,4.75,9.5,199.5
+4,"20/9/2026, 13:24:36",LIMRA,9685659719,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+5,"20/9/2026, 13:27:05",LIMRA,9739083418,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+6,"20/9/2026, 13:56:49",LIMRA,7872292385,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+7,"20/9/2026, 14:13:41",LIMRA,9110252174,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+8,"20/9/2026, 15:03:00",musto,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full),390,9.75,9.75,19.5,409.5
+9,"20/9/2026, 16:51:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+10,"20/9/2026, 17:10:04",kbhalsutia,9080913418,delivery,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles; 3x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Full),935,23.38,23.38,46.76,1051.75
+11,"20/9/2026, 17:27:47",LIMRA,8591248634,pickup,,delivered,paid,Cash/UPI,1x Crispy Chicken; 3x Butter Naan,270,6.75,6.75,13.5,283.5
+12,"20/9/2026, 17:44:50",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Khuska; 1x Chilli Chicken (Bone); 1x Egg Chicken Noodles; 1x Chicken Fried Rice,695,17.38,17.38,34.76,729.75
+13,"20/9/2026, 17:46:20",kala,8509087997,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+14,"20/9/2026, 17:54:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 4x Butter Naan; 1x Tandoori Chicken (Full),745,18.63,18.63,37.26,782.25
+15,"20/9/2026, 18:06:21",arman,1234567890,pickup,,delivered,paid,Cash/UPI,2x Tandoori Chicken (Quarter),220,5.5,5.5,11,231
+20,"20/9/2026, 18:07:53",Guest,Dine-In,table,3,delivered,paid,Cash/UPI,2x Tandoori Chicken (Full); 2x Egg Chicken Noodles,1030,25.75,25.75,51.5,1081.5
+17,"20/9/2026, 18:14:12",LIMRA,9933689908,table,1,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Chicken 65; 1x Egg Noodles,460,11.5,11.5,23,483
+18,"20/9/2026, 18:26:29",LIMRA,7029673992,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x COLD DRINGS,440,11,11,22,462
+21,"20/9/2026, 18:48:38",RAJESH,9933752597,table,3,delivered,paid,Cash/UPI,1x Kadai Chicken; 1x Murg Chicken Tikka; 1x Hot & Sour Chicken Soup; 1x Hyderabadi Chicken Biryani (Half),550,13.75,13.75,27.5,577.5
+20,"20/9/2026, 18:53:35",haso,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+21,"20/9/2026, 18:54:24",mistri,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,115
+22,"20/9/2026, 19:11:37",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+23,"20/9/2026, 19:23:17",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+24,"20/9/2026, 19:27:36",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Paneer 65; 1x Hyderabadi Chicken Biryani (Half),235,5.88,5.87,11.75,246.75
+25,"20/9/2026, 19:29:14",LIMRA,1234567890,table,7,delivered,paid,Cash/UPI,1x Chicken 65; 1x Lime Mint Mojito; 1x sprite,220,5.5,5.5,11,231
+26,"20/9/2026, 19:44:16",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF; 2x Tandoori Roti,115,2.88,2.88,5.76,120.75
+27,"20/9/2026, 19:47:42",Table Table 5,8116884070,table,5,delivered,paid,Cash/UPI,1x Kadai Chicken; 1x Chilli Chicken (Boneless),345,8.63,8.62,17.25,362.25
+28,"20/9/2026, 19:54:45",kiya,8927351180,pickup,,delivered,paid,Cash/UPI,1x Dragon Chicken,195,4.88,4.88,9.76,204.75
+29,"20/9/2026, 19:55:11",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+30,"20/9/2026, 19:58:47",LIMRA,7047202773,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+32,"20/9/2026, 20:08:12",bajat,9999999999,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+32,"20/9/2026, 20:13:05",LIMRA,1234567890,table,table 8,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+35,"20/9/2026, 20:23:01",L,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+36,"20/9/2026, 20:38:05",new,1234567890,table,9,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half),300,7.5,7.5,15,315
+38,"20/9/2026, 20:56:15",sajan,7001817438,delivery,,delivered,paid,Cash/UPI,2x Crispy Chicken,330,8.25,8.25,16.5,356.5
+39,"20/9/2026, 21:04:46",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half); 2x Hyderabadi Chicken Biryani (Full),480,12,12,24,504
+28,"20/9/2026, 21:04:57",Guest,Dine-In,table,2,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Dragon Chicken; 1x Chicken Fried Rice; 1x Water 500ml,720,18,18,36,756
+41,"20/9/2026, 21:10:02",LIMRA,9883403388,table,9,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half),300,7.5,7.5,15,315
+42,"20/9/2026, 21:13:36",LIMRA,9002718592,pickup,,delivered,paid,Cash/UPI,2x Mutton Biryani,490,12.25,12.25,24.5,514.5
+43,"20/9/2026, 21:28:21",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+44,"20/9/2026, 21:35:07",LIMRA,7585093936,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+45,"20/9/2026, 21:55:06",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,2x COLD DRINGS; 1x CHILLI CHICKEN HALF; 2x Hyderabadi Chicken Biryani (Full); 1x Dal Tadka; 3x Butter Naan,605,15.13,15.13,30.26,635.25
+48,"20/9/2026, 22:36:58",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Chicken Kosa (Full),310,7.75,7.75,15.5,325.5
+1,"21/9/2026, 12:37:48",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+2,"21/9/2026, 12:38:13",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+3,"21/9/2026, 12:38:36",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+4,"21/9/2026, 12:45:26",LIMRA,9083307770,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+5,"21/9/2026, 12:58:44",LIMRA,9679646309,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+6,"21/9/2026, 13:10:45",L,9932144226,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+7,"21/9/2026, 13:36:03",hasu,9999999999,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+8,"21/9/2026, 13:36:38",anowar,9933791692,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+9,"21/9/2026, 14:11:21",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+10,"21/9/2026, 16:15:15",new,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+11,"21/9/2026, 16:47:07",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Malai Kabab,225,5.63,5.63,11.26,236.25
+12,"21/9/2026, 17:08:03",ataur rahaman khan,8250390518,table,3,delivered,paid,Cash/UPI,1x Kadai Chicken; 1x Chicken Kosa (Full),360,9,9,18,378
+13,"21/9/2026, 17:11:08",LIMRA,7551045553,table,8,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Butter Chicken Masala,605,15.13,15.12,30.25,635.25
+16,"21/9/2026, 17:44:15",LIMRA,7319057897,table,2,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Chicken Fried Rice; 1x Butter Naan,375,9.38,9.37,18.75,393.75
+17,"21/9/2026, 17:46:15",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,20x Butter Naan; 3x Tandoori Chicken (Full),1870,46.75,46.75,93.5,1963.5
+18,"21/9/2026, 17:47:01",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter); 2x Butter Naan; 2x COLD DRINGS; 1x Haryali Kabab,400,10,10,20,420
+19,"21/9/2026, 18:21:25",LIMRA,8653280125,delivery,,delivered,paid,Cash/UPI,4x Butter Naan; 1x Chilli Chicken (Bone),285,7.13,7.13,14.26,309.25
+20,"21/9/2026, 18:21:52",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Full),810,20.25,20.25,40.5,850.5
+21,"21/9/2026, 18:28:46",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 5x Butter Naan; 1x tangdi kabab half,500,12.5,12.5,25,525
+22,"21/9/2026, 18:29:09",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+23,"21/9/2026, 18:31:50",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,115
+24,"21/9/2026, 18:36:08",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHICKEN F RICE HALF,80,2,2,4,84
+25,"21/9/2026, 19:03:11",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+26,"21/9/2026, 19:07:11",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full),390,9.75,9.75,19.5,409.5
+27,"21/9/2026, 19:07:48",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Quarter),390,9.75,9.75,19.5,409.5
+28,"21/9/2026, 19:08:10",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Half),125,3.13,3.13,6.26,131.25
+29,"21/9/2026, 19:11:39",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Tandoori Roti,45,1.13,1.13,2.26,47.25
+30,"21/9/2026, 19:18:13",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Chicken Fried Rice; 1x chicken 65,270,6.75,6.75,13.5,283.5
+31,"21/9/2026, 19:38:12",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,451
+32,"21/9/2026, 19:38:50",LIMRA,1234567890,table,15,delivered,paid,Cash/UPI,3x Water 1 Litre; 2x CHICKEN F RICE HALF; 1x Chana Masala; 1x Hyderabadi Chicken Biryani (Half); 5x Butter Naan; 2x Tandoori Roti; 2x Egg Chicken Noodles; 1x COLD DRINGS; 1x Mutton Kasa (Full); 2x Masala Soda,1360,34,34,68,1428
+33,"21/9/2026, 20:36:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+34,"21/9/2026, 21:01:44",LIMRA,8370981310,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,374
+35,"21/9/2026, 21:12:49",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHICKEN F RICE HALF,80,2,2,4,84
+1,"22/9/2026, 12:57:40",LIMRA,9150998581,pickup,,delivered,unpaid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+2,"22/9/2026, 12:58:42",LIMRA,6295953818,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+3,"22/9/2026, 13:13:24",LIMRA,9999999999,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x COLD DRINGS,160,4,4,8,168
+4,"22/9/2026, 14:03:36",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Water 1 Litre; 1x Szechwan Chicken Fried Rice,165,4.13,4.13,8.26,173.25
+5,"22/9/2026, 14:29:29",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Kadai Paneer; 7x Butter Kulcha; 1x Lemon Chicken,750,18.75,18.75,37.5,917.5
+6,"22/9/2026, 14:30:20",LIMRA,1234567890,table,Table 7,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+9,"22/9/2026, 14:56:01",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+10,"22/9/2026, 15:28:16",limra,1234567890,table,Table 8,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Chicken Kosa (Full); 1x Water 1 Litre,470,11.75,11.75,23.5,493.5
+10,"22/9/2026, 15:32:41",LIMRA,1234567890,table,Table 4,delivered,paid,Cash/UPI,1x Water 1 Litre; 2x Hyderabadi Chicken Biryani (Full),300,7.5,7.5,15,315
+10,"22/9/2026, 15:57:24",limra,8159854940,table,3,delivered,paid,Cash/UPI,3x Masala Cold Drink; 3x Hyderabadi Chicken Biryani (Full),525,13.13,13.13,26.26,551.25
+10,"22/9/2026, 17:50:04",LIMRA,9002177464,table,8,delivered,paid,Cash/UPI,1x COLD DRINGS; 2x Hyderabadi Chicken Biryani (Full); 1x CHICKEN ROLL; 1x Chicken 65; 1x Water 1 Litre,525,13.13,13.13,26.26,551.25
+29,"22/9/2026, 18:35:34",Alok Mishra,8967122826,delivery,,delivered,unpaid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x prawns Tikka,281.9,7.05,7.05,14.1,336
+12,"22/9/2026, 18:36:00",LIMRA,6295585437,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Egg Chicken Noodles,265,6.63,6.63,13.26,288.25
+13,"22/9/2026, 18:49:55",LIMRA,8320106765,pickup,,delivered,paid,Cash/UPI,1x Dal Tadka; 4x Tandoori Roti,155,3.88,3.88,7.76,162.75
+14,"22/9/2026, 18:51:43",LIMRA,9019391361,table,5,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,210
+15,"22/9/2026, 18:56:21",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,5x Tandoori Roti; 1x Chicken Kosa (Full),245,6.13,6.13,12.26,257.25
+16,"22/9/2026, 19:00:29",kased,7047703683,delivery,,delivered,paid,Cash/UPI,6x Tandoori Roti; 1x Chicken Kosa (Half),215,5.38,5.38,10.76,235.75
+17,"22/9/2026, 19:03:35",LIMRA,9830304316,pickup,,delivered,paid,Cash/UPI,3x Butter Naan; 1x Butter Chicken Masala,320,8,8,16,336
+18,"22/9/2026, 19:11:37",LIMRA,9641113961,table,5,delivered,paid,Cash/UPI,1x Water 1 Litre; 6x Butter Naan; 1x Kadai Chicken,420,10.5,10.5,21,441
+20,"22/9/2026, 19:50:23",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,2x Butter Naan; 1x Tandoori Chicken (Half); 1x Hot & Sour Chicken Soup,375,9.38,9.38,18.76,393.75
+21,"22/9/2026, 20:07:35",LIMRA,9933577630,table,6,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+22,"22/9/2026, 20:25:01",LIMRA,9932644730,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+23,"22/9/2026, 20:31:01",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 2x Butter Naan,285,7.13,7.13,14.26,299.25
+24,"22/9/2026, 20:39:40",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 3x Tandoori Roti; 1x Hyderabadi Chicken Biryani (Full),285,7.13,7.13,14.26,309.25
+20,"22/9/2026, 20:55:18",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+26,"22/9/2026, 21:40:25",Walk-in,9999999999,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF,85,2.13,2.13,4.26,89.25
+27,"22/9/2026, 21:49:28",jabo,1234567890,delivery,,delivered,paid,Cash/UPI,1x Kadai Chicken; 3x Butter Naan,295,7.38,7.38,14.76,319.75
+28,"22/9/2026, 22:11:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+29,"22/9/2026, 22:17:40",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,2x Chicken 65; 1x Water 1 Litre; 3x Hot & Sour Chicken Soup,595,14.88,14.88,29.76,624.75
+30,"22/9/2026, 22:22:09",LIMRA,1234567890,table,7,delivered,paid,Cash/UPI,2x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full); 1x Kadai Mushroom; 4x Tandoori Roti,415,10.38,10.38,20.76,435.75
+1,"23/9/2026, 11:55:26",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+2,"23/9/2026, 12:13:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+3,"23/9/2026, 12:42:54",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+4,"23/9/2026, 12:44:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+5,"23/9/2026, 12:45:02",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+7,"23/9/2026, 13:21:58",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full),560,14,14,28,588
+8,"23/9/2026, 14:03:35",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,1x Green Salad; 2x Water 1 Litre; 2x Hyderabadi Chicken Biryani (Full),360,9,9,18,378
+9,"23/9/2026, 14:06:01",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+10,"23/9/2026, 14:13:36",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65; 2x Hyderabadi Chicken Biryani (Full),425,10.63,10.63,21.26,446.25
+10,"23/9/2026, 15:04:25",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+11,"23/9/2026, 15:51:58",LIMRA,1234567890,table,8,delivered,paid,Cash/UPI,1x Water 1 Litre; 1x Chicken Lollipop; 2x Hyderabadi Chicken Biryani (Full),480,12,12,24,504
+12,"23/9/2026, 15:52:18",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+13,"23/9/2026, 15:53:41",Sk Arfat Ali,7501299357,pickup,,delivered,paid,Cash/UPI,1x Chicken 65,145,3.63,3.63,7.26,152.25
+14,"23/9/2026, 16:57:58",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Water 1 Litre; 2x Chicken Fried Rice,270,6.75,6.75,13.5,283.5
+15,"23/9/2026, 17:26:29",LIMRA,8016108853,table,Table 3,delivered,paid,Cash/UPI,1x Water 500ml; 1x Butter Chicken Masala; 2x Butter Naan,295,7.38,7.38,14.76,309.75
+30,"23/9/2026, 17:54:03",Jagannath das,9593661506,delivery,,cancelled,unpaid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),57.14,1.43,1.43,2.86,140
+17,"23/9/2026, 18:06:04",injamul khan,7364865885,pickup,,delivered,paid,Cash/UPI,1x Chicken Manchurian; 2x Butter Naan,215,5.38,5.38,10.76,225.75
+18,"23/9/2026, 18:06:48",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+19,"23/9/2026, 18:07:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF; 2x Butter Naan,155,3.88,3.88,7.76,162.75
+20,"23/9/2026, 18:24:48",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,230.5
+21,"23/9/2026, 18:29:06",julmat,9635449831,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+22,"23/9/2026, 18:42:00",LIMRA,9537400186,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full),390,9.75,9.75,19.5,409.5
+23,"23/9/2026, 18:43:31",LIMRA,9836834588,delivery,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,451
+24,"23/9/2026, 18:44:21",LIMRA,7602617090,table,Table 1,delivered,paid,Cash/UPI,1x Water 1 Litre; 3x Butter Naan; 1x Chicken Kosa (Full),295,7.38,7.38,14.76,309.75
+25,"23/9/2026, 19:00:29",LIMRA,8158943963,table,Table 5,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre; 1x Chilli Chicken Dry,445,11.13,11.13,22.26,467.25
+26,"23/9/2026, 19:11:19",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65; 1x Hyderabadi Chicken Biryani (Full),285,7.13,7.13,14.26,299.25
+27,"23/9/2026, 19:13:09",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chana Masala; 3x Tandoori Roti,155,3.88,3.88,7.76,162.75
+29,"23/9/2026, 19:22:48",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+30,"23/9/2026, 20:30:33",LIMRA,9832710440,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Boneless),155,3.88,3.88,7.76,162.75
+31,"23/9/2026, 20:38:10",LIMRA,9820967811,pickup,,delivered,paid,Cash/UPI,1x Haryali Kabab; 1x Chicken 65,325,8.13,8.13,16.26,341.25
+32,"23/9/2026, 20:42:58",LIMRA,1234567890,table,Table 5,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,300,7.5,7.5,15,315
+33,"23/9/2026, 20:52:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full),700,17.5,17.5,35,735
+34,"23/9/2026, 20:55:02",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Hyderabadi Chicken Biryani (Full),350,8.75,8.75,17.5,367.5
+35,"23/9/2026, 21:00:43",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x COLD DRINGS; 3x Dragon Chicken; 10x Butter Naan; 1x Hyderabadi Chicken Biryani (Full),1115,27.88,27.88,55.76,1170.75
+35,"23/9/2026, 21:33:14",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x COLD DRINGS; 4x Butter Naan; 1x Butter Chicken Masala,375,9.38,9.38,18.76,393.75
+1,"24/9/2026, 12:55:21",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Butter Chicken Masala; 5x Hyderabadi Chicken Biryani (Full),1295.48,32.39,32.38,64.77,1370.25
+2,"24/9/2026, 12:58:15",LIMRA,9999999999,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+3,"24/9/2026, 13:08:16",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,2x Butter Naan; 2x Sprite Glass; 1x Kadai Chicken; 1x Garlic Naan,355,8.88,8.88,17.76,372.75
+4,"24/9/2026, 13:10:29",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+5,"24/9/2026, 17:47:38",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+6,"24/9/2026, 17:48:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+7,"24/9/2026, 17:50:59",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,5x Butter Naan; 1x Water 1 Litre; 1x Tandoori Chicken (Half); 1x Butter Chicken Masala; 1x COLD DRINGS,640,16,16,32,672
+8,"24/9/2026, 17:54:53",LIMRA,8926914317,table,1,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,300,7.5,7.5,15,315
+9,"24/9/2026, 18:20:26",LIMRA,9641532745,pickup,,delivered,paid,Cash/UPI,4x Butter Naan,140,3.5,3.5,7,147
+10,"24/9/2026, 18:37:42",LIMRA,9775974504,table,Table 6,delivered,paid,Cash/UPI,1x Chicken Tikka Masala; 10x Butter Naan; 2x Handi Chicken; 1x Water 1 Litre,935,23.38,23.38,46.76,981.75
+31,"24/9/2026, 19:10:27",Jayanta Das,9749234595,delivery,,delivered,unpaid,Cash/UPI,1x Chicken Szechuan Noodles,119.05,2.98,2.97,5.95,135
+12,"24/9/2026, 19:17:54",LIMRA,7501779220,delivery,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,162.25
+13,"24/9/2026, 19:33:21",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x Butter Naan; 3x Butter Chicken Masala; 5x Hyderabadi Chicken Biryani (Full),1485,37.13,37.13,74.26,1559.25
+14,"24/9/2026, 19:34:29",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x COLD DRINGS,300,7.5,7.5,15,315
+15,"24/9/2026, 19:39:45",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,6x Tandoori Roti; 1x Chicken 65; 5x Hyderabadi Chicken Biryani (Full); 1x Butter Chicken Masala,1150,28.75,28.75,57.5,1207.5
+16,"24/9/2026, 20:08:26",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,1x Water 1 Litre; 2x Butter Naan; 1x Garlic Naan; 1x Butter Chicken Masala; 1x Tandoori Chicken (Half); 1x Chicken Szechuan Noodles; 1x chicken kulcha,755,18.88,18.88,37.76,792.75
+17,"24/9/2026, 20:09:20",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Water 1 Litre; 1x Raita; 2x Hyderabadi Chicken Biryani (Full),330,8.25,8.25,16.5,346.5
+18,"24/9/2026, 20:19:04",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x Plain Naan; 2x Chana Masala; 1x Jeera Rice,420,10.5,10.5,21,441
+19,"24/9/2026, 20:25:47",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+20,"24/9/2026, 20:27:21",LIMRA,1234567890,table,Table 7,delivered,paid,Cash/UPI,1x Raita; 1x Chilli Chicken (Bone); 4x Butter Naan; 1x Water 1 Litre; 3x Hyderabadi Chicken Biryani (Full),755,18.88,18.88,37.76,792.75
+21,"24/9/2026, 20:57:54",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,3x Plain Naan; 1x Handi Chicken; 1x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full),440,11,11,22,462
+22,"24/9/2026, 22:51:34",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Water 500ml; 1x Hyderabadi Chicken Biryani (Half),110,2.75,2.75,5.5,115.5
+1,"25/9/2026, 12:05:56",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,451
+2,"25/9/2026, 12:06:22",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Butter Chicken Masala,215,5.38,5.38,10.76,235.75
+3,"25/9/2026, 12:44:31",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice; 1x Chilli Chicken (Bone),270,6.75,6.75,13.5,283.5
+4,"25/9/2026, 16:09:09",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 500ml,150,3.75,3.75,7.5,157.5
+5,"25/9/2026, 18:04:40",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Water 1 Litre; 5x Hyderabadi Chicken Biryani (Full); 2x Hyderabadi Chicken Biryani (Half),940,23.5,23.5,47,987
+6,"25/9/2026, 18:06:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles; 1x Water 500ml; 2x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Half),625,15.63,15.63,31.26,656.25
+7,"25/9/2026, 18:09:01",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Half),300,7.5,7.5,15,315
+8,"25/9/2026, 18:42:16",ATAUR RAHAMAN,8250390518,table,3,delivered,paid,Cash/UPI,2x Water 1 Litre; 1x Mix Fried Rice; 1x Tandoori Chicken (Full); 1x Hyderabadi Chicken Biryani (Half); 1x Hyderabadi Chicken Biryani (Full),825,20.63,20.63,41.26,866.25
+9,"25/9/2026, 18:43:30",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 4x Butter Naan; 1x Butter Chicken Masala,495,12.38,12.38,24.76,519.75
+10,"25/9/2026, 18:46:05",LIMRA,6294248211,delivery,,delivered,paid,Cash/UPI,2x Water 1 Litre; 1x Mutton Kasa (Full); 6x Plain Naan; 1x Tandoori Chicken (Full),945.48,23.64,23.63,47.27,1002.75
+11,"25/9/2026, 19:13:18",LIMRA,9999999999,pickup,,delivered,paid,Cash/UPI,3x Butter Naan; 1x Butter Chicken Masala; 1x Tandoori Chicken (Half),530,13.25,13.25,26.5,556.5
+12,"25/9/2026, 19:22:41",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Tandoori Roti; 5x Butter Naan; 1x Butter Chicken Masala; 1x Hyderabadi Chicken Biryani (Full),575,14.38,14.38,28.76,603.75
+13,"25/9/2026, 19:26:31",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full),700,17.5,17.5,35,735
+14,"25/9/2026, 19:29:43",AKSAR,9800198428,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Boneless); 1x Chicken Lollipop; 3x Butter Naan,440,11,11,22,462
+15,"25/9/2026, 19:44:38",Table Table 3,9999999999,table,3,delivered,paid,Cash/UPI,1x Mix Chowmein; 1x Butter Naan; 1x Chilli Chicken (Bone); 1x Water 500ml,335,8.38,8.38,16.76,351.75
+16,"25/9/2026, 19:50:00",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+17,"25/9/2026, 20:06:46",LIMRA,7363975172,table,Table 7,delivered,paid,Cash/UPI,1x Mutton Kasa (Half); 3x Butter Naan,340,8.5,8.5,17,357
+18,"25/9/2026, 20:07:11",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Fried Rice,125,3.13,3.13,6.26,131.25
+19,"25/9/2026, 20:11:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+20,"25/9/2026, 20:13:07",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+21,"25/9/2026, 20:14:55",MUKTER,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+22,"25/9/2026, 20:20:01",RANA,7908277306,delivery,,delivered,paid,Cash/UPI,1x Crispy Chicken; 2x Garlic Naan,255,6.38,6.38,12.76,277.75
+23,"25/9/2026, 20:20:38",RAJUDIN,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHICKEN F RICE HALF; 1x Chicken Fried Rice; 1x Butter Chicken Masala,420,10.5,10.5,21,441
+24,"25/9/2026, 20:22:39",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+25,"25/9/2026, 20:32:37",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+26,"25/9/2026, 20:42:33",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x COLD DRINGS; 2x Murg Chicken Tikka; 1x Water 1 Litre; 1x Tandoori Chicken (Full); 1x Crispy Chicken; 8x Butter Naan; 1x Butter Chicken Masala,1455,36.38,36.38,72.76,1527.75
+27,"25/9/2026, 21:12:47",LIMRA,9883617580,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+12,"25/9/2026, 21:52:52",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+31,"25/9/2026, 22:22:30",LIMRA,9679802842,pickup,,delivered,paid,Cash/UPI,1x Mutton Biryani,245,6.13,6.13,12.26,257.25
+31,"25/9/2026, 22:32:48",Arif Shaikh,1234567890,pickup,,delivered,paid,Cash/UPI,2x Chilli Prawns; 1x Water 1 Litre; 3x Chicken Fried Rice,832.6,20.82,20.82,41.64,874.23
+2,"26/9/2026, 12:47:04",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+3,"26/9/2026, 12:52:11",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+4,"26/9/2026, 12:52:40",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+5,"26/9/2026, 13:16:30",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+6,"26/9/2026, 13:26:15",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+7,"26/9/2026, 13:37:42",tanbir,1234567890,table,2,delivered,paid,Cash/UPI,2x Thums Up Glass; 1x Water 1 Litre; 2x Hyderabadi Chicken Biryani (Full); 1x Dal Tadka; 1x Chilli Chicken (Bone),590,14.75,14.75,29.5,619.5
+8,"26/9/2026, 13:45:22",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+9,"26/9/2026, 13:53:56",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Water 500ml; 1x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Full); 2x Chicken Kosa (Full),880,22,22,44,924
+2,"26/9/2026, 14:45:35",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Chicken Fried Rice; 1x Crispy Chicken; 1x Chicken Kosa (Half); 1x Water 500ml,425,10.63,10.63,21.26,446.25
+3,"26/9/2026, 14:46:41",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Khuska; 1x Chilli Mushroom; 1x Hyderabadi Chicken Biryani (Full); 1x Water 500ml,410,10.25,10.25,20.5,430.5
+4,"26/9/2026, 14:47:42",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,1x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full); 1x Chilli Chicken (Bone); 2x Chicken Fried Rice,555,13.88,13.88,27.76,582.75
+12,"26/9/2026, 17:37:47",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Chilli Chicken (Bone); 4x Butter Roti,370,9.25,9.25,18.5,388.5
+13,"26/9/2026, 17:52:05",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Full),950,23.75,23.75,47.5,997.5
+14,"26/9/2026, 18:02:12",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Butter Chicken Masala; 1x Water 1 Litre; 2x Butter Naan; 1x Hyderabadi Chicken Biryani (Full),445,11.13,11.13,22.26,467.25
+15,"26/9/2026, 18:08:59",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,3x CHICKEN ROLL,180,4.5,4.5,9,199
+12,"26/9/2026, 18:15:17",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,5x EGG ROLL; 1x Chicken Lollipop,380,9.5,9.5,19,409
+17,"26/9/2026, 18:26:29",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,6x Butter Naan; 2x Butter Chicken Masala; 1x Water 1 Litre,660,16.5,16.5,33,693
+18,"26/9/2026, 18:42:21",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,5x Hyderabadi Chicken Biryani (Full); 1x Chicken 65; 1x Virgin Mojito; 1x Tandoori Chicken (Half); 1x Water 1 Litre; 1x Orange Mojito,1185,29.63,29.63,59.26,1244.25
+19,"26/9/2026, 18:54:28",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Khuska; 1x Chicken Lollipop; 4x Butter Naan; 1x Water 1 Litre; 1x Tandoori Chicken (Quarter); 1x Egg Chicken Noodles; 1x Murg Chicken Tikka,830,20.75,20.75,41.5,871.5
+20,"26/9/2026, 19:12:07",l,1234567890,pickup,,delivered,paid,Cash/UPI,1x CHILLI CHICKEN HALF,85,2.13,2.13,4.26,89.25
+21,"26/9/2026, 19:14:02",LIMRA,9999999999,table,2,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Water 1 Litre; 1x Chilli Chicken (Bone); 4x Butter Naan,405,10.13,10.13,20.26,425.25
+22,"26/9/2026, 19:16:12",LIMRA,1234567890,table,7,delivered,paid,Cash/UPI,1x Water 500ml; 1x Tandoori Chicken (Half); 1x Hyderabadi Chicken Biryani (Full),360,9,9,18,378
+23,"26/9/2026, 19:16:52",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,2x Masala Cold Drink; 1x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre; 1x Chicken Kosa (Full); 2x Butter Naan,470,11.75,11.75,23.5,493.5
+24,"26/9/2026, 19:50:02",LIMRA,1234567890,table,10,delivered,paid,Cash/UPI,9x Butter Naan; 2x Butter Chicken Masala; 1x Water 1 Litre; 1x Tandoori Chicken (Half),975,24.38,24.38,48.76,1023.75
+25,"26/9/2026, 19:50:36",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Pepper Chicken; 6x Butter Naan; 1x Kadai Chicken; 1x Water 1 Litre,610,15.25,15.25,30.5,640.5
+26,"26/9/2026, 19:54:12",KALIA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+27,"26/9/2026, 20:08:42",LIMRA,9382932663,pickup,,delivered,paid,Cash/UPI,3x Chicken Kosa (Full); 4x Chilli Chicken (Boneless),1130,28.25,28.25,56.5,1186.5
+28,"26/9/2026, 20:15:47",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Tandoori Chicken (Half); 1x Water 1 Litre; 1x Chilli Chicken (Bone); 2x Butter Naan,500,12.5,12.5,25,525
+29,"26/9/2026, 20:24:05",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,2x Water 1 Litre; 2x Chicken Fried Rice; 1x Tandoori Chicken (Quarter),400,10,10,20,420
+30,"26/9/2026, 20:24:58",limra,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+31,"26/9/2026, 20:25:42",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Tandoori Roti,45,1.13,1.13,2.26,47.25
+32,"26/9/2026, 20:33:42",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,2x Plain Naan; 1x Chicken Kosa (Half),185,4.63,4.63,9.26,194.25
+33,"26/9/2026, 20:48:07",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Handi Chicken; 4x Tandoori Roti,250,6.25,6.25,12.5,262.5
+32,"26/9/2026, 20:50:49",Sk samiul,9800876024,delivery,,delivered,unpaid,Cash/UPI,4x Butter Naan; 1x Kadai Chicken,285.71,7.15,7.14,14.29,330
+35,"26/9/2026, 20:56:24",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+24,"26/9/2026, 21:18:31",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Chilli Chicken (Bone); 4x Butter Naan; 1x chicken kulcha; 1x Water 1 Litre; 1x Tandoori Chicken (Full),810,20.25,20.25,40.5,850.5
+37,"26/9/2026, 21:43:10",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Butter Chicken Masala,215,5.38,5.38,10.76,225.75
+38,"26/9/2026, 22:07:08",LIMRA,1234567890,table,Table 5,delivered,paid,Cash/UPI,3x Water 1 Litre; 2x Hyderabadi Chicken Biryani (Full); 8x Butter Naan; 1x Butter Chicken Masala,835,20.88,20.88,41.76,876.75
+39,"26/9/2026, 22:14:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+40,"26/9/2026, 22:56:17",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+1,"27/9/2026, 12:33:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Mutton Kasa (Full),400,10,10,20,420
+2,"27/9/2026, 12:53:25",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+3,"27/9/2026, 12:54:01",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+4,"27/9/2026, 13:12:24",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+5,"27/9/2026, 13:20:25",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+6,"27/9/2026, 14:20:54",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Handi Chicken; 1x Water 1 Litre; 2x Hyderabadi Chicken Biryani (Full),490,12.25,12.25,24.5,514.5
+7,"27/9/2026, 14:21:43",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Hyderabadi Chicken Biryani (Full),240,6,6,12,252
+8,"27/9/2026, 14:30:16",LIMRA,8433624266,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Hyderabadi Chicken Biryani (Full),350,8.75,8.75,17.5,367.5
+9,"27/9/2026, 14:33:29",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,300,7.5,7.5,15,315
+10,"27/9/2026, 14:34:20",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Green Salad; 1x Szechwan Chicken Fried Rice; 1x Tandoori Chicken (Half); 1x Dragon Chicken; 1x Water 1 Litre,890,22.25,22.25,44.5,934.5
+11,"27/9/2026, 16:30:36",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+12,"27/9/2026, 16:31:09",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x Butter Roti; 1x Egg Chicken Noodles; 1x Tandoori Chicken (Half),415,10.38,10.38,20.76,435.75
+13,"27/9/2026, 17:35:58",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+14,"27/9/2026, 17:46:29",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+15,"27/9/2026, 17:47:14",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Chicken Fried Rice; 2x Hyderabadi Chicken Biryani (Full),405,10.13,10.13,20.26,425.25
+16,"27/9/2026, 18:01:54",AYUB KHAN,1234567890,delivery,,delivered,paid,Cash/UPI,4x CHICKEN NOODLS HALF; 1x Tandoori Chicken (Quarter); 2x Butter Naan,500,12.5,12.5,25,535
+5733,"27/9/2026, 18:17:21",SAKIR KHAN,8348577822,table,4,delivered,paid,Cash/UPI,6x Butter Naan; 3x Chana Masala; 1x Onion Salad; 1x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full); 3x Plain Naan; 2x Lime Mint Mojito; 1x Dragon Chicken,1115,27.88,27.88,55.76,1170.75
+18,"27/9/2026, 18:29:25",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+19,"27/9/2026, 18:30:49",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,162.25
+20,"27/9/2026, 18:34:31",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Green Salad; 1x Water 1 Litre; 2x Hyderabadi Chicken Biryani (Half),260,6.5,6.5,13,273
+21,"27/9/2026, 18:35:27",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,1x Egg Chicken Noodles; 1x Water 500ml; 1x Tandoori Chicken (Half),345,8.63,8.63,17.26,362.25
+22,"27/9/2026, 18:35:52",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+23,"27/9/2026, 18:42:46",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Butterscotch Ice Cream; 1x Chicken 65,200,5,5,10,210
+24,"27/9/2026, 18:44:32",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x CHICKEN NOODLS HALF,290,7.25,7.25,14.5,314.5
+25,"27/9/2026, 18:56:17",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Kala Khatta Mojito; 1x Lime Mint Mojito; 1x Blue Lagoon; 1x Tandoori Chicken (Half); 3x Chicken Fried Rice; 1x Water 1 Litre,775,19.38,19.38,38.76,813.75
+26,"27/9/2026, 18:57:51",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Egg Chicken Noodles,265,6.63,6.63,13.26,278.25
+27,"27/9/2026, 18:59:29",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+28,"27/9/2026, 19:27:21",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,2x Thums Up Glass; 1x Tandoori Chicken (Half); 1x Water 1 Litre; 2x Chicken Fried Rice,530,13.25,13.25,26.5,556.5
+5734,"27/9/2026, 19:54:42",Suman,Dine-In,table,4,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full); 1x Chicken Fried Rice,515,12.88,12.88,25.76,540.75
+30,"27/9/2026, 19:57:25",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,2x Water 1 Litre; 3x Masala Cold Drink; 1x Tandoori Chicken (Full),535,13.38,13.38,26.76,561.75
+31,"27/9/2026, 20:12:41",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+32,"27/9/2026, 20:13:03",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+33,"27/9/2026, 20:15:14",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+34,"27/9/2026, 20:24:14",munna bhai,1234567890,table,1,delivered,paid,Cash/UPI,1x Butterscotch Ice Cream; 1x Blue Lagoon; 1x Tandoori Roti; 3x Butter Naan; 1x Water 1 Litre; 1x Dragon Chicken; 1x Butter Chicken Masala,665,16.63,16.63,33.26,698.25
+35,"27/9/2026, 20:27:34",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Water 500ml; 1x Masala Papad; 1x Onion Salad; 1x Hot & Sour Chicken Soup; 1x Chicken 65,320,8,8,16,336
+36,"27/9/2026, 20:50:26",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full); 1x Chicken 65,315,7.88,7.88,15.76,330.75
+1,"28/9/2026, 12:33:39",l,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 1x Water 1 Litre; 2x Vanilla Milkshake; 1x Chicken Fried Rice,450,11.25,11.25,22.5,472.5
+2,"28/9/2026, 12:50:19",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+3,"28/9/2026, 12:52:59",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+4,"28/9/2026, 13:03:35",LIMRA,9999999999,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+5,"28/9/2026, 13:04:11",LIMRA,1234567890,table,Table 6,delivered,paid,Cash/UPI,1x CHICKEN NOODLS HALF,80,2,2,4,84
+6,"28/9/2026, 13:05:19",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Water 500ml; 1x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Quarter),260,6.5,6.5,13,273
+7,"28/9/2026, 13:20:37",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+8,"28/9/2026, 13:23:13",LIMRA,1234567890,table,5,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 4x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,680,17,17,34,714
+9,"28/9/2026, 13:46:26",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+10,"28/9/2026, 17:11:51",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter),110,2.75,2.75,5.5,115.5
+11,"28/9/2026, 17:59:35",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,1x Kala Khatta Mojito; 2x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,360,9,9,18,378
+12,"28/9/2026, 18:00:13",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Half),200,5,5,10,210
+13,"28/9/2026, 18:03:52",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+14,"28/9/2026, 18:33:06",MUKLESH,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter); 3x Hyderabadi Chicken Biryani (Half),410,10.25,10.25,20.5,430.5
+15,"28/9/2026, 18:40:15",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,451
+16,"28/9/2026, 19:14:28",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x Hyderabadi Chicken Biryani (Half),520,13,13,26,546
+17,"28/9/2026, 19:31:39",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,1x Water 1 Litre; 1x Haryali Kabab; 2x Hyderabadi Chicken Biryani (Full),480,12,12,24,504
+18,"28/9/2026, 19:32:57",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+19,"28/9/2026, 19:47:19",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,3x Tandoori Roti; 1x Butter Kulcha; 1x Haryali Kabab; 1x Butter Naan; 1x Water 1 Litre; 1x Butter Chicken Masala; 1x Garlic Naan,575,14.38,14.38,28.76,603.75
+20,"28/9/2026, 20:04:05",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+21,"28/9/2026, 20:06:54",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+22,"28/9/2026, 20:25:45",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,10x Butter Naan,350,8.75,8.75,17.5,367.5
+23,"28/9/2026, 20:29:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full); 5x Butter Naan; 1x Hyderabadi Chicken Biryani (Full),485,12.13,12.13,24.26,509.25
+24,"28/9/2026, 20:30:53",LIMRA,1234567890,table,Table 4,delivered,paid,Cash/UPI,1x Water 500ml; 2x Hyderabadi Chicken Biryani (Full),290,7.25,7.25,14.5,304.5
+25,"28/9/2026, 20:44:50",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Egg Chicken Noodles,250,6.25,6.25,12.5,262.5
+26,"28/9/2026, 20:50:31",LIMRA,9999999999,pickup,,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Egg Chicken Noodles,145,3.63,3.63,7.26,152.25
+27,"28/9/2026, 20:53:05",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Butter Chicken Masala; 4x Tandoori Roti; 1x Egg Chicken Noodles,615,15.38,15.38,30.76,645.75
+28,"28/9/2026, 21:05:12",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+29,"28/9/2026, 21:10:07",LIMRA,1234567890,table,Table 7,delivered,paid,Cash/UPI,8x Butter Naan; 1x Water 1 Litre; 1x Tandoori Chicken (Full),690,17.25,17.25,34.5,724.5
+30,"28/9/2026, 21:26:28",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken Kosa (Full),170,4.25,4.25,8.5,178.5
+31,"28/9/2026, 21:38:02",LIMRA,1234567890,table,Table 4,delivered,paid,Cash/UPI,1x CHICKEN F RICE HALF; 1x Hyderabadi Chicken Biryani (Half); 1x Water 1 Litre,200,5,5,10,210
+32,"28/9/2026, 21:40:03",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chana Masala,110,2.75,2.75,5.5,115.5
+33,"28/9/2026, 21:55:05",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,4x Butter Naan,140,3.5,3.5,7,147
+34,"28/9/2026, 21:59:20",PRITAM DA,1234567890,table,4,delivered,paid,Cash/UPI,1x Onion Salad; 1x COLD DRINGS; 1x Hyderabadi Chicken Biryani (Full); 6x Tandoori Roti; 1x Chilli Chicken (Bone); 1x Water 1 Litre,445,11.13,11.13,22.26,467.25
+35,"28/9/2026, 22:22:34",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,2x Fresh Lime Soda; 1x Tandoori Chicken (Half); 1x Green Salad; 1x FISH TONDOOR; 1x Water 1 Litre,580,14.5,14.5,29,609
+36,"28/9/2026, 22:27:39",TANBIR,1234567890,table,1,delivered,paid,Cash/UPI,2x Fresh Lime Soda; 1x Hyderabadi Chicken Biryani (Half); 1x FISH TONDOOR; 1x Dal Tadka; 2x Butter Naan,575,14.38,14.38,28.76,603.75
+37,"28/9/2026, 23:07:42",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x Onion Salad; 2x Water 1 Litre; 1x Mutton Pepper Fry; 2x Butter Naan; 1x chicken kulcha; 1x Chicken Lollipop; 1x Hot & Sour Chicken Soup,830,20.75,20.75,41.5,871.5
+1,"29/9/2026, 12:30:48",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+2,"29/9/2026, 12:57:21",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x COLD DRINGS; 10x Hyderabadi Chicken Biryani (Full),1455,36.38,36.38,72.76,1527.75
+3,"29/9/2026, 13:01:39",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+4,"29/9/2026, 13:31:17",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+5,"29/9/2026, 13:41:37",LIMRA,1234567890,table,Table 3,delivered,paid,Cash/UPI,1x Onion Salad; 2x Water 1 Litre; 1x Tandoori Chicken (Full); 1x Mutton Kasa (Full); 7x Butter Naan; 2x Chana Masala; 1x Malai Kabab,1495,37.38,37.38,74.76,1569.75
+6,"29/9/2026, 13:52:36",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+7,"29/9/2026, 13:56:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Hyderabadi Chicken Biryani (Half),240,6,6,12,252
+8,"29/9/2026, 14:18:51",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chicken 65,145,3.63,3.63,7.26,152.25
+9,"29/9/2026, 14:50:50",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+10,"29/9/2026, 15:46:32",LIMRA,1234567890,table,Table 8,delivered,paid,Cash/UPI,1x Water 1 Litre; 3x Hyderabadi Chicken Biryani (Full); 1x Onion Salad,470,11.75,11.75,23.5,493.5
+11,"29/9/2026, 17:25:47",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Full),390,9.75,9.75,19.5,409.5
+12,"29/9/2026, 17:28:27",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+5735,"29/9/2026, 17:34:09",Sk rohit,8610786605,table,2,delivered,paid,Cash/UPI,1x Water 1 Litre; 1x Chilli Chicken Dry; 1x Tandoori Chicken (Full); 2x Plain Naan,615,15.38,15.38,30.76,645.75
+14,"29/9/2026, 18:18:15",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,230.5
+15,"29/9/2026, 18:28:21",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,5x Tandoori Roti; 1x Crispy Chicken,240,6,6,12,252
+16,"29/9/2026, 18:33:10",LIMRA,9999999999,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+17,"29/9/2026, 18:36:03",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x CHICKEN NOODLS HALF; 1x Chicken 65,225,5.63,5.63,11.26,246.25
+18,"29/9/2026, 18:54:51",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Water 1 Litre; 1x Chicken Lollipop; 2x Butter Naan,270,6.75,6.75,13.5,283.5
+19,"29/9/2026, 18:59:04",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre; 1x Tandoori Chicken (Half),510,12.75,12.75,25.5,535.5
+20,"29/9/2026, 18:59:28",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone),145,3.63,3.63,7.26,152.25
+22,"29/9/2026, 19:23:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Dal Tadka,95,2.38,2.38,4.76,99.75
+23,"29/9/2026, 19:24:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Khuska; 1x Chicken 65,235,5.88,5.88,11.76,246.75
+24,"29/9/2026, 19:28:20",ataur rahaman khan,8250390518,table,4,delivered,paid,Cash/UPI,3x Tandoori Roti; 2x Strawberry Mojito; 2x Hyderabadi Chicken Biryani (Full); 1x Tandoori Chicken (Half); 1x Water 1 Litre,665,16.63,16.63,33.26,698.25
+25,"29/9/2026, 19:29:21",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+26,"29/9/2026, 19:31:37",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Dal Tadka,95,2.38,2.38,4.76,99.75
+27,"29/9/2026, 19:35:20",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half),210,5.25,5.25,10.5,220.5
+28,"29/9/2026, 19:52:33",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,1x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full),160,4,4,8,168
+29,"29/9/2026, 20:21:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+30,"29/9/2026, 20:27:41",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full),420,10.5,10.5,21,441
+31,"29/9/2026, 20:38:11",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,3x COLD DRINGS; 1x Tandoori Chicken (Half); 5x Butter Naan,445,11.13,11.13,22.26,467.25
+32,"29/9/2026, 20:40:51",LIMRA,1234567890,table,Table 7,delivered,paid,Cash/UPI,3x Hyderabadi Chicken Biryani (Full); 1x Water 1 Litre,440,11,11,22,462
+33,"29/9/2026, 20:56:15",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Egg Chicken Noodles,250,6.25,6.25,12.5,262.5
+34,"29/9/2026, 20:58:05",LIMRA,1234567890,table,1,delivered,paid,Cash/UPI,1x Water 500ml; 2x Butter Naan; 1x Chicken Kosa (Half),205,5.13,5.13,10.26,215.25
+35,"29/9/2026, 21:13:09",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Chicken 65,290,7.25,7.25,14.5,304.5
+36,"29/9/2026, 21:43:32",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Kadai Chicken; 2x Tandoori Roti,220,5.5,5.5,11,231
+37,"29/9/2026, 21:54:58",LIMRA,1234567890,table,3,delivered,paid,Cash/UPI,1x Chicken Kosa (Half); 1x COLD DRINGS; 3x Chicken Fried Rice; 1x Chicken Kosa (Full),690,17.25,17.25,34.5,724.5
+38,"29/9/2026, 22:06:53",LIMRA,1234567890,table,6,delivered,paid,Cash/UPI,1x Water 500ml; 1x Hot Garlic Chicken Dry; 1x CHICKEN F RICE HALF; 1x Murg Chicken Tikka,410,10.25,10.25,20.5,430.5
+5736,"29/9/2026, 22:14:54",Guest,Dine-In,table,2,delivered,paid,Cash/UPI,1x Chicken 65; 2x Butter Naan; 1x Chicken Tikka Masala; 1x Water 1 Litre; 1x chicken kulcha; 1x Plain Naan; 1x Garlic Naan; 1x Handi Chicken; 1x Vanilla with Dry Fruits; 1x Chicken Lollipop,970,24.25,24.25,48.5,1018.5
+1,"30/9/2026, 12:41:46",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter); 1x Hyderabadi Chicken Biryani (Full); 1x COLD DRINGS,270,6.75,6.75,13.5,293.5
+2,"30/9/2026, 12:42:23",LIMRA,9739083418,delivery,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,304
+3,"30/9/2026, 12:42:55",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+4,"30/9/2026, 13:07:05",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+5,"30/9/2026, 13:32:04",LIMRA,1234567890,table,7,delivered,paid,Cash/UPI,1x Water 1 Litre; 1x Hyderabadi Chicken Biryani (Full); 1x Onion Salad,190,4.75,4.75,9.5,199.5
+6,"30/9/2026, 13:33:36",LIMRA,1234567890,table,2,delivered,paid,Cash/UPI,1x COLD DRINGS; 1x Hyderabadi Chicken Biryani (Full),160,4,4,8,168
+7,"30/9/2026, 14:13:35",LIMRA,1234567890,table,Table 2,delivered,paid,Cash/UPI,1x CHICKEN F RICE HALF; 1x Water 500ml,90,2.25,2.25,4.5,94.5
+8,"30/9/2026, 14:28:12",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Chicken Fried Rice,265,6.63,6.63,13.26,288.25
+9,"30/9/2026, 14:38:55",atayur,1234567890,delivery,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Quarter); 2x Hyderabadi Chicken Biryani (Full),390,9.75,9.75,19.5,419.5
+10,"30/9/2026, 14:39:23",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+11,"30/9/2026, 15:26:55",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Tandoori Chicken (Half); 1x Hyderabadi Chicken Biryani (Full); 4x Butter Naan,490,12.25,12.25,24.5,514.5
+12,"30/9/2026, 15:55:57",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half),100,2.5,2.5,5,105
+13,"30/9/2026, 17:03:59",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,3x Egg Fried Rice; 1x Chicken 65,445,11.13,11.13,22.26,477.25
+14,"30/9/2026, 17:38:56",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+15,"30/9/2026, 17:50:35",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Mix Chowmein,145,3.63,3.63,7.26,152.25
+16,"30/9/2026, 18:04:14",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+17,"30/9/2026, 18:11:58",LIMRA,1234567890,table,Table 1,delivered,paid,Cash/UPI,,320,8,8,16,336
+18,"30/9/2026, 18:12:55",LIMRA,1234567890,table,4,delivered,paid,Cash/UPI,2x Blue Lagoon; 1x Chicken 65; 2x Hyderabadi Chicken Biryani (Full),545,13.63,13.63,27.26,572.25
+17,"30/9/2026, 18:16:25",Guest,Dine-In,table,1,delivered,paid,Cash/UPI,3x Thums Up Glass; 3x Hyderabadi Chicken Biryani (Half); 1x Water 1 Litre,395,9.88,9.88,19.76,414.75
+20,"30/9/2026, 18:20:10",LIMRA,9641113961,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+21,"30/9/2026, 18:32:58",LIMRA,1234567890,table,7,delivered,paid,Cash/UPI,2x Hot & Sour Chicken Soup,190,4.75,4.75,9.5,199.5
+22,"30/9/2026, 18:35:29",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+23,"30/9/2026, 18:46:14",LIMRA,1234567890,delivery,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,157
+24,"30/9/2026, 19:11:35",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full),280,7,7,14,294
+25,"30/9/2026, 19:17:55",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+26,"30/9/2026, 19:26:55",LIMRA,9739083418,table,Table 3,delivered,paid,Cash/UPI,2x Butter Naan; 1x Water 500ml; 1x Chicken Kosa (Half),205,5.13,5.13,10.26,215.25
+27,"30/9/2026, 19:27:18",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Chicken 65,145,3.63,3.63,7.26,152.25
+28,"30/9/2026, 19:28:12",LIMRA,9739083418,table,Table 7,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 1x Water 500ml,150,3.75,3.75,7.5,157.5
+29,"30/9/2026, 19:32:57",LIMRA,9739083418,table,4,delivered,paid,Cash/UPI,1x Lemon Chicken; 1x Water 1 Litre; 1x CHILLI CHICKEN HALF; 2x Hyderabadi Chicken Biryani (Full); 3x Butter Naan,645,16.13,16.13,32.26,677.25
+30,"30/9/2026, 19:47:00",LIMRA,9739083418,table,Table 8,delivered,paid,Cash/UPI,1x Szechuan Chicken,165,4.13,4.13,8.26,173.25
+31,"30/9/2026, 19:55:56",kahar,7679170840,delivery,,delivered,paid,Cash/UPI,1x Chicken Lollipop; 1x Hyderabadi Chicken Biryani (Full),320,8,8,16,346
+32,"30/9/2026, 20:06:58",LIMRA,9739083418,table,2,delivered,paid,Cash/UPI,1x Chilli Chicken (Bone); 1x Water 1 Litre; 3x Hyderabadi Chicken Biryani (Full),585,14.63,14.63,29.26,614.25
+33,"30/9/2026, 20:13:38",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+34,"30/9/2026, 20:25:23",LIMRA,9739083418,table,1,delivered,paid,Cash/UPI,2x Thums Up Glass; 3x Butter Naan; 1x Butter Chicken Masala; 1x Water 1 Litre,390,9.75,9.75,19.5,409.5
+35,"30/9/2026, 20:26:01",LIMRA,9739083418,delivery,,delivered,paid,Cash/UPI,2x Chicken Fried Rice,250,6.25,6.25,12.5,272.5
+36,"30/9/2026, 20:38:40",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Egg Chicken Noodles,125,3.13,3.13,6.26,131.25
+37,"30/9/2026, 20:45:20",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full),140,3.5,3.5,7,147
+38,"30/9/2026, 20:51:59",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Hyderabadi Chicken Biryani (Full),240,6,6,12,252
+39,"30/9/2026, 20:59:33",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,6x Tandoori Roti; 1x Chicken Masala; 1x Chana Masala,380,9.5,9.5,19,399
+40,"30/9/2026, 21:22:49",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,2x Hyderabadi Chicken Biryani (Full); 1x Jeera Rice; 1x Chana Masala,470,11.75,11.75,23.5,493.5
+41,"30/9/2026, 21:31:12",LIMRA,1234567890,pickup,,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Full); 3x Tandoori Roti; 1x Malai Kabab,410,10.25,10.25,20.5,430.5
+42,"30/9/2026, 21:44:39",LIMRA,9739083418,table,4,delivered,paid,Cash/UPI,1x Hyderabadi Chicken Biryani (Half); 1x Water 500ml; 1x Hyderabadi Chicken Biryani (Full),250,6.25,6.25,12.5,262.5
+43,"30/9/2026, 21:45:34",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Chicken Masala; 1x Egg Chicken Noodles,305,7.63,7.63,15.26,320.25
+44,"30/9/2026, 21:58:22",LIMRA,9739083418,pickup,,delivered,paid,Cash/UPI,1x Dal Fry; 1x Butter Chicken Masala; 1x Chicken 65; 7x Butter Naan,690,17.25,17.25,34.5,724.5

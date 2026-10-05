@@ -10,6 +10,7 @@ import QRCode from 'qrcode';
 import { printQueue } from './lib/print-queue.js';
 import { buildEscPosBill, buildEscPosKOT, COMMANDS as ESC_COMMANDS } from './lib/escpos.js';
 import { initStockSummarySection } from './admin-stock.js';
+import { initSalesReportHub, loadSalesReportData } from './sales-report/sales-report.js';
 
 // Category aliases to support group categories, legacy keys, and multi-category filters in Admin
 export const categoryAliases = {
@@ -2368,6 +2369,12 @@ function initDashboardQuickListeners() {
   $('dash-quick-export-today-btn')?.addEventListener('click', exportTodaySummaryCSV);
 
   $('dash-export-gst-csv-btn')?.addEventListener('click', exportMonthlyGSTFilingCSV);
+
+  $('btn-admin-header-sales-report')?.addEventListener('click', () => switchPanel('daily-sales-report'));
+  $('dash-quick-daily-report-btn')?.addEventListener('click', () => switchPanel('daily-sales-report'));
+  $('pos-hub-daily-bill-report')?.addEventListener('click', () => switchPanel('daily-sales-report'));
+  $('panel-analytics-sales-report-btn')?.addEventListener('click', () => switchPanel('daily-sales-report'));
+  $('items-report-daily-bill-btn')?.addEventListener('click', () => switchPanel('daily-sales-report'));
 }
 
 function renderDonuts() {
@@ -7622,6 +7629,10 @@ function switchPanel(panelId, pushHistory = true) {
   }
 
   if (panelId === 'stock') initStockSummarySection();
+  if (panelId === 'daily-sales-report') {
+    initSalesReportHub();
+    loadSalesReportData();
+  }
 
   if (panelId === 'customer-analysis') renderCustomerAnalysis();
   if (panelId === 'analytics') renderAnalytics();
@@ -9362,6 +9373,14 @@ function initDashboardUI() {
   initQuickBillAdjusterListeners();
   initTablesAndKitchenUI();
   initPrintQueueUI();
+  initSalesReportHub();
+}
+
+// Ensure sales report hub is also initialized on DOM ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => initSalesReportHub());
+} else {
+  initSalesReportHub();
 }
 
 // ════════════════════════════════════════════════════════

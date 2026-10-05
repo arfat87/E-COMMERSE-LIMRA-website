@@ -123,6 +123,11 @@
       <!-- REPORTS group -->
       <div class="adm-nav-divider"></div>
       <div class="adm-nav-group-label"><span class="adm-nav-label">REPORTS</span></div>
+      <button data-panel="daily-sales-report" id="btn-admin-nav-sales-report" class="adm-nav-item" style="color:#059669;font-weight:700;width:100%;text-align:left;display:flex;align-items:center;cursor:pointer;">
+        <span class="adm-nav-icon"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></span>
+        <span class="adm-nav-label">Daily Bill &amp; Report</span>
+        <span style="margin-left:auto;font-size:0.65rem;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:999px;font-weight:800;">PDF / Bill</span>
+      </button>
       <button data-panel="customer-analysis" class="adm-nav-item">
         <span class="adm-nav-icon"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg></span>
         <span class="adm-nav-label">Items Report</span>
@@ -217,6 +222,10 @@
         <button type="button" id="btn-quick-bill-adjust" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:0.75rem;padding:0.25rem 0.55rem;border-radius:8px;background:#f8fafc;color:#4f46e5;border-color:#c7d2fe;font-weight:700;display:inline-flex;align-items:center;gap:4px;margin-right:0.25rem;cursor:pointer;" title="Manually change bill text size, font boldness, and reduce receipt paper size">
           <span>🎛️</span> Adjust Bill Size
         </button>
+        <!-- Daily Sales & Bill Report Hub (Print Settlement Slip & Download PDF) -->
+        <button type="button" id="btn-admin-header-sales-report" class="adm-btn adm-btn-primary adm-btn-sm" style="font-size:0.75rem;padding:0.25rem 0.65rem;border-radius:8px;background:#059669;color:#fff;font-weight:700;display:inline-flex;align-items:center;gap:4px;margin-right:0.25rem;cursor:pointer;" title="Daily Sales & Bill Report Hub (Print Settlement Slip & Download PDF)">
+          <span>📊</span> Daily Bill &amp; Report
+        </button>
         <!-- Sync indicator -->
         <span id="sync-indicator" class="adm-hidden" style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.65rem; border-radius: 8px; margin-right: 0.25rem; transition: all 0.3s ease;">Synced</span>
         
@@ -299,6 +308,9 @@
             <button type="button" id="dash-quick-export-today-btn" class="adm-btn adm-btn-outline" style="display:inline-flex;align-items:center;gap:0.35rem;color:#15803d;border-color:#bbf7d0;background:#f0fdf4;">
               <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Export Today
             </button>
+            <button type="button" id="dash-quick-daily-report-btn" class="adm-btn adm-btn-primary" style="display:inline-flex;align-items:center;gap:0.35rem;background:#059669;border-color:#059669;color:#fff;font-weight:700;box-shadow:0 2px 6px rgba(5,150,105,0.25);" title="Open Daily Sales, Orders & Item Bill Slip / PDF Generator">
+              <span>📊</span> Daily Bill &amp; PDF Report
+            </button>
           </div>
         </div>
 
@@ -347,6 +359,10 @@
             <button type="button" class="pos-hub-tile" data-hub="analytics">
               <i data-lucide="bar-chart-3"></i>
               <span>Reports</span>
+            </button>
+            <button type="button" class="pos-hub-tile" id="pos-hub-daily-bill-report" style="border:1.5px solid #10b981;background:#f0fdf4;">
+              <i data-lucide="file-text" style="color:#059669;"></i>
+              <span style="color:#059669;font-weight:800;">Bill &amp; PDF</span>
             </button>
           </div>
         </div>
@@ -1486,7 +1502,10 @@
             <p class="adm-page-sub">Track dish popularity, item revenue, quantities sold, and category distribution</p>
           </div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-            <button type="button" id="items-report-export-btn" class="adm-btn adm-btn-primary" style="background:#10b981;border-color:#10b981;display:inline-flex;align-items:center;gap:0.35rem;font-weight:700;">
+            <button type="button" id="items-report-daily-bill-btn" class="adm-btn adm-btn-primary" style="background:#059669;border-color:#059669;display:inline-flex;align-items:center;gap:0.35rem;font-weight:700;" title="Open Daily Sales, Orders & Item Bill Slip / PDF Generator">
+              <span>📊</span> Print Bill &amp; PDF Report Hub
+            </button>
+            <button type="button" id="items-report-export-btn" class="adm-btn adm-btn-outline" style="background:#fff;border-color:#10b981;color:#059669;display:inline-flex;align-items:center;gap:0.35rem;font-weight:700;">
               <span>📥</span> Export to CSV (.csv)
             </button>
           </div>
@@ -1635,6 +1654,165 @@
         </div>
       </section>
 
+      <!-- ════════════════════════════════════════════════════════
+           DAILY SALES, ITEMS & BILL REPORT HUB (SECTION PANEL)
+      ════════════════════════════════════════════════════════ -->
+      <section id="panel-daily-sales-report" class="adm-panel">
+        <div class="adm-page-head">
+          <div style="display:flex;align-items:center;gap:0.75rem;">
+            <div style="width:44px;height:44px;border-radius:14px;background:#d1fae5;color:#065f46;display:flex;align-items:center;justify-content:center;font-size:1.4rem;">
+              📊
+            </div>
+            <div>
+              <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                <h1 class="adm-page-title" style="margin:0;">Daily Sales &amp; Bill Report Hub</h1>
+                <span id="sales-report-period-display" style="font-size:0.75rem;font-weight:800;color:#065f46;background:#d1fae5;border:1px solid #a7f3d0;padding:2px 10px;border-radius:999px;">Today</span>
+              </div>
+              <p class="adm-page-sub">দৈনিক বিক্রয়, আইটেম সারাংশ, ক্যাশ/অনলাইন হিসাব ও প্রিন্ট বিল রিপোর্ট</p>
+            </div>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <button type="button" id="btn-refresh-sales-report" class="adm-btn adm-btn-outline" style="background:#fff;border-color:#cbd5e1;cursor:pointer;" title="Refresh Sales Data">
+              <svg style="width:16px;height:16px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Refresh
+            </button>
+            <button type="button" id="btn-export-sales-csv" class="adm-btn adm-btn-outline" style="background:#fff;border-color:#cbd5e1;color:#334155;font-weight:700;display:inline-flex;align-items:center;gap:0.35rem;cursor:pointer;">
+              <span>📊</span> Export CSV
+            </button>
+            <button type="button" id="btn-print-sales-bill" class="adm-btn adm-btn-outline" style="background:#ecfdf5;border-color:#059669;color:#065f46;font-weight:800;display:inline-flex;align-items:center;gap:0.35rem;cursor:pointer;">
+              <span>🖨️</span> Print Bill Receipt
+            </button>
+            <button type="button" id="btn-download-sales-pdf" class="adm-btn adm-btn-primary" style="background:#059669;border-color:#059669;color:#fff;font-weight:800;display:inline-flex;align-items:center;gap:0.35rem;cursor:pointer;box-shadow:0 2px 6px rgba(5,150,105,0.25);">
+              <span>📥</span> Download PDF Report
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. Filters Bar (Presets + Date Picker + Custom Range + Channel) -->
+        <div style="background:#fff;border:1px solid var(--adm-border);border-radius:14px;padding:0.85rem 1.15rem;margin-bottom:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.65rem;">
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.4rem;" id="report-range-presets-container">
+              <button type="button" class="report-range-preset-btn active" data-range="today" style="padding:0.4rem 0.85rem;border-radius:8px;font-size:0.75rem;font-weight:800;cursor:pointer;border:none;background:#059669;color:#fff;">
+                📅 Today
+              </button>
+              <button type="button" class="report-range-preset-btn" data-range="yesterday" style="padding:0.4rem 0.85rem;border-radius:8px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;background:#f1f5f9;color:#334155;">
+                Yesterday
+              </button>
+              <button type="button" class="report-range-preset-btn" data-range="week" style="padding:0.4rem 0.85rem;border-radius:8px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;background:#f1f5f9;color:#334155;">
+                This Week (7D)
+              </button>
+              <button type="button" class="report-range-preset-btn" data-range="month" style="padding:0.4rem 0.85rem;border-radius:8px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;background:#f1f5f9;color:#334155;">
+                This Month
+              </button>
+              <button type="button" class="report-range-preset-btn" data-range="date" style="padding:0.4rem 0.85rem;border-radius:8px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;background:#f1f5f9;color:#334155;">
+                📆 Select Any Date
+              </button>
+              <button type="button" class="report-range-preset-btn" data-range="custom" style="padding:0.4rem 0.85rem;border-radius:8px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;background:#f1f5f9;color:#334155;">
+                Custom Range
+              </button>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:0.4rem;">
+              <span style="font-size:0.75rem;font-weight:700;color:var(--adm-muted);">Channel:</span>
+              <select id="report-channel-filter" class="adm-select" style="padding:0.35rem 0.65rem;font-size:0.75rem;font-weight:600;min-width:140px;">
+                <option value="all">🌐 All Channels</option>
+                <option value="delivery">🛵 Delivery</option>
+                <option value="pickup">🛍️ Pickup</option>
+                <option value="table">🍽️ Dine-in Table</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Single Day Picker Form -->
+          <div id="report-single-date-wrap" class="hidden" style="margin-top:0.75rem;padding-top:0.65rem;border-top:1px solid #f1f5f9;display:none;align-items:center;gap:0.5rem;">
+            <label for="report-single-date-input" style="font-size:0.75rem;font-weight:700;color:var(--adm-text);">Select Specific Day / নির্দিষ্ট দিন:</label>
+            <input type="date" id="report-single-date-input" class="adm-input" style="width:auto;padding:0.3rem 0.6rem;font-size:0.75rem;font-weight:700;" />
+            <span style="font-size:0.7rem;color:var(--adm-muted);">Date select karte hi sales report auto-update ho jayegi</span>
+          </div>
+
+          <!-- Custom Date Range Form -->
+          <div id="report-custom-date-wrap" class="hidden" style="margin-top:0.75rem;padding-top:0.65rem;border-top:1px solid #f1f5f9;display:none;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+            <label style="font-size:0.75rem;font-weight:700;color:var(--adm-text);">From:</label>
+            <input type="date" id="report-custom-start-input" class="adm-input" style="width:auto;padding:0.3rem 0.6rem;font-size:0.75rem;font-weight:700;" />
+            <label style="font-size:0.75rem;font-weight:700;color:var(--adm-text);">To:</label>
+            <input type="date" id="report-custom-end-input" class="adm-input" style="width:auto;padding:0.3rem 0.6rem;font-size:0.75rem;font-weight:700;" />
+            <button id="btn-apply-custom-date" type="button" class="adm-btn adm-btn-primary" style="padding:0.35rem 0.75rem;font-size:0.75rem;font-weight:800;background:#059669;border-color:#059669;">
+              Apply Filter
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. KPI Cards -->
+        <div class="adm-stats" style="grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));margin-bottom:1.25rem;">
+          <div class="adm-stat" style="border-left:4px solid #10b981;background:#fff;">
+            <div>
+              <p class="adm-stat-label">Total Sales (Revenue)</p>
+              <p class="adm-stat-value" id="kpi-sales-revenue" style="color:#059669;">₹0.00</p>
+              <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;" id="kpi-sales-avg">Avg: ₹0.00</p>
+            </div>
+            <div class="adm-stat-icon green">
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+          </div>
+
+          <div class="adm-stat" style="border-left:4px solid #6366f1;background:#fff;">
+            <div>
+              <p class="adm-stat-label">Total Orders</p>
+              <p class="adm-stat-value" id="kpi-sales-orders" style="color:#4f46e5;">0 Orders</p>
+              <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;" id="kpi-sales-channels">Del: 0 · Pick: 0 · Tbl: 0</p>
+            </div>
+            <div class="adm-stat-icon indigo" style="background:#eef2ff;color:#6366f1;">
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            </div>
+          </div>
+
+          <div class="adm-stat" style="border-left:4px solid #f59e0b;background:#fff;">
+            <div>
+              <p class="adm-stat-label">Payment Split</p>
+              <div style="font-size:0.8rem;font-weight:700;display:flex;justify-content:space-between;margin-top:4px;">
+                <span>💵 Cash:</span>
+                <span id="kpi-sales-cash" style="color:#0f172a;font-weight:800;">₹0 (0)</span>
+              </div>
+              <div style="font-size:0.8rem;font-weight:700;display:flex;justify-content:space-between;margin-top:2px;">
+                <span>💳 Online:</span>
+                <span id="kpi-sales-online" style="color:#059669;font-weight:800;">₹0 (0)</span>
+              </div>
+            </div>
+            <div class="adm-stat-icon orange">
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+            </div>
+          </div>
+
+          <div class="adm-stat" style="border-left:4px solid #06b6d4;background:#fff;">
+            <div>
+              <p class="adm-stat-label">Dishes &amp; Items Sold</p>
+              <p class="adm-stat-value" id="kpi-sales-dishes-qty" style="color:#0891b2;">0 Plates</p>
+              <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;" id="kpi-sales-dishes-types">0 Varieties</p>
+            </div>
+            <div class="adm-stat-icon blue" style="background:#ecfeff;color:#06b6d4;">
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Navigation Tabs -->
+        <div style="display:flex;align-items:center;border-bottom:2px solid var(--adm-border);margin-bottom:1rem;gap:1.5rem;background:transparent;">
+          <button type="button" class="report-tab-btn active" data-tab="items" style="padding:0.75rem 0.25rem;border:none;border-bottom:3px solid #059669;color:#059669;font-weight:800;font-size:0.85rem;cursor:pointer;background:transparent;display:flex;align-items:center;gap:0.4rem;">
+            <span>🍲</span> Dishes Sold Breakdown
+          </button>
+          <button type="button" class="report-tab-btn" data-tab="orders" style="padding:0.75rem 0.25rem;border:none;border-bottom:3px solid transparent;color:var(--adm-muted);font-weight:600;font-size:0.85rem;cursor:pointer;background:transparent;display:flex;align-items:center;gap:0.4rem;">
+            <span>🧾</span> Order Invoices
+          </button>
+          <button type="button" class="report-tab-btn" data-tab="bill" style="padding:0.75rem 0.25rem;border:none;border-bottom:3px solid transparent;color:var(--adm-muted);font-weight:600;font-size:0.85rem;cursor:pointer;background:transparent;display:flex;align-items:center;gap:0.4rem;">
+            <span>🖨️</span> POS Bill Receipt Preview
+          </button>
+        </div>
+
+        <!-- 4. Dynamic Content Area -->
+        <div id="sales-report-content-body" style="background:#fff;border:1px solid var(--adm-border);border-radius:16px;padding:1.25rem;box-shadow:0 1px 4px rgba(0,0,0,0.03);min-height:300px;">
+          <!-- Loaded dynamically -->
+        </div>
+      </section>
+
       <!-- Orders Report Section -->
       <section id="panel-analytics" class="adm-panel">
         <div class="adm-page-head">
@@ -1643,7 +1821,10 @@
             <p class="adm-page-sub">Comprehensive order ledger, revenue trends, payment splits, and tax breakdown</p>
           </div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-            <button type="button" id="orders-report-export-btn" class="adm-btn adm-btn-primary" style="background:#10b981;border-color:#10b981;display:inline-flex;align-items:center;gap:0.35rem;font-weight:700;">
+            <button type="button" id="panel-analytics-sales-report-btn" class="adm-btn adm-btn-primary" style="background:#059669;border-color:#059669;display:inline-flex;align-items:center;gap:0.35rem;font-weight:700;" title="Open Daily Sales, Orders & Item Bill Slip / PDF Generator">
+              <span>📊</span> Print Bill &amp; PDF Report Hub
+            </button>
+            <button type="button" id="orders-report-export-btn" class="adm-btn adm-btn-outline" style="background:#fff;border-color:#10b981;color:#059669;display:inline-flex;align-items:center;gap:0.35rem;font-weight:700;">
               <span>📥</span> Export to CSV (.csv)
             </button>
           </div>

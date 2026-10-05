@@ -4,6 +4,7 @@ import { menuItems, categoryImages, categoryLabels, categoryEmojis, categoryTabO
 import { sendEmailNotification, generateOrderPlacedHtml } from './lib/email-service.js';
 import { NotificationService } from './lib/notifications.js';
 import { initLanguageSystem, applyTranslations, t, getLanguage, setLanguage } from './lib/i18n.js';
+import { initSalesReportHub } from './sales-report/sales-report.js';
 
 let activeCombos = [];
 let activeCustomDishes = [];
@@ -4070,6 +4071,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSavedAddressLoading();
   initAuthPanel();
   initCustomerNotifications();
+  initSalesReportHub();
 
   // Sync Party Booking Budget Range Slider dynamically
   const slider = document.getElementById('party-budget-slider');
