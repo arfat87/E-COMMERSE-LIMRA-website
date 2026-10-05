@@ -310,6 +310,10 @@ function recalculateBalances() {
 // PERIOD CALCULATION ENGINE: Opening + Period IN - Period OUT = Closing
 // Handles both Weekly (Monday-Sunday) and Monthly (1st to Month-End)
 // ═════════════════════════════════════════════════════════════════════
+function dayKeyOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function calculatePeriodInventory(type = 'month', param = null) {
   let startOfPeriod;
   let endOfPeriod;
@@ -362,6 +366,82 @@ function calculatePeriodInventory(type = 'month', param = null) {
       latestRateDiff: 0
     };
   });
+
+  // ───────────────────────────────────────────────────────────────────
+  // FIFO VALUATION PASS: every OUT consumes the OLDEST remaining IN lot first
+  // (e.g. Onion 10kg @ ₹20 on 1st goes out before any later purchase).
+  // ───────────────────────────────────────────────────────────────────
+  const fifo = { outCost: new Map(), open: {}, close: {}, oldest: {}, openTotal: 0, closeTotal: 0, dayClose: {} };
+  {
+    const events = [];
+    stockInEntries.forEach((e, idx) => {
+      if (!e.sku) return;
+      events.push({ type: 'IN', e, sku: e.sku, t: parseEntryDate(e.date, e.createdAt), seq: idx });
+    });
+    stockOutEntries.forEach((e, idx) => {
+      if (!e.sku) return;
+      events.push({ type: 'OUT', e, sku: e.sku, t: parseEntryDate(e.date, e.createdAt), seq: idx });
+    });
+    // Chronological; on the same day IN is processed before OUT, then by creation time
+    events.sort((a, b) => {
+      const da = dayKeyOf(a.t), db = dayKeyOf(b.t);
+      if (da !== db) return da < db ? -1 : 1;
+      if (a.type !== b.type) return a.type === 'IN' ? -1 : 1;
+      return a.t - b.t || a.seq - b.seq;
+    });
+
+    const lots = {};      // sku -> [{ qty, cost }]
+    const lastCost = {};  // sku -> last known unit cost (fallback if OUT exceeds lots)
+    let total = 0;
+    let openCaptured = false;
+    const captureOpen = () => {
+      fifo.openTotal = total;
+      Object.keys(lots).forEach(s => {
+        fifo.open[s] = lots[s].reduce((sum, l) => sum + l.qty * l.cost, 0);
+      });
+      openCaptured = true;
+    };
+
+    for (const ev of events) {
+      if (ev.t > endOfPeriod) break;
+      if (!openCaptured && ev.t >= startOfPeriod) captureOpen();
+      const sku = ev.sku;
+      if (!lots[sku]) lots[sku] = [];
+      const itemRef = stockItems.find(it => it.sku === sku);
+      const qty = safeNum(ev.e.qty, 0);
+      if (ev.type === 'IN') {
+        const cost = safeNum(ev.e.costPrice, itemRef ? safeNum(itemRef.cost, 0) : 0);
+        lots[sku].push({ qty, cost, t: ev.t });
+        lastCost[sku] = cost;
+        total += qty * cost;
+      } else {
+        let remaining = qty;
+        let cost = 0;
+        while (remaining > 1e-9 && lots[sku].length > 0) {
+          const lot = lots[sku][0];
+          const take = Math.min(lot.qty, remaining);
+          cost += take * lot.cost;
+          lot.qty -= take;
+          remaining -= take;
+          if (lot.qty <= 1e-9) lots[sku].shift();
+        }
+        if (remaining > 1e-9) {
+          // No lot left (negative stock): value at last known rate
+          const fb = lastCost[sku] !== undefined ? lastCost[sku] : (itemRef ? safeNum(itemRef.cost, 0) : 0);
+          cost += remaining * fb;
+        }
+        fifo.outCost.set(ev.e, cost);
+        total -= cost;
+      }
+      if (ev.t >= startOfPeriod) fifo.dayClose[dayKeyOf(ev.t)] = total;
+    }
+    if (!openCaptured) captureOpen();
+    fifo.closeTotal = total;
+    Object.keys(lots).forEach(s => {
+      fifo.close[s] = lots[s].reduce((sum, l) => sum + l.qty * l.cost, 0);
+      if (lots[s].length > 0) fifo.oldest[s] = lots[s][0].t;
+    });
+  }
 
   // Process Stock IN entries
   stockInEntries.forEach(entry => {
@@ -445,21 +525,49 @@ function calculatePeriodInventory(type = 'month', param = null) {
     }
 
     const qty = safeNum(entry.qty, 0);
-    const cost = itemMap[sku].cost;
+    const cost = fifo.outCost.has(entry) ? fifo.outCost.get(entry) : qty * itemMap[sku].cost;
 
     if (entryDate < startOfPeriod) {
       itemMap[sku].priorOutQty += qty;
     } else if (entryDate >= startOfPeriod && entryDate <= endOfPeriod) {
       itemMap[sku].monthOutQty += qty;
-      itemMap[sku].monthOutValue += (qty * cost);
+      itemMap[sku].monthOutValue += cost;
       itemMap[sku].monthOutCount += 1;
       monthOutList.push({
         ...entry,
         entryDate,
-        costAmount: qty * cost
+        costAmount: cost
       });
     }
   });
+
+  // Day-by-day IN / OUT movement with FIFO values
+  const dailyBreakdown = [];
+  {
+    const dayMap = {};
+    for (let d = new Date(startOfPeriod); d <= endOfPeriod; d.setDate(d.getDate() + 1)) {
+      const key = dayKeyOf(d);
+      dayMap[key] = { key, date: new Date(d), ins: [], outs: [], inValue: 0, outValue: 0, closingValue: 0 };
+      dailyBreakdown.push(dayMap[key]);
+    }
+    monthInList.forEach(e => {
+      const day = dayMap[dayKeyOf(e.entryDate)];
+      if (!day) return;
+      day.ins.push(e);
+      day.inValue += e.amount;
+    });
+    monthOutList.forEach(e => {
+      const day = dayMap[dayKeyOf(e.entryDate)];
+      if (!day) return;
+      day.outs.push(e);
+      day.outValue += e.costAmount;
+    });
+    let carry = fifo.openTotal;
+    dailyBreakdown.forEach(day => {
+      if (fifo.dayClose[day.key] !== undefined) carry = fifo.dayClose[day.key];
+      day.closingValue = carry;
+    });
+  }
 
   // Compute item metrics, category groups, and totals
   let totalOpeningQty = 0;
@@ -484,11 +592,11 @@ function calculatePeriodInventory(type = 'month', param = null) {
 
   const calculatedItems = Object.values(itemMap).map(i => {
     const openingQty = parseFloat((i.priorInQty - i.priorOutQty).toFixed(2));
-    const openingValue = Math.max(0, openingQty) * i.cost;
+    const openingValue = fifo.open[i.sku] || 0;
     const inQty = parseFloat(i.monthInQty.toFixed(2));
     const outQty = parseFloat(i.monthOutQty.toFixed(2));
     const closingQty = parseFloat((openingQty + inQty - outQty).toFixed(2));
-    const closingValue = Math.max(0, closingQty) * i.cost;
+    const closingValue = fifo.close[i.sku] || 0;
     const netQty = parseFloat((inQty - outQty).toFixed(2));
     const netValue = i.monthInValue - i.monthOutValue;
 
@@ -578,8 +686,10 @@ function calculatePeriodInventory(type = 'month', param = null) {
       totalClosingQty: parseFloat(totalClosingQty.toFixed(2)),
       activeSkuCount
     },
-    categories
-  };
+    categories,
+    dailyBreakdown,
+    fifoOldest: fifo.oldest,
+    periodEnd: endOfPeriod  };
 }
 
 function calculateMonthlyInventory(yearMonthStr) {
@@ -1634,6 +1744,97 @@ function renderMonthlyInOutTables(monthData) {
   }
 }
 
+function renderDailyBreakdown(periodData) {
+  const body = document.getElementById('period-daily-body');
+  const foot = document.getElementById('period-daily-foot');
+  const badge = document.getElementById('period-daily-badge');
+  if (!body) return;
+  const days = periodData.dailyBreakdown || [];
+  if (badge) badge.textContent = `${days.length} days`;
+
+  const chips = (list, sign, color, valKey) => list.length === 0
+    ? '<span style="color:var(--adm-muted);">—</span>'
+    : list.map(e => `<div style="font-size:0.72rem;color:${color};white-space:nowrap;">${sign}${e.qty} ${e.unit || ''} ${e.description || e.sku} <b>₹ ${safeMoney(e[valKey])}</b></div>`).join('');
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  body.innerHTML = days.map(d => {
+    const active = d.ins.length > 0 || d.outs.length > 0;
+    return `
+      <tr style="${active ? '' : 'opacity:0.55;'}">
+        <td class="font-mono whitespace-nowrap" style="font-weight:700;">${d.key} <span style="color:var(--adm-muted);font-weight:500;">${dayNames[d.date.getDay()]}</span></td>
+        <td>${chips(d.ins, '+', '#059669', 'amount')}</td>
+        <td class="text-right font-mono font-bold" style="color:#059669;">${d.inValue > 0 ? '₹ ' + safeMoney(d.inValue) : '—'}</td>
+        <td>${chips(d.outs, '-', '#e11d48', 'costAmount')}</td>
+        <td class="text-right font-mono font-bold" style="color:#e11d48;">${d.outValue > 0 ? '₹ ' + safeMoney(d.outValue) : '—'}</td>
+        <td class="text-right font-mono font-black" style="color:#4f46e5;">₹ ${safeMoney(d.closingValue)}</td>
+      </tr>`;
+  }).join('');
+
+  if (foot) {
+    const t = periodData.totals;
+    foot.innerHTML = `
+      <tr>
+        <td style="padding:0.6rem 0.85rem;">Opening ₹ ${safeMoney(t.totalOpeningValue)}</td>
+        <td></td>
+        <td class="text-right font-mono" style="padding:0.6rem 0.85rem;color:#059669;">+₹ ${safeMoney(t.totalInValue)}</td>
+        <td></td>
+        <td class="text-right font-mono" style="padding:0.6rem 0.85rem;color:#e11d48;">-₹ ${safeMoney(t.totalOutValue)}</td>
+        <td class="text-right font-mono" style="padding:0.6rem 0.85rem;color:#4f46e5;">Closing ₹ ${safeMoney(t.totalClosingValue)}</td>
+      </tr>`;
+  }
+}
+
+function renderInsights(periodData) {
+  const reorderEl = document.getElementById('stk-reorder-list');
+  const agingEl = document.getElementById('stk-aging-list');
+  const reorderBadge = document.getElementById('stk-reorder-badge');
+  const eqCheck = document.getElementById('stk-eq-check');
+  const t = periodData.totals;
+  const days = Math.max(1, (periodData.dailyBreakdown || []).length);
+
+  // Equation check: Opening + IN - OUT must equal Closing (₹)
+  if (eqCheck) {
+    const diff = Math.abs(t.totalOpeningValue + t.totalInValue - t.totalOutValue - t.totalClosingValue);
+    eqCheck.innerHTML = diff < 1
+      ? '✅ Hisab match: Opening + Purchases − Used = Closing'
+      : `⚠️ ₹ ${safeMoney(diff)} ka farak (negative stock / adjustment entries check karein)`;
+    eqCheck.style.color = diff < 1 ? '#059669' : '#d97706';
+  }
+
+  if (reorderEl) {
+    const low = periodData.items
+      .filter(i => i.min > 0 && i.closingQty <= i.min)
+      .sort((a, b) => (a.closingQty / (a.min || 1)) - (b.closingQty / (b.min || 1)))
+      .slice(0, 8);
+    if (reorderBadge) reorderBadge.textContent = `${low.length} items`;
+    reorderEl.innerHTML = low.length === 0
+      ? '<div style="color:var(--adm-muted);font-size:0.78rem;padding:0.5rem 0;">✅ Sab items minimum level se upar hain.</div>'
+      : low.map(i => {
+        const perDay = i.monthOutQty / days;
+        const cover = perDay > 0 ? `${Math.max(0, i.closingQty / perDay).toFixed(1)} din chalega` : 'usage nahi';
+        return `<div style="display:flex;justify-content:space-between;gap:0.5rem;padding:0.4rem 0.55rem;border-radius:8px;background:${i.closingQty <= 0 ? 'rgba(244,63,94,0.08)' : 'rgba(245,158,11,0.09)'};">
+          <span style="font-weight:700;font-size:0.8rem;">${i.name}</span>
+          <span style="font-family:monospace;font-size:0.75rem;color:${i.closingQty <= 0 ? '#e11d48' : '#d97706'};">${i.closingQty} ${i.unit} · min ${i.min} · ${cover}</span>
+        </div>`;
+      }).join('');
+  }
+
+  if (agingEl) {
+    const end = periodData.periodEnd || new Date();
+    const aged = periodData.items
+      .filter(i => i.closingQty > 0 && periodData.fifoOldest && periodData.fifoOldest[i.sku])
+      .map(i => ({ i, age: Math.max(0, Math.floor((end - periodData.fifoOldest[i.sku]) / 86400000)) }))
+      .sort((a, b) => b.age - a.age)
+      .slice(0, 8);
+    agingEl.innerHTML = aged.length === 0
+      ? '<div style="color:var(--adm-muted);font-size:0.78rem;padding:0.5rem 0;">Koi stock nahi.</div>'
+      : aged.map(({ i, age }) => `<div style="display:flex;justify-content:space-between;gap:0.5rem;padding:0.4rem 0.55rem;border-radius:8px;background:${age >= 7 ? 'rgba(245,158,11,0.09)' : 'rgba(99,102,241,0.06)'};">
+          <span style="font-weight:700;font-size:0.8rem;">${i.name}</span>
+          <span style="font-family:monospace;font-size:0.75rem;color:${age >= 7 ? '#d97706' : 'var(--adm-muted)'};">purana lot ${age} din · ${i.closingQty} ${i.unit} · ₹ ${safeMoney(i.closingValue)}</span>
+        </div>`).join('');
+  }
+}
+
 function renderPeriodDashboard() {
   const periodData = currentAppMode === 'weekly'
     ? calculateWeeklyInventory(selectedWeekDate)
@@ -1642,6 +1843,8 @@ function renderPeriodDashboard() {
   renderMonthlyCategoryBreakdown(periodData);
   renderMonthlyLeaderboards(periodData);
   renderMonthlyMatrixTable(periodData);
+  renderDailyBreakdown(periodData);
+  renderInsights(periodData);
   renderMonthlyInOutTables(periodData);
 }
 

@@ -945,3 +945,26 @@
     color: #000000 !important;
   }
 }
+
+/* ── Weekly equation strip: Opening + Purchases − Used = Closing ── */
+.stk-eq { position: relative; }
+.stk-eq > .adm-stat { position: relative; }
+.stk-eq > .adm-stat:nth-child(1) { order: 1; }
+.stk-eq > .adm-stat:nth-child(2) { order: 2; }
+.stk-eq > .adm-stat:nth-child(3) { order: 3; }
+.stk-eq > .adm-stat:nth-child(5) { order: 4; }
+.stk-eq > .adm-stat:nth-child(4) { order: 5; opacity: 0.85; }
+.stk-eq > .adm-stat:nth-child(2)::before,
+.stk-eq > .adm-stat:nth-child(3)::before,
+.stk-eq > .adm-stat:nth-child(5)::before {
+  position: absolute; left: -0.95rem; top: 50%; transform: translateY(-50%);
+  width: 1.5rem; height: 1.5rem; border-radius: 50%; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 900; font-size: 0.95rem; color: #fff;
+}
+.stk-eq > .adm-stat:nth-child(2)::before { content: '+'; background: #10b981; }
+.stk-eq > .adm-stat:nth-child(3)::before { content: '−'; background: #f59e0b; }
+.stk-eq > .adm-stat:nth-child(5)::before { content: '='; background: #6366f1; }
+.stk-eq > .adm-stat:nth-child(5) { background: linear-gradient(135deg, #eef2ff, #fff); box-shadow: 0 4px 14px rgba(99,102,241,0.18); }
+.stk-eq .adm-stat-value { font-size: 1.6rem; }
+@media (max-width: 720px) { .stk-eq > .adm-stat::before { display: none; } }

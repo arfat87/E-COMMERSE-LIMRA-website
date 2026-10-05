@@ -7597,7 +7597,7 @@ const PANEL_TITLES = {
   coupons: 'Coupons',
   combos: 'Combos',
   places: 'Places & Charges',
-  stock: 'Stock Summary & Hisab',
+  stock: 'Stock',
 };
 
 function switchPanel(panelId, pushHistory = true) {
@@ -16224,7 +16224,7 @@ function renderGoogleSheetsSettingsUI() {
           Real-time log of every closed bill, tax breakdown, and dish sold.
         </div>
         <div style="background:#fff;padding:.75rem;border-radius:8px;border:1px solid #e0f2fe;">
-          <strong style="color:#059669;display:block;margin-bottom:3px;">📦 Tab 2: Stock Summary</strong>
+          <strong style="color:#059669;display:block;margin-bottom:3px;">📦 Tab 2: Stock</strong>
           138 warehouse items, balance stock quantities, alerts, and valuation.
         </div>
         <div style="background:#fff;padding:.75rem;border-radius:8px;border:1px solid #e0f2fe;">

@@ -1,0 +1,794 @@
+      <section id="panel-stock" class="adm-panel" style="padding-bottom:3rem;">
+        
+        <!-- Top In-Page Action Header Bar (Warm Parchment & Contemporary Indigo) -->
+        <div class="adm-page-head">
+          <div>
+            <h1 class="adm-page-title">Stock Summary &amp; Inventory Management</h1>
+            <p class="adm-page-sub">Warehouse &amp; Inventory Control — Real-Time Stock, Purchases, Kitchen Usage &amp; Cost Valuation</p>
+          </div>
+
+          <div class="stock-no-print" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+            <!-- 🟢 Live DB Connection Indicator -->
+            <div id="db-status-badge" class="stk-db-badge" title="PostgreSQL Live Status">
+              <span id="db-status-dot" class="stk-db-dot"></span>
+              <span id="db-status-text">Database Live</span>
+            </div>
+
+            <!-- 🔍 Search Icon Button -->
+            <button type="button" id="btn-toggle-search" class="adm-btn adm-btn-outline adm-btn-sm" title="Search Items">
+              <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            </button>
+
+            <!-- 📄 PDF Export -->
+            <button type="button" id="btn-header-pdf" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#e11d48;border-color:#fecdd3;" title="Export PDF Report">
+              <span>📄</span> PDF
+            </button>
+
+            <!-- 📊 Excel Export -->
+            <button type="button" id="btn-header-excel" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#059669;border-color:#a7f3d0;" title="Export Excel (.xlsx)">
+              <span>📊</span> XLS
+            </button>
+
+            <!-- 📑 Google Sheets Sync -->
+            <button type="button" id="btn-header-sheets" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#0284c7;border-color:#bae6fd;" title="Sync Live Stock to Google Sheets (Stock Summary Tab)">
+              <span>📑</span> Sheets
+            </button>
+
+            <!-- ➕ Add Item Button -->
+            <button type="button" id="btn-add-item" class="adm-btn adm-btn-primary adm-btn-sm">
+              <span>+ Add Item</span>
+            </button>
+
+            <!-- ⚙️ More Options Dropdown -->
+            <div style="position:relative;display:inline-block;">
+              <button type="button" id="btn-more-options" class="adm-btn adm-btn-outline adm-btn-sm" title="More Options">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
+              </button>
+              <div id="dropdown-more-menu" class="adm-hidden" style="position:absolute;right:0;top:calc(100% + 6px);width:200px;background:#ffffff;border:1px solid var(--adm-border);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.12);padding:0.4rem;z-index:50;">
+                <button type="button" id="menu-toggle-view" style="width:100%;text-align:left;padding:0.5rem 0.75rem;background:none;border:none;border-radius:8px;font-size:0.78rem;font-weight:600;color:var(--adm-text);cursor:pointer;display:flex;align-items:center;gap:0.4rem;">
+                  <span>📱</span> Switch Feed / Table View
+                </button>
+                <button type="button" id="menu-reset-defaults" style="width:100%;text-align:left;padding:0.5rem 0.75rem;background:none;border:none;border-radius:8px;font-size:0.78rem;font-weight:600;color:#d97706;cursor:pointer;display:flex;align-items:center;gap:0.4rem;">
+                  <span>🔄</span> Re-Sync from Database
+                </button>
+                <button type="button" id="menu-print-page" style="width:100%;text-align:left;padding:0.5rem 0.75rem;background:none;border:none;border-radius:8px;font-size:0.78rem;font-weight:600;color:var(--adm-text);cursor:pointer;display:flex;align-items:center;gap:0.4rem;">
+                  <span>🖨️</span> Print Summary Sheet
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions Toolbar (Super Simple 1-Click Operations) -->
+        <div class="stock-no-print" style="display:flex;align-items:center;gap:0.65rem;margin-bottom:1.25rem;flex-wrap:wrap;">
+          <button type="button" id="btn-hero-record-in" class="adm-btn adm-btn-primary" style="background:#059669;border-color:#059669;color:#fff;padding:0.55rem 1.1rem;font-size:0.84rem;box-shadow:0 2px 8px rgba(5,150,105,0.25);">
+            <span>➕ Quick Stock IN (Purchases &amp; Cost)</span>
+          </button>
+          <button type="button" id="btn-hero-record-out" class="adm-btn adm-btn-primary" style="background:#d97706;border-color:#d97706;color:#fff;padding:0.55rem 1.1rem;font-size:0.84rem;box-shadow:0 2px 8px rgba(217,119,6,0.25);">
+            <span>➖ Quick Stock OUT (Kitchen Usage)</span>
+          </button>
+          <button type="button" id="btn-hero-add-item" class="adm-btn adm-btn-outline" style="padding:0.55rem 1.1rem;font-size:0.84rem;font-weight:700;">
+            <span>📦 + Add New Item</span>
+          </button>
+        </div>
+
+        <!-- SEARCH OVERLAY BAR (Toggled via 🔍 Icon) -->
+        <div id="search-overlay-bar" class="adm-hidden stock-no-print" style="background:#ffffff;border:1px solid var(--adm-border);border-radius:14px;padding:0.65rem 1rem;margin-bottom:1.25rem;box-shadow:0 4px 12px rgba(0,0,0,0.05);display:flex;align-items:center;gap:0.75rem;">
+          <span style="color:var(--adm-muted);">🔍</span>
+          <input type="text" id="stock-search" placeholder="Search stock item name, SKU, category, or supplier..." style="flex:1;border:none;background:transparent;outline:none;font-size:0.85rem;color:var(--adm-text);" />
+          <button type="button" id="btn-close-search" class="adm-btn adm-btn-outline adm-btn-sm" style="padding:0.25rem 0.55rem;font-size:0.72rem;">Esc</button>
+        </div>
+
+        <!-- ERROR BOUNDARY FALLBACK CONTAINER -->
+        <div id="stock-error-boundary" class="adm-hidden" style="background:#fff1f2;border:1px solid #fecdd3;border-radius:16px;padding:1.5rem;text-align:center;margin-bottom:1.5rem;">
+          <div style="font-size:2rem;margin-bottom:0.5rem;">⚠️</div>
+          <h3 style="font-size:1rem;font-weight:800;color:#9f1239;margin:0 0 0.25rem;">Inventory Storage Cache Check</h3>
+          <p style="font-size:0.8rem;color:#be123c;margin:0 0 1rem;">Click below to refresh inventory synchronization from PostgreSQL.</p>
+          <button type="button" id="btn-repair-inventory" class="adm-btn adm-btn-sm" style="background:#e11d48;color:#fff;">🔄 Sync Inventory From Database</button>
+        </div>
+
+        <!-- 0. MODE TOGGLE BAR: LIVE OPERATIONS vs WEEKLY FINANCIALS vs MONTHLY FINANCIALS -->
+        <div class="adm-card stock-no-print" style="padding:0.65rem 1rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+          <div class="pos-cat-pill-bar">
+            <button type="button" id="tab-mode-live" class="pos-cat-pill active">
+              <span>⚡</span> Live Stock &amp; Daily Operations
+            </button>
+            <button type="button" id="tab-mode-weekly" class="pos-cat-pill">
+              <span>🗓️</span> Weekly Financial Statement
+            </button>
+            <button type="button" id="tab-mode-monthly" class="pos-cat-pill">
+              <span>📅</span> Monthly Financial Statement
+            </button>
+          </div>
+
+          <!-- Quick Week Navigation Indicator (visible in Weekly Mode) -->
+          <div id="weekly-quick-controls" class="adm-hidden" style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
+            <label for="weekly-select-picker" style="font-size:0.75rem;font-weight:700;color:var(--adm-muted);display:flex;align-items:center;gap:0.25rem;">
+              <span>🗓️</span> Week:
+            </label>
+            <input type="date" id="weekly-select-picker" class="adm-input" style="padding:0.3rem 0.6rem;font-size:0.78rem;font-family:monospace;" />
+            <span id="weekly-badge-range" class="adm-pill confirmed" style="font-size:0.72rem;font-weight:800;">Current Week</span>
+            <button type="button" id="btn-week-current" class="adm-btn adm-btn-outline adm-btn-sm">This Week</button>
+            <button type="button" id="btn-week-prev" class="adm-btn adm-btn-outline adm-btn-sm" title="Previous Week">◀ Prev</button>
+            <button type="button" id="btn-week-next" class="adm-btn adm-btn-outline adm-btn-sm" title="Next Week">Next ▶</button>
+            <button type="button" id="btn-week-excel" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#059669;border-color:#a7f3d0;" title="Export Week Excel (.xlsx)">📊 Week .xlsx</button>
+            <button type="button" id="btn-week-pdf" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#e11d48;border-color:#fecdd3;" title="Export Week PDF Report">📄 Week PDF</button>
+          </div>
+
+          <!-- Quick Month Navigation Indicator (visible in Monthly Mode) -->
+          <div id="monthly-quick-controls" class="adm-hidden" style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
+            <label for="monthly-select-picker" style="font-size:0.75rem;font-weight:700;color:var(--adm-muted);display:flex;align-items:center;gap:0.25rem;">
+              <span>📅</span> Month:
+            </label>
+            <input type="month" id="monthly-select-picker" value="2026-09" class="adm-input" style="padding:0.3rem 0.6rem;font-size:0.78rem;font-family:monospace;" />
+            <button type="button" id="btn-month-current" class="adm-btn adm-btn-outline adm-btn-sm">This Month</button>
+            <button type="button" id="btn-month-prev" class="adm-btn adm-btn-outline adm-btn-sm" title="Previous Month">◀ Prev</button>
+            <button type="button" id="btn-month-next" class="adm-btn adm-btn-outline adm-btn-sm" title="Next Month">Next ▶</button>
+            <button type="button" id="btn-month-excel" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#059669;border-color:#a7f3d0;" title="Export Month Excel (.xlsx)">📊 Month .xlsx</button>
+            <button type="button" id="btn-month-pdf" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#e11d48;border-color:#fecdd3;" title="Export Month PDF Report">📄 Month PDF</button>
+          </div>
+        </div>
+
+        <!-- ═════════════════════════════════════════════════════════════════════ -->
+        <!-- VIEW A: LIVE REAL-TIME STOCK SUMMARY -->
+        <!-- ═════════════════════════════════════════════════════════════════════ -->
+        <div id="view-live-container">
+          
+          <!-- Date Filter & Global Controls Section -->
+          <div class="adm-card stock-no-print" style="padding:0.75rem 1rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+            <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;color:var(--adm-text);font-weight:600;">
+                <input type="checkbox" id="chk-as-on-date" style="cursor:pointer;accent-color:var(--adm-green);" />
+                <label for="chk-as-on-date" style="cursor:pointer;user-select:none;">Show stock as on Date:</label>
+                <input type="date" id="date-as-on" value="2026-08-01" disabled class="adm-input" style="padding:0.25rem 0.5rem;font-family:monospace;font-size:0.75rem;" />
+              </div>
+              <span id="active-filter-badge" class="adm-pill confirmed" style="font-weight:700;">All Categories</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+              <!-- Category Dropdown Chip (Strictly the 7 Stock Groups) -->
+              <select id="chip-cat-select" class="adm-select" style="font-size:0.78rem;padding:0.35rem 0.75rem;">
+                <option value="all">Category - All (7 Stock Groups)</option>
+                <option value="Bhusimal & Spices">1. 🌾 Bhusimal &amp; Spices</option>
+                <option value="Dairy Items">2. 🥛 Dairy Items</option>
+                <option value="Cold Drinks">3. 🥤 Cold Drinks</option>
+                <option value="Fresh Vegetables">4. 🥦 Fresh Vegetables</option>
+                <option value="Ice Cream">5. 🍦 Ice Cream</option>
+                <option value="Packaging & Carry Bags">6. 📦 Carry Bags &amp; Packaging</option>
+                <option value="Cleaning & Washings">7. 🧹 Washings &amp; Cleaning</option>
+              </select>
+
+              <!-- Stock Level Dropdown Chip -->
+              <select id="chip-stock-select" class="adm-select" style="font-size:0.78rem;padding:0.35rem 0.75rem;">
+                <option value="all">Stock - All</option>
+                <option value="instock">In Stock (&gt;0)</option>
+                <option value="low">Low Stock</option>
+                <option value="negative">Negative Stock (&lt;0)</option>
+              </select>
+
+              <!-- Status Dropdown Chip -->
+              <select id="chip-status-select" class="adm-select" style="font-size:0.78rem;padding:0.35rem 0.75rem;">
+                <option value="all">Status - All</option>
+                <option value="active">Active Stock</option>
+                <option value="out">Out of Stock (=0)</option>
+              </select>
+
+              <button type="button" id="btn-open-funnel" class="adm-btn adm-btn-outline adm-btn-sm">
+                <span>🌪️</span> Filters
+              </button>
+            </div>
+          </div>
+
+          <!-- TOP METRICS & KPI CARDS GRID (4-Column) -->
+          <div class="adm-stats">
+            <div class="adm-stat" style="border-left:4px solid #6366f1;">
+              <div>
+                <div class="adm-stat-label">Total Items</div>
+                <div id="kpi-total-items" class="adm-stat-value">0</div>
+                <div class="adm-stat-trend">Total active SKUs in directory</div>
+              </div>
+              <div class="adm-stat-icon" style="background:rgba(99,102,241,0.1);color:#6366f1;">📦</div>
+            </div>
+
+            <div class="adm-stat" style="border-left:4px solid #ef4444;">
+              <div>
+                <div class="adm-stat-label" style="color:#ef4444;">Low Stock (≤ Min)</div>
+                <div id="kpi-low-items" class="adm-stat-value" style="color:#ef4444;">0</div>
+                <div class="adm-stat-trend down">Requires immediate reorder</div>
+              </div>
+              <div class="adm-stat-icon red">🚨</div>
+            </div>
+
+            <div class="adm-stat" style="border-left:4px solid #f59e0b;">
+              <div>
+                <div class="adm-stat-label" style="color:#d97706;">Out Today</div>
+                <div id="kpi-out-today" class="adm-stat-value" style="color:#d97706;">0 units</div>
+                <div class="adm-stat-trend">Kitchen usage &amp; consumption</div>
+              </div>
+              <div class="adm-stat-icon orange">📤</div>
+            </div>
+
+            <div class="adm-stat" style="border-left:4px solid #10b981;">
+              <div>
+                <div class="adm-stat-label" style="color:#059669;">Stock Valuation</div>
+                <div id="kpi-total-value" class="adm-stat-value" style="color:#059669;">₹ 0.00</div>
+                <div class="adm-stat-trend up">Total cost value in warehouse</div>
+              </div>
+              <div class="adm-stat-icon green">💰</div>
+            </div>
+          </div>
+
+          <!-- 3.5 DAILY SUMMARY BLOCK (Opening + Stock In - Stock Out = Current Balance with ₹) -->
+          <div id="daily-summary-block" class="adm-card stock-no-print" style="margin-bottom:1.5rem;">
+            <div class="adm-card-head" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.75rem;">
+              <div style="display:flex;align-items:center;gap:0.6rem;">
+                <span style="font-size:1.35rem;">📅</span>
+                <div>
+                  <h3 class="adm-card-title" style="margin:0;">Daily Stock Movement &amp; Balances</h3>
+                  <p style="margin:2px 0 0;font-size:0.75rem;color:var(--adm-muted);">Opening stock balance + purchases (IN) - kitchen consumption (OUT) = closing stock valuation</p>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                <label for="daily-summary-date" style="font-size:0.75rem;font-weight:700;color:var(--adm-muted);display:flex;align-items:center;gap:0.25rem;">
+                  <span>🗓️</span> Day:
+                </label>
+                <input type="date" id="daily-summary-date" class="adm-input" style="padding:0.3rem 0.6rem;font-size:0.75rem;font-family:monospace;" />
+                <button type="button" id="btn-daily-today" class="adm-btn adm-btn-outline adm-btn-sm">Today</button>
+                <button type="button" id="btn-export-daily-csv" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#059669;border-color:#a7f3d0;">📊 CSV</button>
+                <button type="button" id="btn-export-daily-pdf" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#e11d48;border-color:#fecdd3;">📄 PDF</button>
+              </div>
+            </div>
+
+            <div class="stk-daily-grid">
+              <div class="stk-daily-tile">
+                <span style="display:block;font-size:0.68rem;font-weight:800;text-transform:uppercase;color:var(--adm-muted);">Opening Balance</span>
+                <span id="ds-opening-balance" style="display:block;font-size:1.15rem;font-weight:800;font-family:monospace;margin:0.25rem 0 0.15rem;color:var(--adm-text);">0</span>
+                <span id="ds-opening-val" style="display:block;font-size:0.75rem;font-weight:700;color:var(--adm-muted);font-family:monospace;">₹ 0.00</span>
+              </div>
+
+              <div class="stk-daily-tile highlight-in">
+                <span style="display:block;font-size:0.68rem;font-weight:800;text-transform:uppercase;color:#059669;">+ Stock In (Purchased)</span>
+                <span id="ds-stock-in" style="display:block;font-size:1.15rem;font-weight:800;font-family:monospace;margin:0.25rem 0 0.15rem;color:#059669;">+0</span>
+                <span id="ds-stock-in-val" style="display:block;font-size:0.75rem;font-weight:700;color:#059669;font-family:monospace;">+₹ 0.00</span>
+              </div>
+
+              <div class="stk-daily-tile highlight-out">
+                <span style="display:block;font-size:0.68rem;font-weight:800;text-transform:uppercase;color:#d97706;">- Stock Out (Usage)</span>
+                <span id="ds-stock-out" style="display:block;font-size:1.15rem;font-weight:800;font-family:monospace;margin:0.25rem 0 0.15rem;color:#d97706;">-0</span>
+                <span id="ds-stock-out-val" style="display:block;font-size:0.75rem;font-weight:700;color:#d97706;font-family:monospace;">-₹ 0.00</span>
+              </div>
+
+              <div class="stk-daily-tile highlight-net">
+                <span style="display:block;font-size:0.68rem;font-weight:800;text-transform:uppercase;color:#0284c7;">± Day Net Movement</span>
+                <span id="ds-adjustments" style="display:block;font-size:1.15rem;font-weight:800;font-family:monospace;margin:0.25rem 0 0.15rem;color:#0284c7;">0</span>
+                <span id="ds-net-val" style="display:block;font-size:0.75rem;font-weight:700;color:#0284c7;font-family:monospace;">±₹ 0.00</span>
+              </div>
+
+              <div class="stk-daily-tile highlight-close">
+                <span style="display:block;font-size:0.68rem;font-weight:800;text-transform:uppercase;color:#4f46e5;">= Closing Balance</span>
+                <span id="ds-current-balance" style="display:block;font-size:1.15rem;font-weight:800;font-family:monospace;margin:0.25rem 0 0.15rem;color:#4f46e5;">0</span>
+                <span id="ds-current-val" style="display:block;font-size:0.75rem;font-weight:700;color:#4f46e5;font-family:monospace;">₹ 0.00</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. SPREADSHEET SECTION: STOCK IN, STOCK OUT & REAL-TIME BALANCE -->
+          <div style="margin-bottom:1.5rem;">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;margin-bottom:1rem;">
+              <div>
+                <h2 style="font-size:1.1rem;font-weight:800;color:var(--adm-text);margin:0;display:flex;align-items:center;gap:0.4rem;font-family:'Fraunces',Georgia,serif;">
+                  <span>📊</span> Stock In-Out &amp; Balance Master Ledger
+                </h2>
+                <p style="font-size:0.75rem;color:var(--adm-muted);margin:3px 0 0;">Record purchases (IN) &amp; kitchen usage (OUT). Balance is automatically computed with historical rate differences.</p>
+              </div>
+
+              <div class="stock-no-print" style="display:flex;align-items:center;gap:0.5rem;">
+                <button type="button" id="btn-record-in" class="adm-btn adm-btn-primary adm-btn-sm" style="background:#059669;border-color:#059669;">
+                  <span>➕ Record IN Stock</span>
+                </button>
+                <button type="button" id="btn-record-out" class="adm-btn adm-btn-primary adm-btn-sm" style="background:#d97706;border-color:#d97706;">
+                  <span>➖ Record OUT Stock</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Side-by-side Grid: TABLE 1 (IN) and TABLE 2 (OUT) -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:1rem;margin-bottom:1rem;">
+              
+              <!-- TABLE 1: STOCK IN -->
+              <div class="adm-card" style="padding:1rem;">
+                <div class="adm-card-head" style="margin-bottom:0.75rem;">
+                  <span style="font-weight:800;font-size:0.85rem;color:#059669;display:flex;align-items:center;gap:0.4rem;">📥 STOCK IN (PURCHASES)</span>
+                  <span id="badge-in-count" class="adm-pill delivered">0 entries</span>
+                </div>
+                <div class="adm-table-wrap" style="max-height:360px;overflow-y:auto;">
+                  <table class="adm-table">
+                    <thead>
+                      <tr>
+                        <th>DATE</th>
+                        <th>SKU</th>
+                        <th>DESCRIPTION</th>
+                        <th>UNIT</th>
+                        <th style="text-align:right;">QTY</th>
+                        <th style="text-align:right;">RATE (₹)</th>
+                        <th style="text-align:center;">DIFF</th>
+                        <th style="text-align:right;">TOTAL (₹)</th>
+                        <th style="text-align:center;" class="stock-no-print">DEL</th>
+                      </tr>
+                    </thead>
+                    <tbody id="table-in-body">
+                      <!-- Dynamically rendered via JS -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- TABLE 2: STOCK OUT -->
+              <div class="adm-card" style="padding:1rem;">
+                <div class="adm-card-head" style="margin-bottom:0.75rem;">
+                  <span style="font-weight:800;font-size:0.85rem;color:#d97706;display:flex;align-items:center;gap:0.4rem;">📤 STOCK OUT (USAGE &amp; KITCHEN PREP)</span>
+                  <span id="badge-out-count" class="adm-pill pending">0 entries</span>
+                </div>
+                <div class="adm-table-wrap" style="max-height:360px;overflow-y:auto;">
+                  <table class="adm-table">
+                    <thead>
+                      <tr>
+                        <th>DATE</th>
+                        <th>SKU</th>
+                        <th>DESCRIPTION</th>
+                        <th>REASON</th>
+                        <th style="text-align:right;">QTY</th>
+                        <th style="text-align:right;">VALUE (₹)</th>
+                        <th style="text-align:center;" class="stock-no-print">DEL</th>
+                      </tr>
+                    </thead>
+                    <tbody id="table-out-body">
+                      <!-- Dynamically rendered via JS -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- TABLE 3: REAL-TIME BALANCE -->
+            <div class="adm-card" style="padding:1rem;">
+              <div class="adm-card-head" style="margin-bottom:0.75rem;">
+                <span style="font-weight:800;font-size:0.85rem;color:var(--adm-text);display:flex;align-items:center;gap:0.4rem;">⚖️ REAL-TIME STOCK BALANCE</span>
+                <span id="badge-balance-count" class="adm-pill confirmed">0 items</span>
+              </div>
+              <div class="adm-table-wrap" style="max-height:360px;overflow-y:auto;">
+                <table class="adm-table">
+                  <thead>
+                    <tr>
+                      <th>SKU</th>
+                      <th>DESCRIPTION</th>
+                      <th>CATEGORY</th>
+                      <th style="text-align:right;">RATE (₹)</th>
+                      <th style="text-align:center;">ACTUAL BALANCE</th>
+                      <th style="text-align:right;">VALUATION (₹)</th>
+                      <th style="text-align:center;">STATUS</th>
+                      <th style="text-align:center;" class="stock-no-print">ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody id="table-balance-body">
+                    <!-- Dynamically rendered via JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 5. CRITICAL STOCK & LOW BALANCE ALERT SECTION -->
+          <div id="critical-stock-section" class="adm-card adm-hidden" style="margin-bottom:1.5rem;border-color:#fecdd3;background:#fff1f2;">
+            <div class="adm-card-head" style="margin-bottom:0.75rem;">
+              <h3 style="margin:0;font-size:0.9rem;font-weight:800;color:#9f1239;display:flex;align-items:center;gap:0.4rem;">
+                <span>🚨</span> OUT-OF-STOCK &amp; LOW-STOCK ALERTS (Balance ≤ Minimum Level)
+              </h3>
+              <span id="critical-count-badge" class="adm-pill cancelled">0 critical items</span>
+            </div>
+            <div id="critical-items-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.75rem;">
+              <!-- Dynamically populated via JS -->
+            </div>
+          </div>
+
+          <!-- 6. INTERACTIVE MASTER INVENTORY DIRECTORY (FEED & TABLE TOGGLE) -->
+          <div style="margin-bottom:1.5rem;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.85rem;flex-wrap:wrap;gap:0.5rem;">
+              <h2 style="font-size:1.1rem;font-weight:800;color:var(--adm-text);margin:0;display:flex;align-items:center;gap:0.4rem;font-family:'Fraunces',Georgia,serif;">
+                <span>📦</span> Inventory Directory
+                <span id="stock-count-badge" class="adm-pill confirmed">0 items</span>
+              </h2>
+
+              <div class="stock-no-print" style="display:flex;gap:0.35rem;">
+                <button type="button" id="btn-toggle-view-feed" class="adm-btn adm-btn-primary adm-btn-sm">🎴 Cards</button>
+                <button type="button" id="btn-toggle-view-table" class="adm-btn adm-btn-outline adm-btn-sm">📋 Table</button>
+              </div>
+            </div>
+
+            <!-- Feed View -->
+            <div id="stock-feed-container" class="stk-feed-grid">
+              <!-- Dynamically populated via JS -->
+            </div>
+
+            <!-- Table View -->
+            <div id="stock-table-container" class="adm-card adm-hidden" style="padding:1rem;">
+              <div class="adm-table-wrap">
+                <table class="adm-table">
+                  <thead>
+                    <tr>
+                      <th>SKU &amp; ITEM NAME</th>
+                      <th>CATEGORY</th>
+                      <th>GODOWN</th>
+                      <th style="text-align:center;">ACTUAL BALANCE</th>
+                      <th style="text-align:right;">SALE PRICE</th>
+                      <th style="text-align:right;">PURCHASE PRICE</th>
+                      <th style="text-align:right;">STOCK VALUE</th>
+                      <th style="text-align:center;">STATUS</th>
+                      <th style="text-align:right;" class="stock-no-print">ACTIONS</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stock-table-body">
+                    <!-- Dynamically populated via JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="stock-empty-state" class="adm-hidden" style="text-align:center;padding:3rem 1rem;background:var(--adm-card);border:1px dashed var(--adm-border);border-radius:16px;">
+              <div style="font-size:2.5rem;margin-bottom:0.5rem;">📦</div>
+              <h3 style="font-size:0.95rem;font-weight:700;color:var(--adm-text);margin:0 0 0.25rem;">No matching stock items found</h3>
+              <p style="font-size:0.75rem;color:var(--adm-muted);margin:0 0 1rem;">Try clearing search filters or click "+ Add Item" to register new items.</p>
+              <button type="button" id="btn-empty-clear-filters" class="adm-btn adm-btn-outline adm-btn-sm">Clear All Filters</button>
+            </div>
+          </div>
+
+          <!-- 7. RECENT INVENTORY AUDIT & TRANSACTION LEDGER -->
+          <div class="adm-card" style="padding:1rem;margin-bottom:1.5rem;">
+            <div class="adm-card-head" style="margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">
+              <div>
+                <h3 class="adm-card-title" style="margin:0;display:flex;align-items:center;gap:0.4rem;">
+                  <span>📜</span> Recent Inventory Audit &amp; Transaction Ledger
+                </h3>
+                <p style="margin:2px 0 0;font-size:0.72rem;color:var(--adm-muted);">Real-time log of purchases, kitchen usage, adjustments, and alterations</p>
+              </div>
+
+              <div class="stock-no-print" style="display:flex;align-items:center;gap:0.5rem;">
+                <select id="log-filter-type" class="adm-select" style="font-size:0.75rem;padding:0.25rem 0.65rem;">
+                  <option value="all">All Action Logs</option>
+                  <option value="IN">Stock IN (+)</option>
+                  <option value="OUT">Stock OUT (-)</option>
+                  <option value="Delete">Deleted Entries</option>
+                  <option value="Adjustment">Adjustments</option>
+                </select>
+                <button type="button" id="btn-clear-logs" class="adm-btn adm-btn-outline adm-btn-sm">Clear History</button>
+              </div>
+            </div>
+
+            <div class="adm-table-wrap" style="max-height:260px;overflow-y:auto;">
+              <table class="adm-table">
+                <thead>
+                  <tr>
+                    <th>Date &amp; Time</th>
+                    <th>Item Name / SKU</th>
+                    <th>Action Type</th>
+                    <th style="text-align:center;">Quantity</th>
+                    <th>Notes / Remarks</th>
+                  </tr>
+                </thead>
+                <tbody id="stock-logs-body">
+                  <!-- Dynamically populated via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ═════════════════════════════════════════════════════════════════════ -->
+        <!-- VIEW B: DEDICATED MONTHLY / WEEKLY CALCULATION & AUDIT DASHBOARD -->
+        <!-- ═════════════════════════════════════════════════════════════════════ -->
+        <div id="view-monthly-container" class="adm-hidden">
+          
+          <!-- Period Header & Banner Overview -->
+          <div class="adm-card" style="margin-bottom:1.25rem;border-left:4px solid #6366f1;">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+              <div>
+                <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
+                  <span id="period-badge-mode" class="adm-pill delivered">Periodic Statement</span>
+                  <span id="monthly-badge-selected-month" class="adm-pill confirmed">Period</span>
+                </div>
+                <h2 id="monthly-banner-title" class="adm-page-title" style="font-size:1.35rem;margin:0;">
+                  <span>📅</span> Stock Financial Statement &amp; Valuation
+                </h2>
+                <p id="period-banner-desc" style="margin:3px 0 0;font-size:0.8rem;color:var(--adm-muted);">
+                  Automated accounting of Opening Balance (₹), Inward Purchases (+), Outward Usage (-) &amp; Closing Balance (₹).
+                </p>
+              </div>
+
+              <div class="stock-no-print" style="display:flex;gap:0.5rem;">
+                <button type="button" id="btn-monthly-export-xls-hero" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#059669;border-color:#a7f3d0;">
+                  <span>📊 Export Excel (.xlsx)</span>
+                </button>
+                <button type="button" id="btn-monthly-export-pdf-hero" class="adm-btn adm-btn-outline adm-btn-sm" style="color:#e11d48;border-color:#fecdd3;">
+                  <span>📄 Export PDF</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Weekly equation: Opening + Purchases - Used = Closing -->
+          <div id="stk-eq-check" style="font-size:0.78rem;font-weight:700;margin:0 0 0.5rem;"></div>
+          <div class="adm-stats stk-eq" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">
+            <!-- Opening -->
+            <div class="adm-stat" style="border-left:4px solid #64748b;">
+              <div>
+                <div class="adm-stat-label">📦 Opening Balance</div>
+                <div id="pkpi-opening-value" class="adm-stat-value">₹ 0.00</div>
+                <div class="adm-stat-trend" style="display:flex;justify-content:space-between;gap:0.5rem;">
+                  <span>Units:</span>
+                  <span id="pkpi-opening-qty" style="font-weight:700;color:var(--adm-text);">0 units</span>
+                </div>
+              </div>
+              <div id="mkpi-opening-value-chip" class="adm-pill confirmed" style="font-size:0.65rem;">Start</div>
+            </div>
+
+            <!-- Inward / Purchases -->
+            <div class="adm-stat" style="border-left:4px solid #10b981;">
+              <div>
+                <div class="adm-stat-label" style="color:#059669;">📥 Inward (+Purchases)</div>
+                <div id="mkpi-in-value" class="adm-stat-value" style="color:#059669;">₹ 0.00</div>
+                <div class="adm-stat-trend" style="display:flex;justify-content:space-between;gap:0.5rem;">
+                  <span>Purchased:</span>
+                  <span id="mkpi-in-qty" style="font-weight:700;color:#059669;">+0 units</span>
+                </div>
+              </div>
+              <div id="mkpi-in-count" class="adm-pill delivered" style="font-size:0.65rem;">0 entries</div>
+            </div>
+
+            <!-- Outward / Usage -->
+            <div class="adm-stat" style="border-left:4px solid #f59e0b;">
+              <div>
+                <div class="adm-stat-label" style="color:#d97706;">📤 Outward (-Usage)</div>
+                <div id="mkpi-out-value" class="adm-stat-value" style="color:#d97706;">₹ 0.00</div>
+                <div class="adm-stat-trend" style="display:flex;justify-content:space-between;gap:0.5rem;">
+                  <span>Consumed:</span>
+                  <span id="mkpi-out-qty" style="font-weight:700;color:#d97706;">-0 units</span>
+                </div>
+              </div>
+              <div id="mkpi-out-count" class="adm-pill pending" style="font-size:0.65rem;">0 entries</div>
+            </div>
+
+            <!-- Net Movement -->
+            <div class="adm-stat" style="border-left:4px solid #0ea5e9;">
+              <div>
+                <div class="adm-stat-label" style="color:#0284c7;">⚖️ Net Movement</div>
+                <div id="mkpi-net-value" class="adm-stat-value" style="color:#0284c7;">₹ 0.00</div>
+                <div class="adm-stat-trend" style="display:flex;justify-content:space-between;gap:0.5rem;">
+                  <span>Net Diff:</span>
+                  <span id="mkpi-net-qty" style="font-weight:700;color:#0284c7;">0 units</span>
+                </div>
+              </div>
+              <div id="mkpi-active-items" class="adm-pill confirmed" style="font-size:0.65rem;">0 SKUs</div>
+            </div>
+
+            <!-- Closing Balance -->
+            <div class="adm-stat" style="border-left:4px solid #6366f1;">
+              <div>
+                <div class="adm-stat-label" style="color:#4f46e5;">💰 Closing Balance</div>
+                <div id="mkpi-closing-value" class="adm-stat-value" style="color:#4f46e5;">₹ 0.00</div>
+                <div class="adm-stat-trend" style="display:flex;justify-content:space-between;gap:0.5rem;">
+                  <span>Closing Stock:</span>
+                  <span id="mkpi-closing-qty" style="font-weight:700;color:var(--adm-text);">0 units</span>
+                </div>
+              </div>
+              <div class="adm-pill delivered" style="font-size:0.65rem;background:#eef2ff;color:#4f46e5;">End</div>
+            </div>
+          </div>
+
+          <!-- Day-by-Day Movement (FIFO valued) -->
+          <div class="adm-card" style="padding:1rem;margin-bottom:1.25rem;">
+            <div class="adm-card-head" style="margin-bottom:0.5rem;">
+              <span style="font-weight:800;font-size:0.9rem;color:#4f46e5;display:flex;align-items:center;gap:0.4rem;">📆 Roz ka IN / OUT (FIFO ₹)</span>
+              <span id="period-daily-badge" class="adm-pill confirmed">0 days</span>
+            </div>
+            <p id="period-daily-note" style="font-size:0.72rem;color:var(--adm-muted);margin:0 0 0.6rem;">OUT hamesha sabse purane purchase lot se hota hai (FIFO), isliye ₹ ka hisab sahi rehta hai.</p>
+            <div class="adm-table-wrap" style="max-height:460px;overflow-y:auto;">
+              <table class="adm-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>IN (Items &amp; ₹)</th>
+                    <th style="text-align:right;color:#059669;">IN Total (₹)</th>
+                    <th>OUT (Items &amp; FIFO ₹)</th>
+                    <th style="text-align:right;color:#e11d48;">OUT Total (₹)</th>
+                    <th style="text-align:right;">Day Closing (₹)</th>
+                  </tr>
+                </thead>
+                <tbody id="period-daily-body"></tbody>
+                <tfoot id="period-daily-foot" style="background:#f1ede6;font-weight:800;border-top:2px solid var(--adm-border);"></tfoot>
+              </table>
+            </div>
+          </div>
+
+          <!-- Smart insights: reorder alerts + stock age -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem;margin-bottom:1.25rem;">
+            <div class="adm-card" style="padding:1rem;">
+              <div class="adm-card-head" style="margin-bottom:0.6rem;">
+                <span style="font-weight:800;font-size:0.85rem;color:#d97706;">🛒 Kya mangwana hai (Reorder)</span>
+                <span id="stk-reorder-badge" class="adm-pill pending">0 items</span>
+              </div>
+              <div id="stk-reorder-list" style="display:flex;flex-direction:column;gap:0.35rem;"></div>
+            </div>
+            <div class="adm-card" style="padding:1rem;">
+              <div class="adm-card-head" style="margin-bottom:0.6rem;">
+                <span style="font-weight:800;font-size:0.85rem;color:#4f46e5;">⏳ Purana stock (pehle use karein)</span>
+              </div>
+              <div id="stk-aging-list" style="display:flex;flex-direction:column;gap:0.35rem;"></div>
+            </div>
+          </div>
+
+          <!-- Category Breakdown Cards (7 Stock Groups) -->
+          <div class="adm-card" style="padding:1.15rem;margin-bottom:1.25rem;">
+            <div class="adm-card-head" style="margin-bottom:1rem;border-bottom:1px solid var(--adm-border);padding-bottom:0.6rem;">
+              <h3 class="adm-card-title" style="margin:0;display:flex;align-items:center;gap:0.4rem;">
+                <span>🏷️</span> Category-Wise Spend &amp; Usage (7 Stock Groups)
+              </h3>
+              <span style="font-size:0.75rem;color:var(--adm-muted);">Purchases vs Consumption Breakdown</span>
+            </div>
+            <div id="monthly-categories-grid" class="stk-cat-grid">
+              <!-- Dynamically rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Leaderboards: Top Items Gone (Quantity & Cost) -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;margin-bottom:1.25rem;">
+            <!-- Top Qty Gone -->
+            <div class="adm-card" style="padding:1rem;">
+              <div class="adm-card-head" style="margin-bottom:0.75rem;border-bottom:1px solid #fecdd3;padding-bottom:0.5rem;">
+                <h4 style="margin:0;font-size:0.8rem;font-weight:800;color:#9f1239;text-transform:uppercase;">
+                  <span>🔥</span> Top Items — Most Balance Gone (By Qty)
+                </h4>
+                <span class="adm-pill cancelled" style="font-size:0.65rem;">Kitchen Usage</span>
+              </div>
+              <div id="monthly-top-qty-gone-list" style="display:flex;flex-direction:column;gap:0.4rem;">
+                <!-- Dynamically rendered via JS -->
+              </div>
+            </div>
+
+            <!-- Top Cost Gone -->
+            <div class="adm-card" style="padding:1rem;">
+              <div class="adm-card-head" style="margin-bottom:0.75rem;border-bottom:1px solid #fed7aa;padding-bottom:0.5rem;">
+                <h4 style="margin:0;font-size:0.8rem;font-weight:800;color:#9a3412;text-transform:uppercase;">
+                  <span>💸</span> Top Items — Highest Cost Gone (By Total ₹)
+                </h4>
+                <span class="adm-pill pending" style="font-size:0.65rem;">Value Consumed</span>
+              </div>
+              <div id="monthly-top-value-gone-list" style="display:flex;flex-direction:column;gap:0.4rem;">
+                <!-- Dynamically rendered via JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Monthly Calculation Master Matrix Ledger Table -->
+          <div class="adm-card" style="margin-bottom:1.25rem;padding:1rem;">
+            <div class="adm-card-head" style="margin-bottom:0.75rem;flex-wrap:wrap;gap:0.75rem;">
+              <div>
+                <h3 class="adm-card-title" style="margin:0;display:flex;align-items:center;gap:0.4rem;">
+                  <span>📋</span> Stock Calculation Master Ledger
+                  <span id="monthly-matrix-count-badge" class="adm-pill confirmed">0 items</span>
+                </h3>
+                <p style="margin:2px 0 0;font-size:0.72rem;color:var(--adm-muted);">Opening Stock + Purchases (IN) - Balance Gone (OUT) = Ending Balance &amp; Valuation</p>
+              </div>
+
+              <div class="stock-no-print" style="display:flex;align-items:center;gap:0.5rem;">
+                <select id="monthly-cat-filter" class="adm-select" style="font-size:0.75rem;padding:0.3rem 0.65rem;">
+                  <option value="all">Category - All 7 Groups</option>
+                  <option value="Bhusimal & Spices">1. 🌾 Bhusimal &amp; Spices</option>
+                  <option value="Dairy Items">2. 🥛 Dairy Items</option>
+                  <option value="Cold Drinks">3. 🥤 Cold Drinks</option>
+                  <option value="Fresh Vegetables">4. 🥦 Fresh Vegetables</option>
+                  <option value="Ice Cream">5. 🍦 Ice Cream</option>
+                  <option value="Packaging & Carry Bags">6. 📦 Carry Bags &amp; Packaging</option>
+                  <option value="Cleaning & Washings">7. 🧹 Washings &amp; Cleaning</option>
+                </select>
+
+                <select id="monthly-activity-filter" class="adm-select" style="font-size:0.75rem;padding:0.3rem 0.65rem;">
+                  <option value="all">Activity - All Items</option>
+                  <option value="consumed">🔥 Balance Gone (OUT &gt; 0)</option>
+                  <option value="moved">Moved (IN &gt; 0 or OUT &gt; 0)</option>
+                  <option value="purchased">Purchased Only (IN &gt; 0)</option>
+                  <option value="low">Low Ending Stock (≤ Min)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="adm-table-wrap" style="max-height:420px;overflow-y:auto;">
+              <table class="adm-table">
+                <thead>
+                  <tr>
+                    <th>SKU &amp; ITEM NAME</th>
+                    <th>CATEGORY</th>
+                    <th>UNIT</th>
+                    <th style="text-align:right;">COST (₹)</th>
+                    <th style="text-align:right;">OPENING STOCK</th>
+                    <th style="text-align:right;">PURCHASES (+)</th>
+                    <th style="text-align:right;color:#e11d48;">🔥 BALANCE GONE (-OUT)</th>
+                    <th style="text-align:right;">CLOSING STOCK</th>
+                    <th style="text-align:right;">CLOSING VALUE (₹)</th>
+                    <th style="text-align:center;">STATUS</th>
+                    <th style="text-align:center;" class="stock-no-print">LEDGER</th>
+                  </tr>
+                </thead>
+                <tbody id="monthly-matrix-body">
+                  <!-- Dynamically rendered via JS -->
+                </tbody>
+                <tfoot id="monthly-matrix-foot" style="background:#f1ede6;font-weight:800;border-top:2px solid var(--adm-border);">
+                  <!-- Summary totals rendered dynamically -->
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <!-- Side-by-Side Monthly IN & OUT Ledgers -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:1rem;">
+            <!-- Period IN Table -->
+            <div class="adm-card" style="padding:1rem;">
+              <div class="adm-card-head" style="margin-bottom:0.75rem;">
+                <span style="font-weight:800;font-size:0.85rem;color:#059669;display:flex;align-items:center;gap:0.4rem;">📥 Period Purchases (Stock IN)</span>
+                <span id="monthly-badge-in-count" class="adm-pill delivered">0 entries</span>
+              </div>
+              <div class="adm-table-wrap" style="max-height:280px;overflow-y:auto;">
+                <table class="adm-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>SKU</th>
+                      <th>Description</th>
+                      <th style="text-align:right;">Qty</th>
+                      <th style="text-align:right;">Amount (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="monthly-in-body">
+                    <!-- Dynamically rendered via JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Period OUT Table -->
+            <div class="adm-card" style="padding:1rem;">
+              <div class="adm-card-head" style="margin-bottom:0.75rem;">
+                <span style="font-weight:800;font-size:0.85rem;color:#d97706;display:flex;align-items:center;gap:0.4rem;">📤 Period Usage (Stock OUT)</span>
+                <span id="monthly-badge-out-count" class="adm-pill pending">0 entries</span>
+              </div>
+              <div class="adm-table-wrap" style="max-height:280px;overflow-y:auto;">
+                <table class="adm-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>SKU</th>
+                      <th>Description</th>
+                      <th style="text-align:right;">Qty</th>
+                      <th style="text-align:right;">Cost (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="monthly-out-body">
+                    <!-- Dynamically rendered via JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+                    <!-- Dynamically rendered via JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
