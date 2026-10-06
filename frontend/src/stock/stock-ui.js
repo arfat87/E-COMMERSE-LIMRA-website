@@ -117,80 +117,102 @@ function render() {
         <!-- Card 1: Opening -->
         <div class="stk-card-kpi open">
           <div class="stk-kpi-sub">
-            <span>Opening Balance</span>
+            <span class="stk-kpi-badge open">📦 Starting Stock</span>
             <span>Week Start</span>
           </div>
           <div class="stk-kpi-val">${inr(period.totals.openValue)}</div>
-          <div class="stk-kpi-foot">${period.totals.openItems} items in stock</div>
+          <div class="stk-kpi-foot"><strong>${period.totals.openItems}</strong> items on hand</div>
         </div>
 
         <!-- Card 2: Inward Purchases -->
         <div class="stk-card-kpi in">
           <div class="stk-kpi-sub">
-            <span style="color:#047857;">+ Purchases (IN)</span>
-            <span>+ ${period.totals.inCount} entries</span>
+            <span class="stk-kpi-badge in">➕ Purchases (+ IN)</span>
+            <span>+ ${period.totals.inCount} bills</span>
           </div>
-          <div class="stk-kpi-val">+ ${inr(period.totals.inValue)}</div>
-          <div class="stk-kpi-foot">Total added to inventory</div>
+          <div class="stk-kpi-val in">+ ${inr(period.totals.inValue)}</div>
+          <div class="stk-kpi-foot">Added to inventory this week</div>
         </div>
 
         <!-- Card 3: Outward Usage -->
         <div class="stk-card-kpi out">
           <div class="stk-kpi-sub">
-            <span style="color:#b45309;">− Kitchen Usage (OUT)</span>
-            <span>− ${period.totals.outCount} entries</span>
+            <span class="stk-kpi-badge out">➖ Kitchen Usage (− OUT)</span>
+            <span>− ${period.totals.outCount} issues</span>
           </div>
-          <div class="stk-kpi-val">− ${inr(period.totals.outValue)}</div>
-          <div class="stk-kpi-foot">Consumed (FIFO cost)</div>
+          <div class="stk-kpi-val out">− ${inr(period.totals.outValue)}</div>
+          <div class="stk-kpi-foot">Consumed (FIFO food costing)</div>
         </div>
 
         <!-- Card 4: Closing Balance -->
         <div class="stk-card-kpi close">
           <div class="stk-kpi-sub">
-            <span style="color:#4338ca;">= Closing Balance</span>
+            <span class="stk-kpi-badge close">🏁 Closing Balance (=)</span>
             <span>Week End</span>
           </div>
-          <div class="stk-kpi-val">${inr(period.totals.closeValue)}</div>
-          <div class="stk-kpi-foot">${period.totals.closeItems} items in stock</div>
+          <div class="stk-kpi-val close">${inr(period.totals.closeValue)}</div>
+          <div class="stk-kpi-foot"><strong>${period.totals.closeItems}</strong> items remaining</div>
         </div>
 
         <!-- Card 5: Current Live Stock -->
         <div class="stk-card-kpi current">
           <div class="stk-kpi-sub">
-            <span style="color:#0284c7;">Current Valuation</span>
-            <span>Live Today</span>
+            <span class="stk-kpi-badge current">⚡ Live Stock Today</span>
+            <span>Real-time</span>
           </div>
-          <div class="stk-kpi-val">${inr(liveValuation)}</div>
-          <div class="stk-kpi-foot">Total stock on hand right now</div>
+          <div class="stk-kpi-val current">${inr(liveValuation)}</div>
+          <div class="stk-kpi-foot">Physical on-shelf valuation</div>
         </div>
       </div>
 
-      <!-- 3. Balance Check Banner -->
+      <!-- 3. Balance Check Verification Bar -->
       <div class="stk-status-banner ${period.balanced ? 'balanced' : 'discrepancy'}">
-        <div>
-          ${period.balanced
-            ? `<span>✅ <strong>Hisab Balanced:</strong> Opening (${inr(period.totals.openValue)}) + Purchases (${inr(period.totals.inValue)}) − Usage (${inr(period.totals.outValue)}) = Closing (${inr(period.totals.closeValue)})</span>`
-            : `<span>⚠️ <strong>Variance Detected:</strong> ₹ ${Math.abs(period.totals.adjustment).toFixed(2)} adjustment difference.</span>`
-          }
+        <div class="stk-formula-wrap">
+          <span class="stk-formula-tag ${period.balanced ? 'ok' : 'warn'}">
+            ${period.balanced ? '✅ Hisab Balanced' : '⚠️ Variance Detected'}
+          </span>
+          <div class="stk-formula-chips">
+            <span class="stk-eq-chip open">Opening ${inr(period.totals.openValue)}</span>
+            <span class="stk-eq-math-sign">+</span>
+            <span class="stk-eq-chip in">Purchases +${inr(period.totals.inValue)}</span>
+            <span class="stk-eq-math-sign">−</span>
+            <span class="stk-eq-chip out">Usage −${inr(period.totals.outValue)}</span>
+            <span class="stk-eq-math-sign">=</span>
+            <span class="stk-eq-chip close">Closing ${inr(period.totals.closeValue)}</span>
+          </div>
         </div>
-        <div style="font-size:0.75rem;opacity:0.85;">
-          ${currentWeek.rangeLabel}
+        <div class="stk-formula-date-tag">
+          🗓️ ${currentWeek.title} (${currentWeek.rangeLabel})
         </div>
       </div>
 
-      <!-- 4. 7-Day Movement Strip -->
+      <!-- 4. 7-Day Movement Strip (with explicit IN / OUT / CLOSE labels) -->
       <div class="stk-days-strip">
         ${period.days.map(d => {
           const isToday = d.key === todayKey();
           return `
             <div class="stk-day-card ${isToday ? 'today' : ''}" data-day="${d.key}">
               <div class="stk-day-head">
-                <span>${shortDate(d.date)}</span>
-                <span style="color:#64748b;">${dayName(d.date)}</span>
+                <div class="stk-day-head-left">
+                  <span class="stk-day-name">${dayName(d.date)}</span>
+                  <span class="stk-day-date">${shortDate(d.date)}</span>
+                </div>
+                ${isToday ? '<span class="stk-day-today-pill">TODAY</span>' : ''}
               </div>
-              <div class="stk-day-in">${d.inValue > 0 ? '+ ' + inr(d.inValue) : '—'}</div>
-              <div class="stk-day-out">${d.outValue > 0 ? '− ' + inr(d.outValue) : '—'}</div>
-              <div class="stk-day-close">${inr(d.closeValue)}</div>
+              <div class="stk-day-body">
+                <div class="stk-day-row in">
+                  <span class="stk-day-lbl in">IN</span>
+                  <span class="stk-day-val in">${d.inValue > 0 ? '+ ' + inr(d.inValue) : '—'}</span>
+                </div>
+                <div class="stk-day-row out">
+                  <span class="stk-day-lbl out">OUT</span>
+                  <span class="stk-day-val out">${d.outValue > 0 ? '− ' + inr(d.outValue) : '—'}</span>
+                </div>
+                <div class="stk-day-row close">
+                  <span class="stk-day-lbl close">CLOSE</span>
+                  <span class="stk-day-val close">${inr(d.closeValue)}</span>
+                </div>
+              </div>
             </div>
           `;
         }).join('')}
@@ -256,97 +278,121 @@ function renderWeeklyTab(period) {
 
   return `
     <!-- Category Filter Chips -->
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;">
-      <div style="display:flex;gap:0.35rem;flex-wrap:wrap;">
-        <button type="button" class="stk-pill ${categoryFilter === 'all' ? 'ok' : ''}" data-cat="all" style="cursor:pointer;background:${categoryFilter === 'all' ? '#4f46e5' : '#f1f5f9'};color:${categoryFilter === 'all' ? '#fff' : '#475569'};">All Categories</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.6rem;margin-bottom:0.85rem;">
+      <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+        <button type="button" class="stk-cat-pill ${categoryFilter === 'all' ? 'active' : ''}" data-cat="all">All Categories</button>
         ${CATEGORIES.map(c => `
-          <button type="button" class="stk-pill" data-cat="${c}" style="cursor:pointer;background:${categoryFilter === c ? '#4f46e5' : '#f1f5f9'};color:${categoryFilter === c ? '#fff' : '#475569'};">
-            ${CATEGORY_ICONS[c] || ''} ${c}
+          <button type="button" class="stk-cat-pill ${categoryFilter === c ? 'active' : ''}" data-cat="${c}">
+            <span>${CATEGORY_ICONS[c] || '📦'}</span> <span>${c}</span>
           </button>
         `).join('')}
       </div>
 
-      <label style="font-size:0.78rem;font-weight:700;color:#475569;display:flex;align-items:center;gap:0.35rem;cursor:pointer;">
+      <label style="font-size:0.8rem;font-weight:700;color:#334155;display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
         <input type="checkbox" id="stk-chk-movement" ${movementOnlyFilter ? 'checked' : ''} style="cursor:pointer;" />
         Show only items with activity
       </label>
     </div>
 
-    <!-- Weekly Matrix Table -->
+    <!-- Grouped Two-Tier Weekly Matrix Table -->
     <div class="stk-table-card">
       <div class="stk-table-scroll">
         <table class="stk-table">
           <thead>
-            <tr>
-              <th>Item &amp; SKU</th>
+            <!-- Tier 1: High-Contrast Functional Group Headers -->
+            <tr class="stk-th-tier1">
+              <th colspan="4" class="stk-th-grp item">📦 Item Details</th>
+              <th colspan="2" class="stk-th-grp open">Starting Stock</th>
+              <th colspan="2" class="stk-th-grp in">📥 Purchases (+ IN)</th>
+              <th colspan="2" class="stk-th-grp out">📤 Kitchen Usage (− OUT)</th>
+              <th colspan="2" class="stk-th-grp close">🏁 Closing Balance (=)</th>
+              <th colspan="2" class="stk-th-grp action">Status &amp; Action</th>
+            </tr>
+            <!-- Tier 2: Column Sub-Headers -->
+            <tr class="stk-th-tier2">
+              <th style="min-width:180px;">Item &amp; SKU</th>
               <th>Category</th>
               <th>Unit</th>
               <th class="num">Rate (₹)</th>
-              <th class="num">Opening Qty</th>
-              <th class="num">Opening (₹)</th>
-              <th class="num" style="color:#047857;">+ IN Qty</th>
-              <th class="num" style="color:#047857;">+ IN (₹)</th>
-              <th class="num" style="color:#b45309;">− OUT Qty</th>
-              <th class="num" style="color:#b45309;">− OUT (₹)</th>
-              <th class="num" style="color:#4338ca;">Closing Qty</th>
-              <th class="num" style="color:#4338ca;">Closing (₹)</th>
+              
+              <!-- Opening -->
+              <th class="num stk-subth-open">Qty</th>
+              <th class="num stk-subth-open">Value (₹)</th>
+              
+              <!-- IN -->
+              <th class="num stk-subth-in">+ Qty</th>
+              <th class="num stk-subth-in">+ Value (₹)</th>
+              
+              <!-- OUT -->
+              <th class="num stk-subth-out">− Qty</th>
+              <th class="num stk-subth-out">− Value (₹)</th>
+              
+              <!-- Closing -->
+              <th class="num stk-subth-close">Net Qty</th>
+              <th class="num stk-subth-close">Net Value (₹)</th>
+              
+              <!-- Status & Actions -->
               <th style="text-align:center;">Status</th>
-              <th style="text-align:center;">Action</th>
+              <th style="text-align:center;min-width:110px;">Quick Action</th>
             </tr>
           </thead>
           <tbody>
             ${filtered.length === 0
-              ? `<tr><td colspan="14" style="text-align:center;padding:2.5rem;color:#94a3b8;font-weight:600;">No items found matching the selected filters.</td></tr>`
+              ? `<tr><td colspan="14" style="text-align:center;padding:2.8rem;color:#94a3b8;font-weight:700;">No items found matching the selected filters.</td></tr>`
               : filtered.map(r => `
-                <tr>
+                <tr class="stk-row">
+                  <!-- Item Details -->
                   <td>
-                    <div style="font-weight:800;color:#0f172a;">${r.name}</div>
-                    <div style="font-size:0.72rem;font-family:monospace;color:#6366f1;">${r.sku}</div>
+                    <div class="stk-item-name">${r.name}</div>
+                    <div class="stk-item-sku">${r.sku}</div>
                   </td>
-                  <td><span class="stk-pill" style="background:#f1f5f9;color:#334155;">${r.category}</span></td>
-                  <td style="font-family:monospace;font-size:0.75rem;color:#64748b;">${r.unit}</td>
-                  <td class="num font-mono" style="color:#475569;">₹ ${r.rate.toFixed(2)}</td>
+                  <td><span class="stk-pill-cat">${r.category}</span></td>
+                  <td class="stk-cell-unit">${r.unit}</td>
+                  <td class="num stk-cell-rate">₹ ${r.rate.toFixed(2)}</td>
 
-                  <!-- Opening -->
-                  <td class="num font-mono font-bold">${fmtQty(r.openQty)}</td>
-                  <td class="num font-mono" style="color:#64748b;">${inr(r.openValue)}</td>
+                  <!-- Opening Stock -->
+                  <td class="num font-mono stk-cell-open-qty">${fmtQty(r.openQty)}</td>
+                  <td class="num font-mono stk-cell-open-val">${inr(r.openValue)}</td>
 
-                  <!-- IN -->
-                  <td class="num font-mono font-bold" style="color:#047857;">${r.inQty > 0 ? '+' + fmtQty(r.inQty) : '—'}</td>
-                  <td class="num font-mono font-bold" style="color:#047857;">${r.inValue > 0 ? inr(r.inValue) : '—'}</td>
+                  <!-- Inward Purchases (IN) -->
+                  <td class="num font-mono stk-cell-in-qty">${r.inQty > 0 ? '+' + fmtQty(r.inQty) : '—'}</td>
+                  <td class="num font-mono stk-cell-in-val">${r.inValue > 0 ? inr(r.inValue) : '—'}</td>
 
-                  <!-- OUT -->
-                  <td class="num font-mono font-bold" style="color:#b45309;">${r.outQty > 0 ? '−' + fmtQty(r.outQty) : '—'}</td>
-                  <td class="num font-mono font-bold" style="color:#b45309;">${r.outValue > 0 ? inr(r.outValue) : '—'}</td>
+                  <!-- Kitchen Usage (OUT) -->
+                  <td class="num font-mono stk-cell-out-qty">${r.outQty > 0 ? '−' + fmtQty(r.outQty) : '—'}</td>
+                  <td class="num font-mono stk-cell-out-val">${r.outValue > 0 ? inr(r.outValue) : '—'}</td>
 
-                  <!-- Closing -->
-                  <td class="num font-mono font-bold" style="color:#4338ca;">${fmtQty(r.closeQty)}</td>
-                  <td class="num font-mono font-bold" style="color:#4338ca;">${inr(r.closeValue)}</td>
+                  <!-- Closing Balance -->
+                  <td class="num font-mono stk-cell-close-qty">${fmtQty(r.closeQty)}</td>
+                  <td class="num font-mono stk-cell-close-val">${inr(r.closeValue)}</td>
 
                   <!-- Status -->
                   <td style="text-align:center;">
                     <span class="stk-pill ${r.status.toLowerCase()}">${r.status}</span>
                   </td>
 
-                  <!-- Actions -->
+                  <!-- Quick Actions -->
                   <td style="text-align:center;white-space:nowrap;">
-                    <button type="button" class="stk-btn-icon" data-quick-in="${r.sku}" title="Quick IN" style="color:#047857;">+IN</button>
-                    <button type="button" class="stk-btn-icon" data-quick-out="${r.sku}" title="Quick OUT" style="color:#b45309;">−OUT</button>
+                    <button type="button" class="stk-btn-quick-in" data-quick-in="${r.sku}" title="Quick Stock IN">+IN</button>
+                    <button type="button" class="stk-btn-quick-out" data-quick-out="${r.sku}" title="Quick Stock OUT">−OUT</button>
                   </td>
                 </tr>
               `).join('')
             }
           </tbody>
           <tfoot>
-            <tr>
-              <td colspan="5" style="text-transform:uppercase;">Weekly Totals (${filtered.length} Items)</td>
-              <td class="num font-mono font-bold">${inr(filtered.reduce((s, r) => s + r.openValue, 0))}</td>
-              <td></td>
-              <td class="num font-mono font-bold" style="color:#047857;">+ ${inr(filtered.reduce((s, r) => s + r.inValue, 0))}</td>
-              <td></td>
-              <td class="num font-mono font-bold" style="color:#b45309;">− ${inr(filtered.reduce((s, r) => s + r.outValue, 0))}</td>
-              <td></td>
-              <td class="num font-mono font-bold" style="color:#4338ca;">${inr(filtered.reduce((s, r) => s + r.closeValue, 0))}</td>
+            <tr class="stk-tfoot-row">
+              <td colspan="4" class="stk-tfoot-label">
+                <span>WEEKLY TOTALS (${filtered.length} ITEMS)</span>
+              </td>
+              <td class="num"></td>
+              <td class="num font-mono stk-tfoot-open">${inr(filtered.reduce((s, r) => s + r.openValue, 0))}</td>
+              <td class="num"></td>
+              <td class="num font-mono stk-tfoot-in">+ ${inr(filtered.reduce((s, r) => s + r.inValue, 0))}</td>
+              <td class="num"></td>
+              <td class="num font-mono stk-tfoot-out">− ${inr(filtered.reduce((s, r) => s + r.outValue, 0))}</td>
+              <td class="num"></td>
+              <td class="num font-mono stk-tfoot-close">${inr(filtered.reduce((s, r) => s + r.closeValue, 0))}</td>
               <td colspan="2"></td>
             </tr>
           </tfoot>
@@ -370,41 +416,41 @@ function renderDailyTab(period, data) {
         <button type="button" class="stk-btn-subtle" id="stk-btn-daily-today">Today</button>
       </div>
 
-      <div style="display:flex;gap:1rem;font-size:0.85rem;font-weight:700;">
-        <span style="color:#047857;">Total IN: + ${inr(totalIn)}</span>
-        <span style="color:#b45309;">Total OUT: − ${inr(totalOut)}</span>
+      <div style="display:flex;gap:0.65rem;">
+        <span class="stk-pill ok" style="font-size:0.84rem;padding:0.35rem 0.75rem;">Total IN: + ${inr(totalIn)}</span>
+        <span class="stk-pill low" style="font-size:0.84rem;padding:0.35rem 0.75rem;">Total OUT: − ${inr(totalOut)}</span>
       </div>
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(420px, 1fr));gap:1rem;">
       <!-- Day IN Entries -->
       <div class="stk-table-card">
-        <div style="padding:0.85rem 1.1rem;background:#f0fdf4;border-bottom:1px solid #bbf7d0;display:flex;align-items:center;justify-content:space-between;">
-          <strong style="color:#047857;">📥 Stock IN Entries (${dayIns.length})</strong>
-          <span style="font-weight:800;font-family:monospace;color:#047857;">+ ${inr(totalIn)}</span>
+        <div style="padding:0.85rem 1.1rem;background:#ecfdf5;border-bottom:2px solid #a7f3d0;display:flex;align-items:center;justify-content:space-between;">
+          <strong style="color:#065f46;font-size:0.92rem;">📥 Stock IN Entries (${dayIns.length})</strong>
+          <span style="font-weight:900;font-family:ui-monospace,monospace;color:#047857;font-size:1.05rem;">+ ${inr(totalIn)}</span>
         </div>
         <div class="stk-table-scroll" style="max-height:400px;">
           <table class="stk-table">
             <thead>
-              <tr>
-                <th>Item &amp; SKU</th>
-                <th class="num">Qty</th>
-                <th class="num">Rate</th>
-                <th class="num">Total (₹)</th>
-                <th style="text-align:center;">Del</th>
+              <tr style="background:#f0fdf4;">
+                <th style="background:#f0fdf4;color:#065f46;">Item &amp; SKU</th>
+                <th class="num" style="background:#f0fdf4;color:#065f46;">Qty</th>
+                <th class="num" style="background:#f0fdf4;color:#065f46;">Rate</th>
+                <th class="num" style="background:#f0fdf4;color:#065f46;">Total (₹)</th>
+                <th style="text-align:center;background:#f0fdf4;color:#065f46;">Del</th>
               </tr>
             </thead>
             <tbody>
               ${dayIns.length === 0
-                ? `<tr><td colspan="5" style="text-align:center;padding:2rem;color:#94a3b8;">No purchase entries on this day.</td></tr>`
+                ? `<tr><td colspan="5" style="text-align:center;padding:2.5rem;color:#94a3b8;font-weight:600;">No purchase entries on this day.</td></tr>`
                 : dayIns.map(e => `
                   <tr>
                     <td>
-                      <div style="font-weight:700;">${e.name || e.description}</div>
-                      <div style="font-size:0.7rem;font-family:monospace;color:#64748b;">${e.sku} ${e.supplier ? '· ' + e.supplier : ''}</div>
+                      <div style="font-weight:800;color:#0f172a;">${e.name || e.description}</div>
+                      <div style="font-size:0.72rem;font-family:monospace;color:#4f46e5;">${e.sku} ${e.supplier ? '· ' + e.supplier : ''}</div>
                     </td>
                     <td class="num font-mono font-bold" style="color:#047857;">+${fmtQty(e.qty)} ${e.unit || ''}</td>
-                    <td class="num font-mono">₹ ${safeNum(e.rate, 0).toFixed(2)}</td>
+                    <td class="num font-mono" style="color:#475569;">₹ ${safeNum(e.rate, 0).toFixed(2)}</td>
                     <td class="num font-mono font-bold" style="color:#047857;">${inr(e.amount)}</td>
                     <td style="text-align:center;">
                       <button type="button" class="stk-btn-icon" data-del-in="${e.id}" style="color:#be123c;" title="Delete">✕</button>
@@ -419,31 +465,31 @@ function renderDailyTab(period, data) {
 
       <!-- Day OUT Entries -->
       <div class="stk-table-card">
-        <div style="padding:0.85rem 1.1rem;background:#fffbeb;border-bottom:1px solid #fde68a;display:flex;align-items:center;justify-content:space-between;">
-          <strong style="color:#b45309;">📤 Stock OUT Entries (${dayOuts.length})</strong>
-          <span style="font-weight:800;font-family:monospace;color:#b45309;">− ${inr(totalOut)}</span>
+        <div style="padding:0.85rem 1.1rem;background:#fffbeb;border-bottom:2px solid #fde68a;display:flex;align-items:center;justify-content:space-between;">
+          <strong style="color:#92400e;font-size:0.92rem;">📤 Stock OUT Entries (${dayOuts.length})</strong>
+          <span style="font-weight:900;font-family:ui-monospace,monospace;color:#b45309;font-size:1.05rem;">− ${inr(totalOut)}</span>
         </div>
         <div class="stk-table-scroll" style="max-height:400px;">
           <table class="stk-table">
             <thead>
-              <tr>
-                <th>Item &amp; SKU</th>
-                <th>Reason</th>
-                <th class="num">Qty</th>
-                <th class="num">FIFO Value (₹)</th>
-                <th style="text-align:center;">Del</th>
+              <tr style="background:#fffbeb;">
+                <th style="background:#fffbeb;color:#92400e;">Item &amp; SKU</th>
+                <th style="background:#fffbeb;color:#92400e;">Reason</th>
+                <th class="num" style="background:#fffbeb;color:#92400e;">Qty</th>
+                <th class="num" style="background:#fffbeb;color:#92400e;">FIFO Cost (₹)</th>
+                <th style="text-align:center;background:#fffbeb;color:#92400e;">Del</th>
               </tr>
             </thead>
             <tbody>
               ${dayOuts.length === 0
-                ? `<tr><td colspan="5" style="text-align:center;padding:2rem;color:#94a3b8;">No usage entries on this day.</td></tr>`
+                ? `<tr><td colspan="5" style="text-align:center;padding:2.5rem;color:#94a3b8;font-weight:600;">No usage entries on this day.</td></tr>`
                 : dayOuts.map(e => `
                   <tr>
                     <td>
-                      <div style="font-weight:700;">${e.name || e.description}</div>
-                      <div style="font-size:0.7rem;font-family:monospace;color:#64748b;">${e.sku}</div>
+                      <div style="font-weight:800;color:#0f172a;">${e.name || e.description}</div>
+                      <div style="font-size:0.72rem;font-family:monospace;color:#4f46e5;">${e.sku}</div>
                     </td>
-                    <td style="font-size:0.75rem;color:#64748b;">${e.usedBy || 'Kitchen Prep'}</td>
+                    <td style="font-size:0.78rem;font-weight:600;color:#64748b;">${e.usedBy || 'Kitchen Prep'}</td>
                     <td class="num font-mono font-bold" style="color:#b45309;">−${fmtQty(e.qty)} ${e.unit || ''}</td>
                     <td class="num font-mono font-bold" style="color:#b45309;">${inr(e.amount)}</td>
                     <td style="text-align:center;">
@@ -558,12 +604,12 @@ function renderReportsTab(period, data) {
           ${CATEGORIES.map(cat => {
             const c = period.byCategory[cat] || { inValue: 0, outValue: 0, closeValue: 0 };
             return `
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:0.4rem 0.65rem;border-bottom:1px solid #f1f5f9;font-size:0.8rem;">
-                <span style="font-weight:700;">${CATEGORY_ICONS[cat] || ''} ${cat}</span>
-                <div style="display:flex;gap:0.75rem;font-family:monospace;">
-                  <span style="color:#047857;">+ ${inr(c.inValue)}</span>
-                  <span style="color:#b45309;">− ${inr(c.outValue)}</span>
-                  <span style="color:#4338ca;font-weight:800;">${inr(c.closeValue)}</span>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0.75rem;border-bottom:1px solid #f1f5f9;font-size:0.82rem;">
+                <span style="font-weight:700;color:#0f172a;">${CATEGORY_ICONS[cat] || ''} ${cat}</span>
+                <div style="display:flex;gap:0.5rem;font-family:ui-monospace,monospace;align-items:center;">
+                  <span class="stk-pill ok" style="font-size:0.72rem;padding:0.18rem 0.5rem;">IN: + ${inr(c.inValue)}</span>
+                  <span class="stk-pill low" style="font-size:0.72rem;padding:0.18rem 0.5rem;">OUT: − ${inr(c.outValue)}</span>
+                  <span class="stk-pill" style="background:#e0e7ff;color:#3730a3;font-size:0.72rem;padding:0.18rem 0.5rem;border:1px solid #c7d2fe;">Close: ${inr(c.closeValue)}</span>
                 </div>
               </div>
             `;
