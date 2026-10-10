@@ -25,20 +25,29 @@
    - [Customer Online Storefront (`frontend/index.html`)](#1-customer-online-storefront-frontendindexhtml)
    - [Dine-In Contactless Table Ordering (`frontend/table/index.html`)](#2-dine-in-contactless-table-ordering-frontendtableindexhtml)
    - [Admin Hub, POS Billing & KDS (`frontend/admin.html`)](#3-admin-hub-pos-billing--kds-frontendadminhtml)
-   - [Stock & Inventory Management (`#panel-stock`)](#4-stock--inventory-management-admin-panel-stock)
+   - [FIFO Inventory & Stock Accounting Engine (`frontend/src/stock/`)](#4-fifo-inventory--stock-accounting-engine-frontendsrcstock)
    - [Electron Desktop Windows POS (`electron/`)](#5-electron-desktop-windows-pos-electron)
    - [Google Sheets Accounting Bridge (`tools/google-apps-script/`)](#6-google-sheets-accounting-bridge-toolsgoogle-apps-script)
-5. [Item-Level GST, Billing & Calculations Engine](#-item-level-gst-billing--calculations-engine)
-6. [Thermal Printing Pipeline (KOT + Final Bill)](#-thermal-printing-pipeline-kot--final-bill)
-7. [Zero-Egress & High-Performance Caching Architecture](#-zero-egress--high-performance-caching-architecture)
-8. [Project Directory Layout](#-project-directory-layout)
-9. [REST API Reference (`/api/*`)](#-rest-api-reference-api)
-10. [Database Schema & Stored Procedures (23 Tables + RPCs)](#-database-schema--stored-procedures-23-tables--rpcs)
-11. [Environment Variables & Credentials](#-environment-variables--credentials)
-12. [Installation, Setup & Local Development](#-installation-setup--local-development)
-13. [Build, Packaging & Deployment](#-build-packaging--deployment)
-14. [Recent Problem Resolutions & Changelog](#-recent-problem-resolutions--changelog)
-15. [License & Proprietary Notice](#-license--proprietary-notice)
+5. [Stock & Inventory Engine: Logic, Functions & Types](#-stock--inventory-engine-logic-functions--types)
+   - [Month-Based 7-Day Accounting Weeks](#1-month-based-7-day-accounting-weeks)
+   - [Strict FIFO Lot Replay & Valuation Algorithm](#2-strict-fifo-lot-replay--valuation-algorithm)
+   - [Inward (IN) Pricing Mandate & Outward (OUT) Pure Quantity Consumption](#3-inward-in-pricing-mandate--outward-out-pure-quantity-consumption)
+   - [Live FIFO Preview & Lot Queue Breakdown](#4-live-fifo-preview--lot-queue-breakdown)
+   - [Weekly Movement Ledger ("Kab Kitna IN / OUT Hua")](#5-weekly-movement-ledger-kab-kitna-in--out-hua)
+   - [Active FIFO Batches Inspector Modal](#6-active-fifo-batches-inspector-modal)
+   - [Data Store, Schema & Offline Synchronization](#7-data-store-schema--offline-synchronization)
+   - [Engine Unit Test Suite (17 Tests)](#8-engine-unit-test-suite-17-tests)
+6. [Item-Level GST, Billing & Calculations Engine](#-item-level-gst-billing--calculations-engine)
+7. [Thermal Printing Pipeline (Sequential KOT + Final Bill)](#-thermal-printing-pipeline-sequential-kot--final-bill)
+8. [Zero-Egress & High-Performance Caching Architecture](#-zero-egress--high-performance-caching-architecture)
+9. [Project Directory Layout](#-project-directory-layout)
+10. [REST API Reference (`/api/*`)](#-rest-api-reference-api)
+11. [Database Schema & Stored Procedures (23 Tables + RPCs)](#-database-schema--stored-procedures-23-tables--rpcs)
+12. [Environment Variables & Credentials](#-environment-variables--credentials)
+13. [Installation, Setup & Local Development](#-installation-setup--local-development)
+14. [Build, Packaging & Deployment](#-build-packaging--deployment)
+15. [Recent Problem Resolutions & Engineering Changelog](#-recent-problem-resolutions--engineering-changelog)
+16. [License & Proprietary Notice](#-license--proprietary-notice)
 
 ---
 
@@ -46,13 +55,13 @@
 
 **LIMRA Restaurant Platform** is an enterprise-grade, omni-channel operating system and e-commerce platform purpose-built for high-volume modern restaurant operations. It unifies:
 
-- **Customer-Facing Web Storefront**: Live delivery geofencing, real-time dish search, cart management, Razorpay payment processing, order tracking, and reservations.
+- **Customer-Facing Web Storefront**: Live delivery geofencing, real-time dish search, cart management, Razorpay payment processing, order tracking, and table reservations.
 - **Contactless Dine-In Table Ordering**: Table QR scanning (Tables 1–19 across indoor and outdoor zones), multi-round ordering (`place_table_round` RPC), and cross-selling pairing recommendations.
 - **Admin POS & Billing Counter**: Walk-in billing, phone orders, hold orders, visual dish customization, table session settlement, and fast keyboard shortcuts (F1/F2).
 - **Kitchen Order Display (KDS)**: Real-time ticket progression from pending to delivered.
-- **Dual Thermal Printing Engine**: Synchronized KOT and customer tax invoice printing on 80mm/58mm thermal paper via browser driver or ESC/POS hardware.
-- **Granular Item-Level GST Control**: Selective 5% GST calculation with dish-level toggles in Admin, separating taxable and tax-exempt items.
-- **Inventory & Stock Manager**: Real-time ingredient tracking with 1-click presets and low-stock alerts.
+- **Sequential Dual Thermal Printing Engine**: Synchronized KOT and customer tax invoice printing on 80mm/58mm thermal paper via browser driver or ESC/POS hardware for Table, Pickup, and Delivery orders.
+- **Granular Item-Level GST Control**: Selective 5% GST calculation with dish-level toggles in Admin, separating taxable and tax-exempt items with proportional discount distribution.
+- **Strict FIFO Inventory & Food Costing Accounting**: Purchase rate validation on Stock IN, pure quantity entry on Stock OUT with auto-calculated FIFO consumption rates, active batch queue inspection, and comprehensive weekly movement ledgers.
 - **Google Sheets Live Sync**: Instant cloud recording of sales and menu items for accounting and reconciliation.
 
 ---
@@ -65,11 +74,12 @@ flowchart TD
         Cust["🌐 Storefront Website\n(Desktop & Mobile Web)"]
         TableQR["📱 Dine-In Table Ordering\n(Tables 1–19 QR Scans)"]
         AdminPOS["💻 Admin Hub & POS Billing\n(KDS, Billing, Analytics)"]
+        StockUI["📦 FIFO Stock & Inventory\n(Weekly Ledger, Batches)"]
         ElectronPOS["🖥️ Electron Desktop POS\n(Windows .exe Native)"]
     end
 
     subgraph FastStorage["2. Browser Local Caching (0ms Load / Low Egress)"]
-        LocalCache["LocalStorage Fast Cache\n(TTL: 10m - Menu, Combos, Areas, Orders)"]
+        LocalCache["LocalStorage Fast Cache\n(TTL: 10m - Menu, Combos, Areas, Orders, Stock)"]
     end
 
     subgraph BackendLayer["3. Node.js Native HTTP Backend (server.js / Vercel)"]
@@ -96,6 +106,7 @@ flowchart TD
     Cust <--> LocalCache
     TableQR <--> LocalCache
     AdminPOS <--> LocalCache
+    StockUI <--> LocalCache
 
     Cust --> Server
     TableQR --> Server
@@ -105,6 +116,7 @@ flowchart TD
     Cust -. Direct Queries (RLS) .-> Postgres
     TableQR -. Direct Queries (RLS) .-> Postgres
     AdminPOS -. Direct Queries (RLS) .-> Postgres
+    StockUI -. Direct Queries (RLS) .-> Postgres
 
     Server --> API_Orders
     Server --> API_Razorpay
@@ -133,7 +145,7 @@ flowchart TD
 ## 🔗 Component Connections & Data Flow
 
 ### 1. Online Order Workflow (Delivery & Pickup)
-1. **Menu Load**: Customer opens `frontend/index.html`. Base items load immediately from `frontend/src/data/menu.js` (202 dishes), overlaid with cached overrides from `localStorage` (`limra_fast_overrides`). Background request fetches live overrides and custom combos without UI blocking.
+1. **Menu Load**: Customer opens `frontend/index.html`. Base items load immediately from [`frontend/src/data/menu.js`](file:///c:/MY_ALL_ITEM/my%20all%20app/E-COMMERSE%20LIMRA%20website/frontend/src/data/menu.js) (202 dishes), overlaid with cached overrides from `localStorage` (`limra_fast_overrides`). Background request fetches live overrides and custom combos without UI blocking.
 2. **Geofencing Verification**: When customer enters delivery area or drops map pin, Leaflet coordinates are validated against `delivery_areas` polygons. Standard flat-rate or distance-based fee (₹10/km) is calculated.
 3. **Cart & GST Calculation**: Dishes are added to cart. GST is calculated at 5% **only on items where `gst_applicable !== false`**.
 4. **Checkout & Payment**:
@@ -154,7 +166,7 @@ flowchart TD
 1. **Order Assembly**: Staff picks dishes from the category pill grid, searches dishes with F1, or scans barcodes.
 2. **Settlement (F2 or Click)**: Staff clicks **"Settle & Bill"**:
    - Order status becomes `delivered`, `payment_status` becomes `paid`, `ticket_status` becomes `CLOSED`.
-   - **Both KOT + Final Tax Bill print automatically** (applicable for Table, Pickup, and Delivery orders).
+   - **Both KOT + Final Tax Bill print sequentially** (applicable for Table, Pickup, and Delivery orders).
    - Order automatically syncs to Google Sheets for ledger accounting.
 
 ---
@@ -184,15 +196,18 @@ flowchart TD
 - **Hold Orders System**: Hold in-progress orders, resume into POS cart, or visually modify items via the Hold Modal (`openHoldEditModal`).
 - **Kitchen Order Display (KDS)**: Dedicated panel organizing orders into visual stages: *Pending*, *Confirmed*, *Preparing*, *Ready*, *Delivered*, and *Cancelled*.
 - **Item-Level GST Control**: Direct toggle in dish edit and creation modals (`🧾 GST Applicable (5%)`). Dishes with GST disabled display `🧾 No GST` badges in the menu manager.
-- **Settlement Printing**: One-click settlement prints **both KOT and itemized Tax Invoice** for Table, Pickup, and Delivery orders.
+- **Settlement Printing**: One-click settlement prints **both KOT and itemized Tax Invoice** sequentially for Table, Pickup, and Delivery orders.
 - **Financial Analytics**: Chart.js revenue trend graphs, peak-hour heatmaps, payment mode distribution, and best-seller charts.
 - **Excel & PDF Exports**: Fast export engines for inventory, sales reports, and customer records (`xlsx`, `jspdf`, `jspdf-autotable`).
 
-### 4. Stock & Inventory Management (Admin `#panel-stock`)
-- **Consolidated in Admin POS**: Integrated directly into the main administrative dashboard.
-- **1-Click Quick Adjustments**: Rapid adjustment buttons (`+5`, `+10`, `-1`, `-5`) directly on inventory cards.
-- **Low-Stock Visual Warning**: Automatic color-coded badges when item quantities breach defined minimum thresholds.
-- **Comprehensive Audit Trail**: Every stock receipt and deduction tracked in `stock_items`, `stock_in`, `stock_out`, `stock_in_entries`, and `stock_out_entries`.
+### 4. FIFO Inventory & Stock Accounting Engine (`frontend/src/stock/`)
+- **Dedicated Enterprise Accounting UI**: Mounts on `#panel-stock` via [`frontend/src/admin-stock.js`](file:///c:/MY_ALL_ITEM/my%20all%20app/E-COMMERSE%20LIMRA%20website/frontend/src/admin-stock.js) and [`frontend/src/stock/stock-ui.js`](file:///c:/MY_ALL_ITEM/my%20all%20app/E-COMMERSE%20LIMRA%20website/frontend/src/stock/stock-ui.js).
+- **Mathematical FIFO Valuation**: Pure calculation engine in [`frontend/src/stock/stock-engine.js`](file:///c:/MY_ALL_ITEM/my%20all%20app/E-COMMERSE%20LIMRA%20website/frontend/src/stock/stock-engine.js) replaying all purchase and usage lots chronologically.
+- **Mandatory Purchase Price on Inward Stock**: Mandates unit purchase cost on Stock IN with dynamic Rate $\times$ Qty $\leftrightarrow$ Total Cost sync.
+- **Pure Quantity Outward Consumption**: Users enter only quantity for kitchen consumption; FIFO cost and unit rate are auto-computed.
+- **Live FIFO Impact Breakdown**: Real-time preview of which active purchase lots are consumed (oldest first).
+- **Weekly Movement Ledger ("Kab Kitna IN / OUT Hua")**: Complete timeline of every transaction with dates, badges, quantities, purchase/consumed rates, totals, and reasons.
+- **Active FIFO Batches Inspector Modal**: Visual inspection of unconsumed batches currently on shelf with consumption priority badges.
 
 ### 5. Electron Desktop Windows POS (`electron/`)
 - **Packaged Windows Application**: Native `.exe` built with `electron-builder` for POS terminals and cashier counter machines.
@@ -204,19 +219,212 @@ flowchart TD
 
 ---
 
+## 📦 Stock & Inventory Engine: Logic, Functions & Types
+
+The LIMRA stock management system implements strict **FIFO (First In, First Out)** inventory valuation and a month-based 7-day weekly accounting framework.
+
+### 1. Month-Based 7-Day Accounting Weeks
+
+Rather than shifting ISO calendar weeks that cross month boundaries arbitrarily, the engine divides each calendar month into standardized 7-day periods:
+
+$$\text{Week Index} = \min\left(5, \left\lfloor\frac{\text{Day of Month} - 1}{7}\right\rfloor + 1\right)$$
+
+- **Week 1:** Days 1 to 7
+- **Week 2:** Days 8 to 14
+- **Week 3:** Days 15 to 21
+- **Week 4:** Days 22 to 28
+- **Week 5:** Days 29 to End of Month (Days 29–30/31, Day 29 in leap February, or omitted in 28-day February)
+
+#### Exported Functions in `stock-engine.js`:
+- `getWeekInfo(date)`: Returns `{ key, year, month, index, weeksInMonth, start, end, dayCount, title, rangeLabel, label }`.
+- `shiftWeek(currentWeek, delta)`: Shifts week back (`-1`) or forward (`+1`) with automatic month rollover.
+- `getMonthInfo(ymStr)`: Returns month boundary timestamps for `YYYY-MM`.
+
+---
+
+### 2. Strict FIFO Lot Replay & Valuation Algorithm
+
+The FIFO calculation function `computePeriod(data, start, end)` replays the complete historical timeline of inventory transactions from the beginning of time:
+
+```
+Timeline Replay Order:
+1. Historical Transactions Sorted Chronologically (Date ASC, ms Timestamp ASC).
+2. For same-day events: Inward Purchases (IN) process BEFORE Kitchen Usage (OUT).
+3. Lots Queue: lotsOf(sku) = [ Lot1 (Oldest), Lot2, Lot3 ... LotN (Newest) ]
+```
+
+#### Consumption Logic:
+When a Stock OUT event occurs:
+1. The engine inspects `lots[0]` (the oldest remaining purchase batch).
+2. If `Lot1.qty >= OUT.qty`, all quantity is deducted at `Lot1.costPrice`.
+3. If `Lot1.qty < OUT.qty`, `Lot1` is exhausted and removed, and the remaining quantity continues into `Lot2` at `Lot2.costPrice`.
+4. **Deficit Protection**: If OUT quantity exceeds all available lots, the excess is valued at the last known purchase rate and flagged as negative stock.
+5. **Base Quantity Reconciliation**: Any pre-existing stored stock that has no historical IN entry is automatically treated as an initial opening lot at `Date(0)` at master item cost.
+
+#### Core Equation & Balance Verification:
+$$\text{Opening Stock Value} + \text{Inward Purchases Value} - \text{Kitchen Usage Value} = \text{Closing Stock Value}$$
+
+The UI features a real-time **Balance Check Bar** verifying:
+$$\Delta = |\text{Close Value} - (\text{Open Value} + \text{In Value} - \text{Out Value})| < 1.00$$
+If $\Delta < 1.00$, the system displays `✅ Hisab Balanced`; otherwise, `⚠️ Variance Detected`.
+
+---
+
+### 3. Inward (IN) Pricing Mandate & Outward (OUT) Pure Quantity Consumption
+
+#### Stock IN: Mandatory Price Validation
+- In [`stock-data.js`](file:///c:/MY_ALL_ITEM/my%20all%20app/E-COMMERSE%20LIMRA%20website/frontend/src/stock/stock-data.js) inside `recordIn({ sku, date, qty, costPrice, supplier, notes, updateMasterCost })`:
+  ```javascript
+  const cost = safeNum(costPrice, item.cost);
+  if (q <= 0) throw new Error('Quantity must be greater than 0');
+  if (cost <= 0) throw new Error('Purchase rate / cost price per unit is required and must be greater than 0.');
+  ```
+- In [`stock-ui.js`](file:///c:/MY_ALL_ITEM/my%20all%20app/E-COMMERSE%20LIMRA%20website/frontend/src/stock/stock-ui.js), the purchase rate input `#stk-form-cost` has `required`, `min="0.01"`, and dynamically syncs:
+  $$\text{Total Cost} = \text{Quantity} \times \text{Purchase Rate}$$
+
+#### Stock OUT: Pure Quantity Entry
+- In `recordOut({ sku, date, qty, reason, notes, allowNegative })`:
+  - The user enters **only Quantity**, Date, and Reason (Kitchen Prep, Waste, Staff Meal, Expired).
+  - No price field is exposed to the user.
+  - The monetary value is 100% computed from the FIFO lots queue.
+
+---
+
+### 4. Live FIFO Preview & Lot Queue Breakdown
+
+When entering an OUT quantity in `openEntryModal('OUT')`, the function `previewOut(data, sku, qty)` runs a virtual consumption on the live stock queue and returns:
+
+```typescript
+interface PreviewOutResult {
+  available: number;       // Current on-hand stock quantity
+  cost: number;            // Total monetary consumption cost (₹)
+  effectiveRate: number;   // Average consumed rate = cost / qty (₹ / unit)
+  unit: string;            // Unit of measure (kg, pcs, L, etc.)
+  lastRate: number;        // Latest purchase rate
+  lotsUsed: Array<{
+    dateStr: string;       // Receipt date of batch
+    qty: number;           // Quantity taken from this batch
+    cost: number;          // Purchase rate of this batch
+    amount: number;        // Subtotal = qty * cost
+    isDeficit?: boolean;   // True if beyond available lots
+  }>;
+}
+```
+
+#### Real-Time User Feedback in OUT Modal:
+```
+Deducting 12.00 kg: Total FIFO Cost will be ₹ 260.00 (Avg ₹ 21.67/kg).
+New Stock Balance will be 8.00 kg.
+📦 FIFO Batches Consumed (Oldest First):
+• Batch #1 (01/10/2026): 10.00 kg @ ₹20.00 = ₹200.00
+• Batch #2 (03/10/2026): 2.00 kg @ ₹30.00 = ₹60.00
+```
+
+---
+
+### 5. Weekly Movement Ledger ("Kab Kitna IN / OUT Hua")
+
+Directly underneath the weekly matrix table in `renderWeeklyTab`, the platform renders the **Weekly Movement Ledger**:
+
+- **Filters:**
+  - `All Movements (${total})`
+  - `📥 Purchases (+IN: ${count}) · + ₹ ${totalIn}`
+  - `📤 Kitchen Usage (−OUT: ${count}) · − ₹ ${totalOut}`
+- **Columns:**
+  1. **Date & Time:** Timestamp of movement (e.g., `02 Oct 2026 11:30 AM`).
+  2. **Type:** Visual badge: `📥 Stock IN` (green) or `📤 Stock OUT` (amber).
+  3. **Item & SKU:** Item description and SKU code.
+  4. **Quantity:** `+ 10.00 kg` or `− 5.00 kg`.
+  5. **Unit Rate (₹):** Actual purchase rate for IN, or effective FIFO consumed rate for OUT.
+  6. **Total Amount (₹):** `+ ₹ 500.00` or `− ₹ 250.00`.
+  7. **Party / Purpose:** Supplier name for IN, or consumption reason (Kitchen Prep, Waste) for OUT.
+  8. **Notes:** Invoice number, delivery remarks.
+  9. **Actions:** `📦 Batches` (opens FIFO inspector) and `🗑️ Delete` (removes entry with balance adjustment).
+
+---
+
+### 6. Active FIFO Batches Inspector Modal
+
+Clicking **`📦 Batches`** on any table row or movement entry invokes `openItemBatchModal(sku)`:
+
+- **Summary Cards:** Current Stock (Qty), Total Inventory Value (₹), FIFO Avg Valuation (₹/unit), and Active Lot Count.
+- **Active FIFO Batches on Shelf:**
+  | Batch Queue | Received Date | Remaining Qty | Purchase Rate (₹) | Batch Value (₹) | Supplier | Priority |
+  |---|---|---|---|---|---|---|
+  | **Batch #1** | 01/10/2026 | 5.00 kg | ₹ 20.00 | ₹ 100.00 | Royal Traders | `⚡ 1st In Line (Next OUT)` |
+  | **Batch #2** | 03/10/2026 | 10.00 kg | ₹ 30.00 | ₹ 300.00 | Super Agro | `Queue #2` |
+- **Complete Activity History:** Full reverse-chronological ledger of every IN and OUT transaction for that item.
+
+---
+
+### 7. Data Store, Schema & Offline Synchronization
+
+The `StockStore` class in [`frontend/src/stock/stock-data.js`](file:///c:/MY_ALL_ITEM/my%20all%20app/E-COMMERSE%20LIMRA%20website/frontend/src/stock/stock-data.js) provides reactive state management:
+
+#### LocalStorage Caching Keys:
+- `limra_stock_items_v3`: Master items catalog with stored quantities and minimum thresholds.
+- `limra_stock_in_entries_v3`: Inward purchase entries.
+- `limra_stock_out_entries_v3`: Outward usage entries.
+- `limra_stock_logs_v3`: Audit trail records.
+
+#### Database Tables Synchronized:
+- `stock_items`: Catalog items (`id`, `sku`, `name`, `category`, `unit`, `qty`, `cost_price`, `sale_price`, `min_qty`, `supplier`).
+- `stock_in`: Purchase entries (`id`, `date`, `item_id`, `item_sku`, `qty`, `cost_price`, `supplier`, `notes`).
+- `stock_out`: Usage entries (`id`, `date`, `item_id`, `item_sku`, `qty`, `used_by`, `notes`).
+- `stock_logs`: Movement audit trail (`id`, `action`, `details`, `created_at`).
+
+---
+
+### 8. Engine Unit Test Suite (17 Tests)
+
+The pure calculation engine is validated by automated unit tests in [`frontend/src/stock/stock-engine.test.mjs`](file:///c:/MY_ALL_ITEM/my%20all%20app/E-COMMERSE%20LIMRA%20website/frontend/src/stock/stock-engine.test.mjs):
+
+```bash
+cd frontend
+node src/stock/stock-engine.test.mjs
+```
+
+```
+  ✓ weeks Oct 2026: 1-7, 8-14, 15-21, 22-28, 29-31
+  ✓ Feb 2027 has only 4 weeks (28 days)
+  ✓ leap Feb 2028: week 5 = 29 only
+  ✓ shiftWeek crosses months both ways
+  ✓ week 1: old lot goes out first (₹20 before ₹30)
+  ✓ week 2: opening = week 1 closing, uses remaining lot
+  ✓ opening + IN − OUT = closing (₹ totals)
+  ✓ day by day: IN/OUT/closing per day
+  ✓ same-day IN is consumed by same-day OUT
+  ✓ backdated cheaper IN becomes the oldest lot
+  ✓ OUT beyond stock: valued at last rate and flagged Negative
+  ✓ legacy stored qty without IN entries becomes the opening lot
+  ✓ stored qty that equals IN−OUT adds no phantom stock
+  ✓ zero-rate lot is flagged missingRate
+  ✓ previewOut gives FIFO cost for a planned OUT
+  ✓ inr() formats Indian grouping
+  ✓ getItemLots returns remaining batches in strict FIFO order
+
+17 tests passed
+```
+
+---
+
 ## 🧾 Item-Level GST, Billing & Calculations Engine
 
 The platform implements a dual-tier tax calculation engine ensuring compliance and accurate billing across all channels:
 
-### 1. Mathematical Formula
+### 1. Mathematical Formulation
 
 $$\text{Taxable Subtotal} = \sum_{i \in \text{Taxable Items}} (\text{Price}_i \times \text{Qty}_i)$$
 
 $$\text{Tax-Exempt Subtotal} = \sum_{i \in \text{Exempt Items}} (\text{Price}_i \times \text{Qty}_i)$$
 
+$$\text{Total Subtotal} = \text{Taxable Subtotal} + \text{Tax-Exempt Subtotal}$$
+
 $$\text{Proportional Taxable Discount} = \begin{cases} \text{Discount Amount} \times \left(\frac{\text{Taxable Subtotal}}{\text{Total Subtotal}}\right) & \text{if Total Subtotal} > 0 \\ 0 & \text{otherwise} \end{cases}$$
 
 $$\text{Net Taxable Amount} = \max(0, \text{Taxable Subtotal} - \text{Proportional Taxable Discount})$$
+
+$$\text{Net Tax-Exempt Amount} = \max(0, \text{Tax-Exempt Subtotal} - (\text{Discount Amount} - \text{Proportional Taxable Discount}))$$
 
 $$\text{CGST (2.5\%)} = \text{Round}(\text{Net Taxable Amount} \times 0.025, 2)$$
 
@@ -232,7 +440,7 @@ $$\text{Grand Total} = \text{Net Taxable Amount} + \text{Net Tax-Exempt Amount} 
 
 ---
 
-## 🖨️ Thermal Printing Pipeline (KOT + Final Bill)
+## 🖨️ Thermal Printing Pipeline (Sequential KOT + Final Bill)
 
 ```mermaid
 sequenceDiagram
@@ -268,7 +476,7 @@ sequenceDiagram
 ### Critical Printing Optimizations:
 1. **Dedicated Ephemeral Iframes**: Eliminates the legacy single-iframe collision where back-to-back jobs overwrite the document and freeze the Windows print spooler.
 2. **50ms Dispatch Delay**: Reduced from 200ms, accelerating print job triggering by 75%.
-3. **Dual Print Triggering**: Pickup and Delivery orders automatically print **both KOT + Bill** upon settlement.
+3. **Sequential Dual Print Triggering**: Pickup, Delivery, and Table orders automatically print **both KOT + Bill** upon settlement.
 4. **Dynamic UPI & Review QR Codes**: Customer receipts dynamically embed scannable UPI payment QR codes and Google 5-Star Review QR codes.
 
 ---
@@ -281,6 +489,7 @@ To eliminate unnecessary network overhead and keep database egress bandwidth min
 |---|---|:---:|---|
 | **Storefront (`main.js`)** | `localStorage` (`limra_fast_*`) | 10 Min | Eliminates duplicate queries on page reload and tab switches. |
 | **Table Ordering (`table.js`)** | `localStorage` (`limra_table_fast_*`) | 10 Min | QR scans load menu instantly without hitting Supabase repeatedly. |
+| **Stock Section (`stock-data.js`)** | `localStorage` (`limra_stock_*_v3`) | Local Sync | Renders inventory and ledger instantly, synchronizing changes in background. |
 | **Admin Hub (`admin.js`)** | `localStorage` (`limra_cached_orders`) | Session | **0ms Instant Boot**: Renders dashboard UI immediately from local cache before network sync. |
 | **Admin Initial Fetch** | Scoped Limit Query (`.limit(300)`) | On Demand | Slashes baseline payload from unbounded historical rows down to recent records, **reducing egress by >90%**. |
 | **CDN Scripts (`admin.html`)** | `defer` attribute | Browser Cache | Defers 2.1MB of heavy export libraries (`xlsx`, `jspdf`), removing render-blocking latency. |
@@ -325,8 +534,15 @@ E-COMMERSE LIMRA website/
 │   │   │   ├── payments.js              # Razorpay checkout modal helpers
 │   │   │   ├── print-queue.js           # Resilient thermal print queue manager
 │   │   │   └── supabase.js              # Frontend Supabase client & database API
+│   │   ├── stock/                       # Redesigned FIFO Stock Engine
+│   │   │   ├── stock-data.js            # Reactive store, local cache & DB sync
+│   │   │   ├── stock-engine.js          # Pure FIFO calculator & week logic
+│   │   │   ├── stock-engine.test.mjs    # Automated unit tests (17 tests)
+│   │   │   ├── stock-ui.js              # Stock UI controller, ledger, modals
+│   │   │   └── stock.css                # Stock accounting color palette
 │   │   ├── table/
 │   │   │   └── table.js                 # Table ordering & cross-selling engine
+│   │   ├── admin-stock.js               # Admin stock bridge
 │   │   ├── admin.js                     # POS, KDS & analytics master controller
 │   │   ├── admin.css                    # Admin & POS master stylesheet
 │   │   ├── main.js                      # Customer storefront master controller
@@ -358,7 +574,7 @@ E-COMMERSE LIMRA website/
 ├── capacitor.config.json                # Capacitor Android configuration
 ├── package.json                         # Root monorepo workspace configuration
 ├── vercel.json                          # Vercel serverless deployment routing
-└── README.md                            # Complete Project Documentation
+└── README.md                            # Master Technical Documentation
 ```
 
 ---
@@ -410,12 +626,12 @@ Migration history: [`database/migrations/`](file:///c:/MY_ALL_ITEM/my%20all%20ap
 | 15 | `verified_payments` | Verified Razorpay transactions | `id`, `utr`, `amount`, `status`, `created_at` |
 | 16 | `payment_history` | Complete payment audit log | `id`, `order_id`, `payment_method`, `amount`, `txn_ref`, `status` |
 | 17 | `security_audit_logs`| Security access & anomaly audit trail | `id`, `event_type`, `severity`, `details`, `ip_address`, `user_id` |
-| 18 | `stock_items` | Master inventory items and quantities | `id`, `name`, `unit`, `qty`, `min_threshold`, `cost_price`, `selling_price`, `category` |
-| 19 | `stock_in` | Master stock receipt batches | `id`, `supplier_name`, `invoice_number`, `total_cost`, `received_at` |
-| 20 | `stock_out` | Master manual stock reduction batches | `id`, `reason`, `authorized_by`, `dispatched_at` |
-| 21 | `stock_logs` | Audit log of all inventory movements | `id`, `stock_item_id`, `action`, `quantity_change`, `details`, `created_at` |
-| 22 | `stock_in_entries` | Line items for stock receipts | `id`, `stock_in_id`, `stock_item_id`, `quantity`, `unit_cost`, `line_total` |
-| 23 | `stock_out_entries`| Line items for manual stock deductions | `id`, `stock_out_id`, `stock_item_id`, `quantity`, `reason` |
+| 18 | `stock_items` | Master inventory items and quantities | `id`, `sku`, `name`, `category`, `unit`, `qty`, `min_qty`, `cost_price`, `sale_price`, `supplier` |
+| 19 | `stock_in` | Master stock receipt batches | `id`, `date`, `item_id`, `item_sku`, `qty`, `cost_price`, `supplier`, `notes` |
+| 20 | `stock_out` | Master manual stock reduction batches | `id`, `date`, `item_id`, `item_sku`, `qty`, `used_by`, `notes` |
+| 21 | `stock_logs` | Audit log of all inventory movements | `id`, `action`, `details`, `created_at` |
+| 22 | `stock_in_entries` | Detailed line items for stock receipts | `id`, `stock_in_id`, `stock_item_id`, `quantity`, `unit_cost`, `line_total` |
+| 23 | `stock_out_entries`| Detailed line items for stock deductions | `id`, `stock_out_id`, `stock_item_id`, `quantity`, `reason` |
 
 ### ⚙️ Core Stored Procedures & Functions (RPCs)
 - **`place_table_round(...)`**: Multi-round table ordering. Appends newly ordered items to an active `OPEN` table ticket, or initializes a new ticket for the table.
@@ -491,35 +707,52 @@ npm run dev
 ## 🏗️ Build, Packaging & Deployment
 
 ```bash
-# 1. Build Production Frontend (Vite)
+# 1. Run Stock Engine Tests
+npm test  # or node frontend/src/stock/stock-engine.test.mjs
+
+# 2. Build Production Frontend (Vite)
 npm run build
 
-# 2. Start Backend Server in Production
+# 3. Start Backend Server in Production
 npm run start
 
-# 3. Launch Electron Desktop POS (Dev)
+# 4. Launch Electron Desktop POS (Dev)
 npm run desktop:dev
 
-# 4. Package Windows .exe Desktop Installer
+# 5. Package Windows .exe Desktop Installer
 npm run desktop:dist
 
-# 5. Sync Capacitor Android Project
+# 6. Sync Capacitor Android Project
 npm run cap:sync
 ```
 
 ---
 
-## 🛠️ Recent Problem Resolutions & Changelog
+## 🛠️ Recent Problem Resolutions & Engineering Changelog
 
-### 1. Fix: Newly Added Custom Dishes Failed in Add-to-Cart
+### 1. Stock Section: Mandatory Purchase Rate on IN & Pure Quantity on OUT
+- **Requirements**:
+  1. Whenever any item is Stock IN, its purchase value/price must be added and saved.
+  2. For Stock OUT, users enter only quantity consumed; monetary value is computed automatically.
+  3. Strict FIFO consumption: Oldest batches are consumed first at their purchase rates.
+  4. Complete weekly statement ("Week ka hisab") with prices, IN, OUT, and detailed movement logs.
+- **Resolution**:
+  - Implemented `getItemLots(data, sku)` in `stock-engine.js` for active batch tracking.
+  - Enforced `costPrice > 0` validation in `stockStore.recordIn` and `openEntryModal('IN')`.
+  - Hidden price inputs for `openEntryModal('OUT')` with real-time lot-by-lot FIFO preview (`previewOut`).
+  - Added **Weekly Movement Ledger ("Kab Kitna IN / OUT Hua")** directly below the matrix table.
+  - Added **`📦 Batches` Inspector Modal** allowing visual inspection of active batches and consumption queue.
+  - Added unit test in `stock-engine.test.mjs` verifying FIFO order across multiple lots (17 tests passing).
+
+### 2. Fix: Newly Added Custom Dishes Failed in Add-to-Cart
 - **Root Cause**: Custom dishes created via Admin are stored with string IDs (`custom_17`). In `table.js` and `main.js` live search dropdown, `parseInt(id, 10)` or `Number(id)` turned `"custom_17"` into `NaN`, causing `addToCart(NaN)` to fail silently.
 - **Resolution**: Updated ID parsing across `table.js` and `main.js` to preserve alphanumeric string IDs. Added fallback lookup to `localStorage.getItem('limra_custom_foods')` for instant availability.
 
-### 2. Fix: Sold Out Items Could Still Be Added to Cart
+### 3. Fix: Sold Out Items Could Still Be Added to Cart
 - **Root Cause**: In `main.js` inside `updateCartUI()`, the function re-rendered all menu card buttons by calling `renderCardActionButton(..., true)` with `true` hardcoded. Any cart update flipped sold-out items back to active "+ Add" buttons.
 - **Resolution**: Updated `updateCartUI()` to query actual dish availability (`mItem.available !== false`). Added guard in `addToCart(id)` and `updateQty(id)` to reject sold-out items, and updated product detail drawers to display disabled "SOLD OUT" buttons.
 
-### 3. Feature: Item-Level GST Toggle & Math Engine
+### 4. Feature: Item-Level GST Toggle & Math Engine
 - **Requirement**: Allow admin to specify per-item whether 5% GST applies, and calculate taxes strictly on taxable items in bills.
 - **Resolution**:
   - Added `🧾 GST Applicable (5%)` toggle to both Edit Dish Modal (`#edit-modal-gst`) and Add Dish Modal (`#add-dish-gst`) in `admin.html`.
@@ -527,11 +760,11 @@ npm run cap:sync
   - Persisted in custom dishes via `items.gst_applicable` and in menu overrides via `[NO_GST]` description tags.
   - Updated `getTaxesAmount()` on the website, `saveTableRound` on dining tables, `getPosCartTotals()` in POS, and `generateBillWithTaxHtml()` on printed bills to segregate Taxable Subtotal (5%) and Tax-Exempt Subtotal (0%).
 
-### 4. Fix: Pickup & Delivery Settlement Only Printed Bill (Now Prints KOT + Bill)
+### 5. Fix: Pickup & Delivery Settlement Only Printed Bill (Now Prints KOT + Bill)
 - **Root Cause**: Line 15312 of `admin.js` contained an explicit condition `if (posOrderType === 'table') { await printKOT(...); }`, skipping KOT for pickup and delivery.
-- **Resolution**: Removed condition from `pos-kot-bill-btn` and row settlement handlers. Settlement now prints **both KOT + Final Bill** for Table, Pickup, and Delivery orders.
+- **Resolution**: Removed condition from `pos-kot-bill-btn` and row settlement handlers. Settlement now prints **both KOT + Final Bill** sequentially for Table, Pickup, and Delivery orders.
 
-### 5. Optimization: Page Load Speedup & Egress Reduction
+### 6. Optimization: Page Load Speedup & Egress Reduction
 - **Root Cause**: `admin.html` loaded 2.1MB of heavy CDN export scripts in `<head>` without `defer`. `admin.js` booted with `fetchAllTableRows('orders')` fetching every historical order in 1,000-row loops. Website and table ordering used `sessionStorage`, re-fetching data on every scan.
 - **Resolution**:
   - Added `defer` to CDN scripts in `admin.html`.
@@ -539,7 +772,7 @@ npm run cap:sync
   - Implemented 0ms instant render from `localStorage` in `admin.js` on boot.
   - Scoped initial baseline query to recent 300 orders and 1,000 items, **cutting initial egress by >90%** and dropping load time from 8s to <1s.
 
-### 6. Fix: Sluggish Thermal Printing Delay
+### 7. Fix: Sluggish Thermal Printing Delay
 - **Root Cause**: `printViaNativeDriver` used a single shared iframe `#thermal-native-print-frame` with a 200ms delay. Back-to-back jobs (KOT followed by Bill) overwrote the frame while the first was spooling, causing Windows spooler freezes and 10+ second delays.
 - **Resolution**: Replaced with dynamic ephemeral iframes (`thermal-frame-<timestamp>`) per print job, reduced delay to 50ms, and added automatic frame cleanup.
 
