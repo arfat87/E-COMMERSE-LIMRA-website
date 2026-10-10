@@ -147,9 +147,9 @@ function applyTableOverrides(overrides) {
   });
 }
 
-function getTableFastCache(key, ttlMs = 300000) {
+function getTableFastCache(key, ttlMs = 600000) {
   try {
-    const raw = sessionStorage.getItem(`limra_tbl_${key}`);
+    const raw = localStorage.getItem(`limra_tbl_${key}`) || sessionStorage.getItem(`limra_tbl_${key}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (Date.now() - parsed.t < ttlMs) return parsed.d;
@@ -159,7 +159,9 @@ function getTableFastCache(key, ttlMs = 300000) {
 
 function setTableFastCache(key, data) {
   try {
-    sessionStorage.setItem(`limra_tbl_${key}`, JSON.stringify({ t: Date.now(), d: data }));
+    const payload = JSON.stringify({ t: Date.now(), d: data });
+    localStorage.setItem(`limra_tbl_${key}`, payload);
+    sessionStorage.setItem(`limra_tbl_${key}`, payload);
   } catch (e) {}
 }
 
@@ -431,7 +433,7 @@ function renderMenu() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const idVal = btn.dataset.itemId;
-      const id = idVal.startsWith('combo-') ? idVal : parseInt(idVal, 10);
+      const id = idVal.startsWith('combo-') || isNaN(Number(idVal)) ? idVal : parseInt(idVal, 10);
       addToCart(id);
     });
   });
@@ -440,7 +442,7 @@ function renderMenu() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const idVal = btn.dataset.itemId;
-      const id = idVal.startsWith('combo-') ? idVal : parseInt(idVal, 10);
+      const id = idVal.startsWith('combo-') || isNaN(Number(idVal)) ? idVal : parseInt(idVal, 10);
       removeFromCart(id);
     });
   });
@@ -458,8 +460,9 @@ function renderMenu() {
 
 function addToCart(itemId) {
   let item = null;
-  if (typeof itemId === 'string' && itemId.startsWith('combo-')) {
-    const comboId = parseInt(itemId.replace('combo-', ''), 10);
+  const strId = String(itemId);
+  if (strId.startsWith('combo-')) {
+    const comboId = parseInt(strId.replace('combo-', ''), 10);
     const combo = activeCombos.find(c => c.id === comboId);
     if (combo) {
       const itemsListStr = Array.isArray(combo.items)
@@ -474,19 +477,27 @@ function addToCart(itemId) {
         description: combo.description || `Included: ${itemsListStr}`,
         image: combo.image_url || combo.image || '/images/food_biryani.png',
         isCombo: true,
-        items: combo.items || []
+        items: combo.items || [],
+        available: combo.available !== false,
+        gst_applicable: combo.gst_applicable !== false
       };
     }
-  } else if (String(itemId).startsWith('custom_')) {
-    item = (activeCustomDishes || []).find(i => String(i.id) === String(itemId));
+  } else if (strId.startsWith('custom_')) {
+    item = (activeCustomDishes || []).find(i => String(i.id) === strId || String(i.db_id) === strId.replace('custom_', ''));
+    if (!item && typeof localStorage !== 'undefined') {
+      try {
+        const saved = JSON.parse(localStorage.getItem('limra_custom_foods') || '[]');
+        item = saved.find(i => String(i.id) === strId || String(i.db_id) === strId.replace('custom_', ''));
+      } catch (e) {}
+    }
   } else {
-    const numId = typeof itemId === 'number' ? itemId : parseInt(itemId, 10);
-    item = menuItems.find(i => i.id === numId) || (activeCustomDishes || []).find(i => String(i.id) === String(itemId));
+    item = menuItems.find(i => String(i.id) === strId) || (activeCustomDishes || []).find(i => String(i.id) === strId);
   }
   
   if (!item) return;
+  if (item.available === false) return; // Prevent adding sold out items
 
-  const cartItem = cart.find(c => c.item.id === item.id || String(c.item.id) === String(item.id));
+  const cartItem = cart.find(c => String(c.item.id) === String(item.id));
   if (cartItem) {
     cartItem.quantity += 1;
   } else {
@@ -497,8 +508,8 @@ function addToCart(itemId) {
 }
 
 function removeFromCart(itemId) {
-  const targetId = String(itemId).startsWith('combo-') || String(itemId).startsWith('custom_') ? itemId : (typeof itemId === 'number' ? itemId : parseInt(itemId, 10));
-  const cartItemIndex = cart.findIndex(c => c.item.id === targetId || String(c.item.id) === String(targetId));
+  const strId = String(itemId);
+  const cartItemIndex = cart.findIndex(c => String(c.item.id) === strId);
   if (cartItemIndex === -1) return;
 
   const cartItem = cart[cartItemIndex];
@@ -536,7 +547,11 @@ function updateCartUI() {
   }
 
   const discountAmt = appliedCoupon ? Math.round(subtotal * (appliedCoupon.discount_pct / 100)) : 0;
-  const gst = Math.round((subtotal - discountAmt) * 0.05);
+  const taxableItems = cart.filter(c => c.item && c.item.gst_applicable !== false);
+  const taxableSub = taxableItems.reduce((s, c) => s + (c.item.price * c.quantity), 0);
+  const discountRatio = subtotal > 0 ? (discountAmt / subtotal) : 0;
+  const netTaxable = Math.max(0, taxableSub - (taxableSub * discountRatio));
+  const gst = Math.round(netTaxable * 0.05);
   const totalAmt = subtotal - discountAmt + gst;
 
   // Update Badges & Totals
@@ -643,7 +658,7 @@ function renderCartListings(totalAmt) {
     container.querySelectorAll('.btn-cart-plus').forEach(btn => {
       btn.addEventListener('click', () => {
         const idVal = btn.dataset.itemId;
-        const id = idVal.startsWith('combo-') ? idVal : parseInt(idVal, 10);
+        const id = idVal.startsWith('combo-') || isNaN(Number(idVal)) ? idVal : parseInt(idVal, 10);
         addToCart(id);
       });
     });
@@ -651,7 +666,7 @@ function renderCartListings(totalAmt) {
     container.querySelectorAll('.btn-cart-minus').forEach(btn => {
       btn.addEventListener('click', () => {
         const idVal = btn.dataset.itemId;
-        const id = idVal.startsWith('combo-') ? idVal : parseInt(idVal, 10);
+        const id = idVal.startsWith('combo-') || isNaN(Number(idVal)) ? idVal : parseInt(idVal, 10);
         removeFromCart(id);
       });
     });
@@ -792,8 +807,13 @@ function setupCartUI() {
       const zone = currentTable <= 9 ? 'indoor' : 'outdoor';
 
       const subtotal = cart.reduce((s, c) => s + (c.item.price * c.quantity), 0);
+      const taxableSubtotal = cart.reduce((s, c) => {
+        if (c.item && c.item.gst_applicable === false) return s;
+        return s + (c.item.price * c.quantity);
+      }, 0);
       const discountAmt = appliedCoupon ? Math.round(subtotal * (appliedCoupon.discount_pct / 100)) : 0;
-      const gst = Math.round((subtotal - discountAmt) * 0.05);
+      const taxableDiscount = appliedCoupon && subtotal > 0 ? Math.round(taxableSubtotal * (appliedCoupon.discount_pct / 100)) : 0;
+      const gst = Math.round(Math.max(0, taxableSubtotal - taxableDiscount) * 0.05);
 
       // Clean up legacy client round storage so browser never forces round 2
       try {
@@ -1167,9 +1187,21 @@ function openTableDetailDrawer(itemId) {
     };
   } else if (String(itemId).startsWith('custom_')) {
     item = (activeCustomDishes || []).find(i => String(i.id) === String(itemId));
+    if (!item) {
+      try {
+        const cached = JSON.parse(localStorage.getItem('limra_custom_foods') || '[]');
+        item = cached.find(i => String(i.id) === String(itemId));
+      } catch (e) {}
+    }
   } else {
     const numId = typeof itemId === 'number' ? itemId : parseInt(itemId, 10);
     item = menuItems.find(m => m.id === numId) || (activeCustomDishes || []).find(i => String(i.id) === String(itemId));
+    if (!item && isNaN(numId)) {
+      try {
+        const cached = JSON.parse(localStorage.getItem('limra_custom_foods') || '[]');
+        item = cached.find(i => String(i.id) === String(itemId));
+      } catch (e) {}
+    }
   }
 
   if (!item) return;
@@ -1316,6 +1348,15 @@ function openTableDetailDrawer(itemId) {
 function updateTableDrawerActions(item) {
   const container = $('#table-drawer-actions-container');
   if (!container || !item) return;
+
+  if (item.available === false) {
+    container.innerHTML = `
+      <button class="add-btn" disabled style="padding: 0.5rem 1.25rem; font-size: 0.85rem; opacity: 0.5; cursor: not-allowed; background: #94a3b8; border-color: #94a3b8; color: #fff;">
+        SOLD OUT
+      </button>
+    `;
+    return;
+  }
 
   const cartItem = cart.find(c => c.item.id === item.id || String(c.item.id) === String(item.id));
   const qty = cartItem ? cartItem.quantity : 0;

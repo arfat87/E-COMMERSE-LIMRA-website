@@ -14,9 +14,9 @@
   <!-- Lucide Icons (Local Offline Copy) -->
   <script src="/vendor/lucide.min.js"></script>
   <!-- Export Engines for Stock Summary & Reports -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js" defer></script>
   <link rel="stylesheet" href="/src/style.css" />
   <link rel="stylesheet" href="/src/admin.css" />
   <link rel="icon" href="/images/logo.png" type="image/png" />
@@ -3038,7 +3038,7 @@
         <textarea id="edit-modal-item-desc" class="adm-edit-modal-input" rows="3" style="resize:none" placeholder="E.g., Fragrant basmati rice cooked with succulent chicken and aromatic herbs."></textarea>
       </div>
 
-      <div style="display:flex;gap:1rem;margin:.25rem 0;">
+      <div style="display:flex;gap:1rem;margin:.25rem 0;flex-wrap:wrap;">
         <label class="adm-toggle-label">
           <input type="checkbox" id="edit-modal-available" checked />
           <span class="adm-toggle-slider"></span>
@@ -3049,6 +3049,12 @@
           <input type="checkbox" id="edit-modal-featured" />
           <span class="adm-toggle-slider"></span>
           <span class="adm-toggle-text">⭐ Chef Special / Featured</span>
+        </label>
+
+        <label class="adm-toggle-label">
+          <input type="checkbox" id="edit-modal-gst" checked />
+          <span class="adm-toggle-slider"></span>
+          <span class="adm-toggle-text">🧾 GST Applicable (5%)</span>
         </label>
       </div>
 
@@ -3138,6 +3144,11 @@
       <div>
         <label class="adm-label">Description (Optional)</label>
         <textarea id="add-dish-desc" class="adm-input" rows="2" placeholder="Tender pieces cooked in rich spiced gravy..." style="width:100%;resize:none;margin-top:3px;"></textarea>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:.6rem;background:#f1f5f9;padding:.6rem .8rem;border-radius:8px;border:1px solid #e2e8f0;">
+        <input type="checkbox" id="add-dish-gst" checked style="width:18px;height:18px;accent-color:#6366f1;cursor:pointer;" />
+        <label for="add-dish-gst" style="font-size:.85rem;font-weight:600;color:#1e293b;cursor:pointer;">🧾 GST Applicable (5% Tax applies to this dish)</label>
       </div>
 
       <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.5rem;">

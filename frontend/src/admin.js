@@ -1250,7 +1250,13 @@ function computeOrderTaxDetails(order, optionalItemsList) {
   
   const discountPct = parsed.discountPct || 0;
   const discountAmt = parsed.discountAmt || (subtotal * (discountPct / 100));
-  let taxableValue = Math.max(0, subtotal - discountAmt);
+  
+  const taxableSubtotal = items.reduce((sum, i) => {
+    if (i.gst_applicable === false || (typeof i.notes === 'string' && i.notes.includes('[NO_GST]'))) return sum;
+    return sum + Number(i.line_total || (i.price * i.qty) || ((i.unit_price || 0) * (i.quantity || 0)) || 0);
+  }, 0);
+  const taxableDiscountAmt = subtotal > 0 ? (taxableSubtotal * (discountAmt / subtotal)) : 0;
+  let taxableValue = Math.max(0, taxableSubtotal - taxableDiscountAmt);
   
   const cgstRate = parsed.cgstRate ?? (s.cgstRate ?? 2.5);
   const sgstRate = parsed.sgstRate ?? (s.sgstRate ?? 2.5);
@@ -1768,23 +1774,48 @@ async function loadData(isManual = false) {
 
   // A. FULL BASELINE LOAD (On initial page boot or manual force-sync)
   if (isFirstLoad) {
+    // 0ms instant render from cache if available
+    try {
+      if (orders.length === 0) {
+        const cachedOrders = JSON.parse(localStorage.getItem('limra_cached_orders') || '[]');
+        const cachedItems = JSON.parse(localStorage.getItem('limra_cached_order_items') || '[]');
+        if (cachedOrders.length > 0) {
+          orders = cachedOrders;
+          orderItems = cachedItems;
+          renderOverview();
+          renderOrdersTable();
+          renderBillingQuickCards();
+          renderTablesPanel();
+        }
+      }
+    } catch (e) {}
+
     const fetchStartTime = new Date(Date.now() - 10000).toISOString();
 
-    const [fetchedOrders, fetchedItems, bookingsRes, notifsRes] = await Promise.all([
-      fetchAllTableRows('orders', '*', 'created_at', false),
-      fetchAllTableRows('order_items', '*', 'created_at', false),
-      insforge.database.from('bookings').select('*').order('created_at', { ascending: false }),
+    // Query recent records scoped with limit to eliminate massive egress and 8+ second delays
+    const [ordersRes, itemsRes, bookingsRes, notifsRes] = await Promise.all([
+      insforge.database.from('orders').select('*').order('created_at', { ascending: false }).limit(300),
+      insforge.database.from('order_items').select('*').order('created_at', { ascending: false }).limit(1000),
+      insforge.database.from('bookings').select('*').order('created_at', { ascending: false }).limit(100),
       insforge.database.from('notifications').select('*').order('created_at', { ascending: false }).limit(35),
       loadStaticConfigData(isManual)
     ]);
 
+    if (ordersRes && ordersRes.error) throw ordersRes.error;
+    if (itemsRes && itemsRes.error) throw itemsRes.error;
     if (bookingsRes && bookingsRes.error) throw bookingsRes.error;
     if (notifsRes && notifsRes.error) throw notifsRes.error;
 
-    orders = fetchedOrders || [];
-    orderItems = fetchedItems || [];
+    orders = (ordersRes && ordersRes.data) || [];
+    orderItems = (itemsRes && itemsRes.data) || [];
     bookings = (bookingsRes && bookingsRes.data) || [];
     const fetchedNotifs = (notifsRes && notifsRes.data) || [];
+
+    // Cache recent orders to localStorage
+    try {
+      localStorage.setItem('limra_cached_orders', JSON.stringify(orders.slice(0, 100)));
+      localStorage.setItem('limra_cached_order_items', JSON.stringify(orderItems.slice(0, 300)));
+    } catch (e) {}
 
     processNotificationsAndAlerts(fetchedNotifs, orders, orders, true);
 
@@ -5659,6 +5690,7 @@ function renderHoldOrdersPanel() {
       const order = orders.find(o => String(o.id) === String(orderId));
       if (!order) return;
       if (!confirm(`Print final bill for Order #${order.order_number} and mark as completed / closed?`)) return;
+      await printKOT(order);
       await printOrderReceiptWithTax(order);
 
       // 1. Immediately update local state in-memory
@@ -6956,28 +6988,46 @@ function getCombinedFoodItems() {
     description: c.description || (Array.isArray(c.items) ? c.items.map(i => `${i.qty || 1}x ${i.name}`).join(', ') : 'Special Combo Deal'),
     isCombo: true,
     is_combo: true,
-    combo_id: c.id
+    combo_id: c.id,
+    gst_applicable: c.gst_applicable !== false
   }));
 
-  const combined = [...formattedCombos, ...menuItems, ...customCreatedFoods];
+  let customList = customCreatedFoods;
+  if (!customList || customList.length === 0) {
+    try {
+      customList = JSON.parse(localStorage.getItem('limra_custom_foods') || '[]');
+      if (Array.isArray(customList) && customList.length > 0) {
+        customCreatedFoods = customList;
+      }
+    } catch (e) {}
+  }
+
+  const combined = [...formattedCombos, ...menuItems, ...(customList || [])];
   return combined.map(item => {
     const override = activeMenuOverrides.find(o => String(o.id) === String(item.id));
+    const isOverrideNoGst = override && typeof override.description === 'string' && override.description.includes('[NO_GST]');
+    const gstApp = override && override.gst_applicable !== undefined
+      ? override.gst_applicable
+      : (isOverrideNoGst ? false : (item.gst_applicable !== false));
+
     if (override) {
       return {
         ...item,
         price: override.price !== null && override.price !== undefined ? parseFloat(override.price) : item.price,
         mrp: override.mrp !== null && override.mrp !== undefined ? parseFloat(override.mrp) : item.mrp,
-        available: override.available !== undefined ? override.available : true,
-        featured: override.featured !== undefined ? override.featured : false,
+        available: override.available !== undefined ? override.available : (item.available !== false),
+        featured: override.featured !== undefined ? override.featured : (item.featured || false),
         image: override.image || item.image,
-        description: override.description !== undefined ? override.description : (item.description || '')
+        description: override.description !== undefined ? override.description : (item.description || ''),
+        gst_applicable: gstApp
       };
     }
     return {
       ...item,
-      available: true,
-      featured: false,
-      description: item.description || ''
+      available: item.available !== false,
+      featured: item.featured || false,
+      description: item.description || '',
+      gst_applicable: item.gst_applicable !== false
     };
   });
 }
@@ -7126,6 +7176,7 @@ function renderFoods() {
             <span style="background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);color:#fff;font-size:.7rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">
               ${dietIcon}
             </span>
+            ${item.gst_applicable === false ? '<span style="background:#0284c7;color:#fff;font-size:.7rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">🧾 No GST</span>' : '<span style="background:rgba(16,185,129,0.85);color:#fff;font-size:.7rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">🧾 5% GST</span>'}
             ${isFeatured ? '<span style="background:#f59e0b;color:#fff;font-size:.7rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">⭐ Special</span>' : ''}
             ${isCustom ? '<span style="background:#6366f1;color:#fff;font-size:.7rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">✨ Custom Dish</span>' : ''}
           </div>
@@ -7312,6 +7363,7 @@ function setupFoodControlListeners() {
       $('edit-modal-item-desc').value = item.description || '';
       $('edit-modal-available').checked = item.available !== false;
       $('edit-modal-featured').checked = item.featured === true;
+      if ($('edit-modal-gst')) $('edit-modal-gst').checked = item.gst_applicable !== false;
 
       $('adm-edit-modal').classList.add('active');
     });
@@ -7370,6 +7422,7 @@ function setupEditModalListeners() {
     const newDesc = $('edit-modal-item-desc').value.trim();
     const newAvail = $('edit-modal-available').checked;
     const newFeat = $('edit-modal-featured').checked;
+    const newGst = $('edit-modal-gst') ? $('edit-modal-gst').checked : true;
 
     if (isNaN(newPrice) || newPrice <= 0) {
       showAdminToast('Please enter a valid price.', 'error');
@@ -7396,7 +7449,8 @@ function setupEditModalListeners() {
           image: newImage || null,
           description: newDesc,
           available: newAvail,
-          featured: newFeat
+          featured: newFeat,
+          gst_applicable: newGst
         };
         const saved = await saveCustomDish(updatedCustom);
         const idx = customCreatedFoods.findIndex(d => String(d.id) === String(itemId));
@@ -7413,7 +7467,8 @@ function setupEditModalListeners() {
             image: newImage || null,
             description: newDesc,
             available: newAvail,
-            featured: newFeat
+            featured: newFeat,
+            gst_applicable: newGst
           };
           activeMenuOverrides.push(override);
         } else {
@@ -7423,6 +7478,7 @@ function setupEditModalListeners() {
           override.description = newDesc;
           override.available = newAvail;
           override.featured = newFeat;
+          override.gst_applicable = newGst;
         }
 
         await saveMenuOverride(override);
@@ -7475,6 +7531,7 @@ function setupAddDishModalListeners() {
     const mrp = mrpVal ? parseFloat(mrpVal) : null;
     const image = $('add-dish-image').value.trim();
     const desc = $('add-dish-desc').value.trim();
+    const gstApplicable = $('add-dish-gst') ? $('add-dish-gst').checked : true;
 
     if (!name || isNaN(price) || price <= 0) {
       showAdminToast('Please fill all required fields.', 'error');
@@ -7498,7 +7555,8 @@ function setupAddDishModalListeners() {
         image: image || null,
         description: desc,
         available: true,
-        featured: false
+        featured: false,
+        gst_applicable: gstApplicable
       };
 
       // Save permanently to Supabase Database
@@ -11349,14 +11407,12 @@ async function generateReviewQrDataUrl(reviewUrl) {
 
 function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
   return new Promise((resolve) => {
-    let frame = document.getElementById('thermal-native-print-frame');
-    if (!frame) {
-      frame = document.createElement('iframe');
-      frame.id = 'thermal-native-print-frame';
-      frame.name = 'thermal-native-print-frame';
-      frame.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;visibility:hidden;';
-      document.body.appendChild(frame);
-    }
+    const frameId = 'thermal-frame-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    const frame = document.createElement('iframe');
+    frame.id = frameId;
+    frame.name = frameId;
+    frame.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;visibility:hidden;';
+    document.body.appendChild(frame);
 
     const isA4 = String(widthMm) === 'A4';
     const paperWidthCss = isA4 ? '210mm' : `${widthMm || 80}mm`;
@@ -11426,8 +11482,12 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
           } catch (err) {
             console.warn('[Native Driver Print] Frame print error:', err);
             resolve(false);
+          } finally {
+            setTimeout(() => {
+              try { frame.remove(); } catch (e) {}
+            }, 3000);
           }
-        }, 200);
+        }, 50);
       } else {
         const printWin = window.open('', '_blank', 'width=400,height=600');
         if (printWin) {
@@ -11439,13 +11499,15 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
             printWin.print();
             printWin.close();
             resolve(true);
-          }, 200);
+          }, 50);
         } else {
+          try { frame.remove(); } catch (e) {}
           resolve(false);
         }
       }
     } catch (e) {
       console.error('[Native Driver Print] Error:', e);
+      try { frame.remove(); } catch (err) {}
       resolve(false);
     }
   });
@@ -13167,15 +13229,21 @@ function getBillSettings() {
 function getPosCartTotals() {
   const s = getBillSettings();
   const subtotal = posCart.reduce((sum, i) => sum + i.price * i.qty, 0);
+  const taxableSubtotal = posCart.reduce((sum, i) => {
+    if (i.gst_applicable === false || (typeof i.notes === 'string' && i.notes.includes('[NO_GST]'))) return sum;
+    return sum + (i.price * i.qty);
+  }, 0);
   const discountPct = parseFloat($('pos-discount-pct')?.value || '0') || 0;
   const discountAmt = subtotal * (discountPct / 100);
-  const taxable = Math.max(0, subtotal - discountAmt);
+  const taxableDiscountAmt = subtotal > 0 ? (taxableSubtotal * (discountAmt / subtotal)) : 0;
+  const taxable = Math.max(0, taxableSubtotal - taxableDiscountAmt);
   const cgst = taxable * (s.cgstRate / 100);
   const sgst = taxable * (s.sgstRate / 100);
   const deliveryFee = posOrderType === 'delivery' ? (parseFloat($('pos-delivery-fee')?.value || '0') || 0) : 0;
-  const grand = taxable + cgst + sgst + deliveryFee;
+  const grand = Math.max(0, subtotal - discountAmt) + cgst + sgst + deliveryFee;
   return { 
     subtotal, 
+    taxableSubtotal,
     discountPct, 
     discountAmt, 
     taxable, 
@@ -13364,7 +13432,8 @@ function addItemToPosCart(food, customNote = '') {
       name: food.name,
       price: Number(food.price || 0),
       qty: Number(food.qty || 1),
-      notes: note
+      notes: note,
+      gst_applicable: food.gst_applicable !== false
     });
   }
   updatePosCartUI();
@@ -13787,14 +13856,20 @@ async function generateBillWithTaxHtml(order = {}, itemsList = []) {
   // Parse discount, taxes, and delivery charges from metadata or calculate
   const discountPct = parsedMeta.discountPct || 0;
   const discountAmt = parsedMeta.discountAmt || (subtotal * (discountPct / 100));
-  const taxable = Math.max(0, subtotal - discountAmt);
+  const taxableSubtotal = items.reduce((sum, i) => {
+    if (i.gst_applicable === false || (typeof i.notes === 'string' && i.notes.includes('[NO_GST]'))) return sum;
+    return sum + Number(i.line_total || (i.price * i.qty) || 0);
+  }, 0);
+  const taxableDiscountAmt = subtotal > 0 ? (taxableSubtotal * (discountAmt / subtotal)) : 0;
+  const taxable = Math.max(0, taxableSubtotal - taxableDiscountAmt);
+  const nonTaxableSubtotal = Math.max(0, (subtotal - taxableSubtotal) - (subtotal > 0 ? ((subtotal - taxableSubtotal) * (discountAmt / subtotal)) : 0));
   const cgstRate = parsedMeta.cgstRate ?? (p.cgst_rate || 2.5);
   const sgstRate = parsedMeta.sgstRate ?? (p.sgst_rate || 2.5);
   const cgst = taxable * (cgstRate / 100);
   const sgst = taxable * (sgstRate / 100);
   const deliveryFee = parsedMeta.deliveryFee || (parsedMeta.type === 'delivery' ? 50 : 0);
-  // Grand Total ALWAYS includes GST (Taxable + CGST + SGST + Delivery Fee)
-  const grandTotal = Math.round((taxable + cgst + sgst + deliveryFee) * 100) / 100;
+  // Grand Total includes Taxable + NonTaxable + CGST + SGST + Delivery Fee
+  const grandTotal = Math.round((taxable + nonTaxableSubtotal + cgst + sgst + deliveryFee) * 100) / 100;
   
   const formattedDate = new Date(order.created_at || Date.now()).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
   const payMode = parsedMeta.payment ? parsedMeta.payment.toUpperCase() : 'CASH';
@@ -13886,8 +13961,11 @@ async function generateBillWithTaxHtml(order = {}, itemsList = []) {
         <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Subtotal:</span><span>₹${subtotal.toFixed(2)}</span></div>
         ${discountAmt > 0 ? `
           <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Discount (${discountPct}%):</span><span>-₹${discountAmt.toFixed(2)}</span></div>
-          <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Net Taxable:</span><span>₹${taxable.toFixed(2)}</span></div>
         ` : ''}
+        ${taxableSubtotal < subtotal ? `
+          <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Taxable (5%):</span><span>₹${taxable.toFixed(2)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:700;font-size:${subFontSize};"><span>GST Exempt (0%):</span><span>₹${nonTaxableSubtotal.toFixed(2)}</span></div>
+        ` : (discountAmt > 0 ? `<div style="display:flex;justify-content:space-between;font-weight:700;"><span>Net Taxable:</span><span>₹${taxable.toFixed(2)}</span></div>` : '')}
         <div style="display:flex;justify-content:space-between;font-weight:700;"><span>CGST @${cgstRate}%:</span><span>₹${cgst.toFixed(2)}</span></div>
         <div style="display:flex;justify-content:space-between;font-weight:700;"><span>SGST @${sgstRate}%:</span><span>₹${sgst.toFixed(2)}</span></div>
         ${deliveryFee > 0 ? `
@@ -14909,6 +14987,7 @@ function renderBillingTotalBills() {
       const order = orders.find(o => String(o.id) === String(orderId));
       if (!order) return;
       if (!confirm(`Print final bill for Order #${formatDailyOrderNumber(order)} and mark as completed / closed?`)) return;
+      await printKOT(order);
       await printOrderReceiptWithTax(order);
 
       // 1. Immediately update local state in-memory
@@ -15309,12 +15388,10 @@ async function initBillingPanel() {
   $('pos-kot-bill-btn')?.addEventListener('click', async () => {
     const result = await buildOrderFromPos('bill');
     if (!result) return;
-    // Print KOT ONLY for dine-in tables (not for pickup or delivery)
-    if (posOrderType === 'table') {
-      await printKOT(result.order, result.items);
-    }
+    // Print both KOT and final bill for Table, Pickup, and Delivery
+    await printKOT(result.order, result.items);
     await printOrderReceiptWithTax(result.order, result.items);
-    showAdminToast(`Order #${result.order.order_number} settled & final bill printed! ✅`, 'success');
+    showAdminToast(`Order #${result.order.order_number} settled & KOT + Bill printed! ✅`, 'success');
     posCart = [];
     if (posEl) posEl.style.display = 'none';
     if (totalSection) totalSection.style.display = 'block';

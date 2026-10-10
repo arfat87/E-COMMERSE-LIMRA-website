@@ -424,21 +424,42 @@ export async function getCustomerOrders(phone) {
 
 export async function getMenuOverrides() {
   const { data, error } = await supabase.from("menu_overrides").select("*");
-  if (!error && data) return data;
+  if (!error && data) {
+    return data.map(item => ({
+      ...item,
+      gst_applicable: item.gst_applicable !== undefined
+        ? item.gst_applicable
+        : !(typeof item.description === 'string' && item.description.includes('[NO_GST]'))
+    }));
+  }
 
   const res = await fetch("/api/menu");
   const json = await res.json();
-  return json.data || [];
+  return (json.data || []).map(item => ({
+    ...item,
+    gst_applicable: item.gst_applicable !== undefined
+      ? item.gst_applicable
+      : !(typeof item.description === 'string' && item.description.includes('[NO_GST]'))
+  }));
 }
 
 export async function saveMenuOverride(override) {
+  let desc = override.description || "";
+  if (override.gst_applicable === false) {
+    if (!desc.includes('[NO_GST]')) {
+      desc = (desc + ' [NO_GST]').trim();
+    }
+  } else if (override.gst_applicable === true) {
+    desc = desc.replace(/\[NO_GST\]/g, '').trim();
+  }
+
   const payload = {
     id: override.id,
     price: override.price,
     available: override.available,
     featured: override.featured,
     mrp: override.mrp,
-    description: override.description,
+    description: desc,
     updated_at: new Date().toISOString()
   };
 
@@ -631,7 +652,8 @@ export async function getCustomDishes() {
         description: r.description || '',
         available: r.available !== false,
         featured: Boolean(r.items?.featured),
-        is_custom: true
+        is_custom: true,
+        gst_applicable: r.items?.gst_applicable !== false
       }));
 
     if (typeof localStorage !== 'undefined') {
@@ -662,7 +684,8 @@ export async function saveCustomDish(dish) {
       category: dish.category || 'General',
       diet: dish.diet || (isVeg ? 'veg' : 'nonveg'),
       is_veg: isVeg,
-      featured: Boolean(dish.featured)
+      featured: Boolean(dish.featured),
+      gst_applicable: dish.gst_applicable !== false
     }
   };
 
@@ -692,7 +715,8 @@ export async function saveCustomDish(dish) {
     description: saved.description || dish.description || '',
     available: saved.available !== false,
     featured: Boolean(saved.items?.featured || dish.featured),
-    is_custom: true
+    is_custom: true,
+    gst_applicable: dish.gst_applicable !== false
   };
 
   return formattedDish;

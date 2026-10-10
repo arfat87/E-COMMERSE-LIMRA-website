@@ -23,9 +23,20 @@ export function getAllCombinedMenuItems() {
     isCombo: true,
     is_combo: true,
     combo_id: c.id,
-    items: c.items || []
+    items: c.items || [],
+    gst_applicable: c.gst_applicable !== false
   }));
-  return [...formattedCombos, ...menuItems, ...(activeCustomDishes || [])];
+
+  let custom = activeCustomDishes;
+  if (!custom || custom.length === 0) {
+    try {
+      custom = JSON.parse(localStorage.getItem('limra_custom_foods') || '[]');
+    } catch (e) {
+      custom = [];
+    }
+  }
+
+  return [...formattedCombos, ...menuItems, ...(custom || [])];
 }
 
 // ═══════════════════════════════════════
@@ -86,6 +97,7 @@ function loadCartFromStorage() {
       name: String(item.name || ''),
       price: Number(item.price) || 0,
       qty: Math.max(1, Number(item.qty) || 1),
+      gst_applicable: item.gst_applicable !== false
     })).filter(item => item.id && item.name);
   } catch {
     return [];
@@ -214,8 +226,13 @@ function getCouponDiscountAmount() {
 
 function getTaxesAmount() {
   const subtotal = getCartSubtotal();
+  const taxableSubtotal = cart.reduce((sum, item) => {
+    if (item.gst_applicable === false) return sum;
+    return sum + (item.price * item.qty);
+  }, 0);
   const discount = getCouponDiscountAmount();
-  return Math.round(Math.max(0, subtotal - discount) * 0.05); // 5% GST on discounted subtotal
+  const taxableDiscount = subtotal > 0 ? Math.round(taxableSubtotal * (discount / subtotal)) : 0;
+  return Math.round(Math.max(0, taxableSubtotal - taxableDiscount) * 0.05); // 5% GST on taxable discounted subtotal
 }
 
 function getSelectedPaymentMethod() {
@@ -274,6 +291,11 @@ function addToCart(id) {
   const item = getAllCombinedMenuItems().find(m => String(m.id) === String(id));
   if (!item) return;
   
+  if (item.available === false) {
+    showToast(`${item.name} is currently sold out`, 'error', 1800);
+    return;
+  }
+  
   const currentItems = [...antigravityCartStore.state.items];
   const existing = currentItems.find(c => String(c.id) === String(id));
   let newQty = 1;
@@ -281,7 +303,13 @@ function addToCart(id) {
     existing.qty += 1;
     newQty = existing.qty;
   } else {
-    currentItems.push({ id: item.id, name: item.name, price: item.price, qty: 1 });
+    currentItems.push({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      qty: 1,
+      gst_applicable: item.gst_applicable !== false
+    });
   }
   antigravityCartStore.state = { items: currentItems };
   updateCartUI();
@@ -321,6 +349,15 @@ function updateQty(id, delta) {
   const currentItems = [...antigravityCartStore.state.items];
   const item = currentItems.find(c => String(c.id) === String(id));
   if (!item) return;
+
+  if (delta > 0) {
+    const menuItem = getAllCombinedMenuItems().find(m => String(m.id) === String(id));
+    if (menuItem && menuItem.available === false) {
+      showToast(`${item.name} is currently sold out`, 'error', 1800);
+      return;
+    }
+  }
+
   item.qty += delta;
   if (item.qty <= 0) {
     removeFromCart(id);
@@ -533,14 +570,17 @@ function updateCartUI() {
   renderCartItems();
 
   // Update all card buttons and in-card steppers across active menu grids
+  const combinedItems = getAllCombinedMenuItems();
   document.querySelectorAll('.menu-card').forEach(card => {
     const actionWrap = card.querySelector('.menu-card-action-wrap');
     const itemId = card.dataset.id || card.querySelector('[data-id]')?.dataset?.id;
     if (!itemId) return;
     const cartItem = cart.find(c => String(c.id) === String(itemId));
     const qty = cartItem ? cartItem.qty : 0;
+    const mItem = combinedItems.find(m => String(m.id) === String(itemId));
+    const isAvail = mItem ? mItem.available !== false : (card.dataset.available !== 'false');
     if (actionWrap) {
-      renderCardActionButton(actionWrap, itemId, qty, true);
+      renderCardActionButton(actionWrap, itemId, qty, isAvail);
     }
   });
 }
@@ -629,6 +669,7 @@ function createMenuCard(item) {
   card.className = 'menu-card';
   card.dataset.category = item.category;
   card.dataset.id = item.id;
+  card.dataset.available = item.available !== false ? 'true' : 'false';
   card.setAttribute('role', 'listitem');
 
   const isAvailable = item.available !== false;
@@ -1718,8 +1759,8 @@ function initSearchDropdown() {
       dropdown.classList.remove('visible');
       return;
     }
-    const results = menuItems.filter(item =>
-      item.available !== false &&
+    const allCombined = getAllCombinedMenuItems();
+    const results = allCombined.filter(item =>
       (item.name.toLowerCase().includes(query) ||
        (item.description || '').toLowerCase().includes(query) ||
        (item.category || '').toLowerCase().includes(query))
@@ -1730,8 +1771,9 @@ function initSearchDropdown() {
     } else {
       results.forEach(item => {
         const imgSrc = item.image || categoryImages[item.category] || '/images/food_biryani.png';
-        const cartItem = cart.find(c => Number(c.id) === Number(item.id));
+        const cartItem = cart.find(c => String(c.id) === String(item.id));
         const inCart = cartItem && cartItem.qty > 0;
+        const isSoldOut = item.available === false;
         const row = document.createElement('div');
         row.className = 'search-result-row';
         row.setAttribute('role', 'option');
@@ -1742,16 +1784,21 @@ function initSearchDropdown() {
             <div class="search-result-cat">${item.category || ''}</div>
           </div>
           <span class="search-result-price">₹${item.price}</span>
-          <button class="search-result-add" data-id="${item.id}">${inCart ? `In Cart (${cartItem.qty})` : '+ Add'}</button>
+          <button class="search-result-add" data-id="${item.id}" ${isSoldOut ? 'disabled style="background:#e2e8f0; color:#94a3b8; border:none; cursor:not-allowed;"' : ''}>
+            ${isSoldOut ? 'Sold Out' : (inCart ? `In Cart (${cartItem.qty})` : '+ Add')}
+          </button>
         `;
         const addBtn = row.querySelector('.search-result-add');
-        addBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          addToCart(Number(item.id));
-          addBtn.textContent = `In Cart (${(cart.find(c => Number(c.id) === Number(item.id))?.qty || 0)})`;
-          addBtn.style.background = 'var(--color-accent)';
-          addBtn.style.color = '#fff';
-        });
+        if (!isSoldOut) {
+          addBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            addToCart(item.id);
+            const updated = cart.find(c => String(c.id) === String(item.id));
+            addBtn.textContent = `In Cart (${updated?.qty || 1})`;
+            addBtn.style.background = 'var(--color-accent)';
+            addBtn.style.color = '#fff';
+          });
+        }
         row.addEventListener('click', () => {
           dropdown.classList.remove('visible');
           input.value = '';
@@ -2036,10 +2083,10 @@ async function loadDeliveryAreas() {
 
 let activeMenuOverrides = [];
 
-// Ultra-fast SessionStorage cache with 5-minute TTL
-function getFastCache(key, ttlMs = 300000) {
+// Ultra-fast LocalStorage cache with 10-minute TTL to drastically cut Supabase egress
+function getFastCache(key, ttlMs = 600000) {
   try {
-    const raw = sessionStorage.getItem(`limra_fast_${key}`);
+    const raw = localStorage.getItem(`limra_fast_${key}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (Date.now() - parsed.t < ttlMs) return parsed.d;
@@ -2049,7 +2096,7 @@ function getFastCache(key, ttlMs = 300000) {
 
 function setFastCache(key, data) {
   try {
-    sessionStorage.setItem(`limra_fast_${key}`, JSON.stringify({ t: Date.now(), d: data }));
+    localStorage.setItem(`limra_fast_${key}`, JSON.stringify({ t: Date.now(), d: data }));
   } catch (e) {}
 }
 
@@ -2075,6 +2122,9 @@ async function loadCustomDishes() {
     if (dishes && Array.isArray(dishes)) {
       activeCustomDishes = dishes;
       setFastCache('custom_dishes', dishes);
+      try {
+        localStorage.setItem('limra_custom_foods', JSON.stringify(dishes));
+      } catch (e) {}
     }
   } catch (err) {
     console.warn('[Website] Failed to load custom dishes from database:', err);
@@ -2091,6 +2141,11 @@ function applyOverridesToList(overrides) {
       if (override.available !== undefined) item.available = override.available;
       if (override.featured !== undefined) item.featured = override.featured;
       if (override.description !== undefined) item.description = override.description;
+      if (override.gst_applicable !== undefined) {
+        item.gst_applicable = override.gst_applicable;
+      } else if (typeof override.description === 'string' && override.description.includes('[NO_GST]')) {
+        item.gst_applicable = false;
+      }
     }
   });
 }
@@ -5633,22 +5688,34 @@ window.openProductDetailModal = function(itemId) {
   // Bind Add to Order button
   const addBtn = document.getElementById('product-modal-add-btn');
   if (addBtn) {
-    const cartItem = cart.find(c => String(c.id) === String(item.id));
-    const currentQty = cartItem ? cartItem.qty : 0;
-    if (currentQty > 0) {
-      addBtn.innerHTML = `<span>🛍️ Add More (${currentQty} in cart)</span>`;
+    if (item.available === false) {
+      addBtn.innerHTML = `<span>❌ Currently Sold Out</span>`;
+      addBtn.disabled = true;
+      addBtn.style.opacity = '0.5';
+      addBtn.style.cursor = 'not-allowed';
     } else {
-      addBtn.innerHTML = `<span>🛍️ Add to Order</span>`;
+      addBtn.disabled = false;
+      addBtn.style.opacity = '';
+      addBtn.style.cursor = '';
+      const cartItem = cart.find(c => String(c.id) === String(item.id));
+      const currentQty = cartItem ? cartItem.qty : 0;
+      if (currentQty > 0) {
+        addBtn.innerHTML = `<span>🛍️ Add More (${currentQty} in cart)</span>`;
+      } else {
+        addBtn.innerHTML = `<span>🛍️ Add to Order</span>`;
+      }
     }
 
     // Recreate button to strip previous event listeners
     const newAddBtn = addBtn.cloneNode(true);
     addBtn.parentNode.replaceChild(newAddBtn, addBtn);
     
-    newAddBtn.addEventListener('click', () => {
-      addToCart(item.id);
-      closeProductDetailModal();
-    });
+    if (item.available !== false) {
+      newAddBtn.addEventListener('click', () => {
+        addToCart(item.id);
+        closeProductDetailModal();
+      });
+    }
   }
 
   // Render cross-selling pairings
@@ -5664,6 +5731,7 @@ window.openProductDetailModal = function(itemId) {
         recCard.className = 'flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 border dark:border-slate-800 rounded-2xl hover:border-emerald-500 transition-colors cursor-pointer';
         
         const recImg = rec.image || categoryImages[rec.category] || '/images/food_biryani.png';
+        const isRecSoldOut = rec.available === false;
         
         recCard.innerHTML = `
           <img src="${recImg}" alt="${rec.name}" class="w-12 h-12 rounded-xl object-cover shrink-0">
@@ -5671,8 +5739,8 @@ window.openProductDetailModal = function(itemId) {
             <h5 class="text-xs font-bold text-slate-800 dark:text-white truncate">${rec.emoji || ''} ${rec.name}</h5>
             <span class="text-[10px] font-black text-emerald-600 dark:text-emerald-400">₹${rec.price}</span>
           </div>
-          <button class="rec-add-btn shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-emerald-500 hover:bg-emerald-600 active:scale-90 text-white font-bold text-sm shadow-md shadow-emerald-500/10 transition-all">
-            +
+          <button class="rec-add-btn shrink-0 w-7 h-7 flex items-center justify-center rounded-full ${isRecSoldOut ? 'bg-slate-300 dark:bg-slate-600 cursor-not-allowed text-slate-500' : 'bg-emerald-500 hover:bg-emerald-600 active:scale-90 text-white shadow-md shadow-emerald-500/10'} font-bold text-sm transition-all" ${isRecSoldOut ? 'disabled' : ''}>
+            ${isRecSoldOut ? '✕' : '+'}
           </button>
         `;
 
@@ -5684,19 +5752,21 @@ window.openProductDetailModal = function(itemId) {
         });
 
         // Bind '+' button inside recommendation card
-        recCard.querySelector('.rec-add-btn').addEventListener('click', (e) => {
-          e.stopPropagation();
-          addToCart(rec.id);
-          
-          // Show subtle micro-interaction check on the button
-          const btn = e.currentTarget;
-          btn.textContent = '✓';
-          btn.classList.replace('bg-emerald-500', 'bg-slate-400');
-          setTimeout(() => {
-            btn.textContent = '+';
-            btn.classList.replace('bg-slate-400', 'bg-emerald-500');
-          }, 1200);
-        });
+        if (!isRecSoldOut) {
+          recCard.querySelector('.rec-add-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            addToCart(rec.id);
+            
+            // Show subtle micro-interaction check on the button
+            const btn = e.currentTarget;
+            btn.textContent = '✓';
+            btn.classList.replace('bg-emerald-500', 'bg-slate-400');
+            setTimeout(() => {
+              btn.textContent = '+';
+              btn.classList.replace('bg-slate-400', 'bg-emerald-500');
+            }, 1200);
+          });
+        }
 
         recGrid.appendChild(recCard);
       });
