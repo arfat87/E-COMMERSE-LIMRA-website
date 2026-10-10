@@ -12,6 +12,7 @@ class PrintQueueManager {
     this.jobs = this.loadFromStorage();
     this.listeners = new Set();
     this.activeExecutor = null;
+    this._queuePromise = Promise.resolve();
   }
 
   loadFromStorage() {
@@ -70,7 +71,7 @@ class PrintQueueManager {
       id: `print-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       orderId: String(jobData.orderId || ''),
       orderNumber: String(jobData.orderNumber || '—'),
-      type: jobData.type || 'BILL', // 'BILL' or 'KOT'
+      type: jobData.type || 'BILL', // 'BILL', 'KOT', or 'KOT_AND_BILL'
       paperWidth: jobData.paperWidth || 80,
       status: 'pending', // 'pending' | 'printing' | 'printed' | 'failed'
       error: null,
@@ -87,7 +88,11 @@ class PrintQueueManager {
 
     const executor = customExecutor || this.activeExecutor;
     if (executor) {
-      return this.executeJob(job.id, executor);
+      // Execute strictly sequentially in FIFO order
+      this._queuePromise = this._queuePromise
+        .then(() => this.executeJob(job.id, executor))
+        .catch(() => this.executeJob(job.id, executor));
+      return this._queuePromise;
     }
     return job;
   }

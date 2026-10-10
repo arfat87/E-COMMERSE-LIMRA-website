@@ -5689,9 +5689,9 @@ function renderHoldOrdersPanel() {
       const orderId = btn.dataset.orderId;
       const order = orders.find(o => String(o.id) === String(orderId));
       if (!order) return;
-      if (!confirm(`Print final bill for Order #${order.order_number} and mark as completed / closed?`)) return;
-      await printKOT(order);
-      await printOrderReceiptWithTax(order);
+      if (!confirm(`Print KOT + Final Bill for Order #${order.order_number} and mark as completed / closed?`)) return;
+      const items = getItemsForOrder(order.id);
+      await printCombinedKOTAndBill(order, items);
 
       // 1. Immediately update local state in-memory
       order.status = 'delivered';
@@ -11405,8 +11405,10 @@ async function generateReviewQrDataUrl(reviewUrl) {
   }
 }
 
+let _nativePrintLock = Promise.resolve();
+
 function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
-  return new Promise((resolve) => {
+  const printTask = () => new Promise((resolve) => {
     const frameId = 'thermal-frame-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
     const frame = document.createElement('iframe');
     frame.id = frameId;
@@ -11457,6 +11459,12 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
             padding: 2mm ${gap}mm;
             color: #000;
           }
+          @media print {
+            .page-break-divider, .thermal-receipt-section.page-break-divider {
+              page-break-after: always !important;
+              break-after: page !important;
+            }
+          }
         </style>
       </head>
       <body>
@@ -11474,20 +11482,46 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
         doc.write(docHtml);
         doc.close();
 
+        let resolved = false;
+        const cleanup = (success = true) => {
+          if (resolved) return;
+          resolved = true;
+          setTimeout(() => {
+            try { frame.remove(); } catch (e) {}
+          }, 1500);
+          // 350ms cooldown so browser / driver spooler is completely clear before next job
+          setTimeout(() => resolve(success), 350);
+        };
+
+        // Attach listeners for when print dialog completes/closes
+        try {
+          if (frame.contentWindow) {
+            frame.contentWindow.onafterprint = () => cleanup(true);
+          }
+        } catch (e) {}
+
+        const onWindowFocus = () => {
+          setTimeout(() => cleanup(true), 250);
+        };
+        window.addEventListener('focus', onWindowFocus, { once: true });
+
+        // Safety fallback timer if onafterprint doesn't fire (e.g. silent/kiosk printing)
+        const safetyTimer = setTimeout(() => {
+          window.removeEventListener('focus', onWindowFocus);
+          cleanup(true);
+        }, 8000);
+
         setTimeout(() => {
           try {
             frame.contentWindow?.focus();
             frame.contentWindow?.print();
-            resolve(true);
           } catch (err) {
             console.warn('[Native Driver Print] Frame print error:', err);
-            resolve(false);
-          } finally {
-            setTimeout(() => {
-              try { frame.remove(); } catch (e) {}
-            }, 3000);
+            clearTimeout(safetyTimer);
+            window.removeEventListener('focus', onWindowFocus);
+            cleanup(false);
           }
-        }, 50);
+        }, 120);
       } else {
         const printWin = window.open('', '_blank', 'width=400,height=600');
         if (printWin) {
@@ -11495,11 +11529,15 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
           printWin.document.write(docHtml);
           printWin.document.close();
           setTimeout(() => {
-            printWin.focus();
-            printWin.print();
-            printWin.close();
-            resolve(true);
-          }, 50);
+            try {
+              printWin.focus();
+              printWin.print();
+              printWin.close();
+              resolve(true);
+            } catch (err) {
+              resolve(false);
+            }
+          }, 120);
         } else {
           try { frame.remove(); } catch (e) {}
           resolve(false);
@@ -11511,6 +11549,9 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
       resolve(false);
     }
   });
+
+  _nativePrintLock = _nativePrintLock.then(printTask, printTask);
+  return _nativePrintLock;
 }
 
 function updatePrinterPanelStatus() {
@@ -14056,6 +14097,68 @@ async function printOrderReceiptWithTax(order, itemsList) {
   }
 }
 
+async function printCombinedKOTAndBill(order, itemsList) {
+  if (!order) {
+    showAdminToast('No order found to print KOT & Bill.', 'error');
+    return;
+  }
+  let items = itemsList;
+  if (!items || items.length === 0) {
+    items = getItemsForOrder(order.id);
+  }
+  if ((!items || items.length === 0) && order.id) {
+    try {
+      const { data: dbItems } = await insforge.database.from('order_items').select('*').eq('order_id', order.id);
+      if (dbItems && dbItems.length > 0) {
+        items = dbItems;
+        orderItems.push(...dbItems);
+      }
+    } catch (e) {
+      console.warn('Could not fetch items from DB for KOT+Bill:', e);
+    }
+  }
+
+  const p = printerSettings;
+  const kotHtml = await generateKOTHtml(order, items, false);
+  const billHtml = await generateBillWithTaxHtml(order, items);
+
+  const combinedHtml = `
+    <div class="thermal-receipt-section thermal-kot-section page-break-divider" style="page-break-after:always;break-after:page;padding-bottom:12px;margin-bottom:12px;">
+      ${kotHtml}
+      <div style="text-align:center;font-size:10px;font-weight:900;letter-spacing:1px;padding:6px 0;border-top:1px dashed #000;border-bottom:1px dashed #000;margin-top:8px;">
+        ✂️ - - - - - TEAR / CUT HERE - - - - - ✂️
+      </div>
+    </div>
+    <div class="thermal-receipt-section thermal-bill-section">
+      ${billHtml}
+    </div>
+  `;
+
+  let escposText = '';
+  try {
+    const kotEsc = buildEscPosKOT(order, items, p);
+    const billEsc = buildEscPosBill(order, items, p);
+    escposText = (kotEsc || '') + (billEsc || '');
+  } catch (e) {
+    console.warn('[ESC/POS] Error building combined KOT+Bill command stream:', e);
+  }
+
+  // Enqueue job into resilient queue with immediate execution
+  const job = await printQueue.enqueue({
+    orderId: order.id,
+    orderNumber: formatDailyOrderNumber(order),
+    type: 'KOT_AND_BILL',
+    paperWidth: p.bill_paper_width || 80,
+    payload: { html: combinedHtml, escposText, order, items }
+  });
+
+  if (job && job.status === 'printed') {
+    showAdminToast(`Printed ✓ KOT + Bill #${job.orderNumber}`, 'success');
+  } else {
+    showAdminToast(`⚠️ Print failed for #${job?.orderNumber || 'Order'} (Saved to Queue)`, 'error');
+  }
+}
+
 // ════════════════════════════════════════════════════════
 // THERMAL PRINT EXECUTOR & DISPATCH ENGINE (Phase 3)
 // ════════════════════════════════════════════════════════
@@ -14986,9 +15089,9 @@ function renderBillingTotalBills() {
       const orderId = btn.dataset.id;
       const order = orders.find(o => String(o.id) === String(orderId));
       if (!order) return;
-      if (!confirm(`Print final bill for Order #${formatDailyOrderNumber(order)} and mark as completed / closed?`)) return;
-      await printKOT(order);
-      await printOrderReceiptWithTax(order);
+      if (!confirm(`Print KOT + Final Bill for Order #${formatDailyOrderNumber(order)} and mark as completed / closed?`)) return;
+      const items = getItemsForOrder(order.id);
+      await printCombinedKOTAndBill(order, items);
 
       // 1. Immediately update local state in-memory
       order.status = 'delivered';
@@ -15388,9 +15491,8 @@ async function initBillingPanel() {
   $('pos-kot-bill-btn')?.addEventListener('click', async () => {
     const result = await buildOrderFromPos('bill');
     if (!result) return;
-    // Print both KOT and final bill for Table, Pickup, and Delivery
-    await printKOT(result.order, result.items);
-    await printOrderReceiptWithTax(result.order, result.items);
+    // Print both KOT and final bill for Table, Pickup, and Delivery in unified job
+    await printCombinedKOTAndBill(result.order, result.items);
     showAdminToast(`Order #${result.order.order_number} settled & KOT + Bill printed! ✅`, 'success');
     posCart = [];
     if (posEl) posEl.style.display = 'none';
