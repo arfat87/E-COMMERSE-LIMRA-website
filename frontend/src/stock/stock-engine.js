@@ -390,6 +390,154 @@ export function computePeriod(data, start, end) {
   };
 }
 
+/**
+ * Detailed FIFO lot tracker for a single item.
+ * Returns active unconsumed lots, total quantity, total valuation, average cost, and movement timeline.
+ */
+export function getItemLots(data, sku) {
+  const items = data.items || [];
+  const ins = data.ins || [];
+  const outs = data.outs || [];
+
+  const it = items.find(i => (i.sku || i.id) === sku);
+  const name = it ? it.name : sku;
+  const unit = it ? it.unit : 'pcs';
+  const defaultCost = safeNum(it?.cost, 0);
+
+  const itemIns = ins.filter(e => (e.sku || e.itemId) === sku);
+  const itemOuts = outs.filter(e => (e.sku || e.itemId) === sku);
+
+  const createdMs = (o) => Date.parse(o.createdAt) || 0;
+  const events = [];
+  itemIns.forEach((e, i) => {
+    events.push({ type: 'IN', e, t: parseEntryDate(e.date, e.createdAt), c: createdMs(e), seq: i });
+  });
+  itemOuts.forEach((e, i) => {
+    events.push({ type: 'OUT', e, t: parseEntryDate(e.date, e.createdAt), c: createdMs(e), seq: i });
+  });
+  events.sort((a, b) => {
+    const da = dayKey(a.t), db = dayKey(b.t);
+    if (da !== db) return da < db ? -1 : 1;
+    if (a.type !== b.type) return a.type === 'IN' ? -1 : 1;
+    return a.c - b.c || a.seq - b.seq;
+  });
+
+  const lots = [];
+  let deficit = 0;
+  let lastRate = defaultCost;
+
+  // Unexplained base balance
+  let sumIn = 0, sumOut = 0;
+  events.forEach(ev => {
+    if (ev.e?.id === '__preview__') return;
+    const q = safeNum(ev.e.qty, 0);
+    if (ev.type === 'IN') sumIn += q;
+    else sumOut += q;
+  });
+
+  if (it && it.storedQty !== undefined) {
+    const base = safeNum(it.storedQty, 0) - (sumIn - sumOut);
+    if (base > 0.001) {
+      lots.push({
+        id: 'opening_base',
+        date: new Date(0),
+        dateStr: 'Opening Stock',
+        qty: base,
+        cost: defaultCost,
+        base: true,
+        supplier: 'Initial Balance'
+      });
+    }
+  }
+
+  const timeline = [];
+
+  for (const ev of events) {
+    if (ev.e?.id === '__preview__') continue;
+    const qty = safeNum(ev.e.qty, 0);
+    if (ev.type === 'IN') {
+      const cost = safeNum(ev.e.costPrice, lastRate);
+      lastRate = cost;
+      let remaining = qty;
+      if (deficit > EPS) {
+        const cover = Math.min(deficit, qty);
+        deficit -= cover;
+        remaining -= cover;
+      }
+      if (remaining > EPS) {
+        lots.push({
+          id: ev.e.id,
+          date: ev.t,
+          dateStr: dayKey(ev.t),
+          qty: remaining,
+          cost,
+          supplier: ev.e.supplier || '',
+          notes: ev.e.notes || ''
+        });
+      }
+      timeline.push({
+        id: ev.e.id,
+        type: 'IN',
+        date: ev.t,
+        qty,
+        rate: cost,
+        amount: qty * cost,
+        party: ev.e.supplier || '',
+        notes: ev.e.notes || ''
+      });
+    } else {
+      let remaining = qty;
+      let consumed = 0;
+      const consumedBatches = [];
+      while (remaining > EPS && lots.length > 0) {
+        const lot = lots[0];
+        const take = Math.min(lot.qty, remaining);
+        consumed += take * lot.cost;
+        lot.qty -= take;
+        remaining -= take;
+        consumedBatches.push({ dateStr: lot.dateStr, cost: lot.cost, qty: take, amount: take * lot.cost });
+        if (lot.qty <= EPS) lots.shift();
+      }
+      let usageCost = consumed;
+      if (remaining > EPS) {
+        usageCost += remaining * lastRate;
+        deficit += remaining;
+      }
+      timeline.push({
+        id: ev.e.id,
+        type: 'OUT',
+        date: ev.t,
+        qty,
+        rate: qty > 0 ? usageCost / qty : lastRate,
+        amount: usageCost,
+        party: ev.e.usedBy || 'Kitchen Prep',
+        notes: ev.e.notes || '',
+        consumedBatches
+      });
+    }
+  }
+
+  const activeLots = lots.filter(l => l.qty > EPS).map(l => ({
+    ...l,
+    total: round2(l.qty * l.cost)
+  }));
+
+  const totalQty = activeLots.reduce((s, l) => s + l.qty, 0) - deficit;
+  const totalValue = activeLots.reduce((s, l) => s + l.total, 0);
+
+  return {
+    sku,
+    name,
+    unit,
+    totalQty,
+    totalValue: round2(totalValue),
+    avgRate: totalQty > 0 ? round2(totalValue / totalQty) : lastRate,
+    activeLots,
+    deficit,
+    timeline: timeline.reverse()
+  };
+}
+
 /** Live stock snapshot (end of today). */
 export function computeNow(data) {
   const now = new Date();
@@ -400,7 +548,7 @@ export function computeNow(data) {
 export function previewOut(data, sku, qty) {
   const res = computeNow(data);
   const row = res.rows.find(r => r.key === sku);
-  if (!row) return { available: 0, cost: 0, unit: '' };
+  if (!row) return { available: 0, cost: 0, unit: '', lotsUsed: [] };
   // Re-run quickly with a virtual OUT today to read its FIFO value
   const virtual = {
     ...data,
@@ -408,5 +556,38 @@ export function previewOut(data, sku, qty) {
   };
   const r2 = computeNow(virtual);
   const pv = r2.outs.find(o => o.id === '__preview__');
-  return { available: row.closeQty, cost: pv ? pv.amount : 0, unit: row.unit, lastRate: row.rate };
+
+  // Also get lots breakdown
+  const itemInfo = getItemLots(data, sku);
+  let rem = safeNum(qty, 0);
+  const lotsUsed = [];
+  for (const lot of itemInfo.activeLots) {
+    if (rem <= EPS) break;
+    const take = Math.min(lot.qty, rem);
+    lotsUsed.push({
+      dateStr: lot.dateStr,
+      qty: take,
+      cost: lot.cost,
+      amount: round2(take * lot.cost)
+    });
+    rem -= take;
+  }
+  if (rem > EPS) {
+    lotsUsed.push({
+      dateStr: 'Beyond Current Stock (Estimated)',
+      qty: rem,
+      cost: row.rate,
+      amount: round2(rem * row.rate),
+      isDeficit: true
+    });
+  }
+
+  return {
+    available: row.closeQty,
+    cost: pv ? pv.amount : 0,
+    unit: row.unit,
+    lastRate: row.rate,
+    effectiveRate: qty > 0 && pv ? round2(pv.amount / qty) : row.rate,
+    lotsUsed
+  };
 }

@@ -11,6 +11,7 @@ import {
   computePeriod,
   computeNow,
   previewOut,
+  getItemLots,
   inr,
   fmtQty,
   dayKey,
@@ -26,7 +27,19 @@ let selectedDailyDate = todayKey();
 let itemSearchQuery = '';
 let categoryFilter = 'all';
 let movementOnlyFilter = false;
+let weeklyMovementFilter = 'all'; // 'all' | 'in' | 'out'
 let moreMenuOpen = false;
+
+function formatMovementDateTime(dateVal, createdVal) {
+  if (!dateVal && !createdVal) return '—';
+  const d = dateVal ? new Date(dateVal) : new Date(createdVal);
+  const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  if (createdVal) {
+    const timeStr = new Date(createdVal).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    return `${dateStr} <span style="font-size:0.75rem;color:#64748b;display:block;">${timeStr}</span>`;
+  }
+  return dateStr;
+}
 
 // ───────────── Mount / Initialization ─────────────
 export function initStockUI() {
@@ -276,6 +289,50 @@ function renderWeeklyTab(period) {
     return true;
   });
 
+  // Collect all movements in this week chronologically
+  const allWeeklyMovements = [
+    ...period.ins.map(e => ({
+      id: e.id,
+      type: 'IN',
+      displayType: '📥 Stock IN',
+      date: e.entryDate || e.date,
+      createdAt: e.createdAt,
+      sku: e.sku,
+      name: e.name || e.description,
+      unit: e.unit || 'pcs',
+      qty: e.qty,
+      rate: e.rate || e.costPrice,
+      amount: e.amount,
+      party: e.supplier || 'Vendor Purchase',
+      notes: e.notes || ''
+    })),
+    ...period.outs.map(e => ({
+      id: e.id,
+      type: 'OUT',
+      displayType: '📤 Stock OUT',
+      date: e.entryDate || e.date,
+      createdAt: e.createdAt,
+      sku: e.sku,
+      name: e.name || e.description,
+      unit: e.unit || 'pcs',
+      qty: e.qty,
+      rate: e.rate,
+      amount: e.amount,
+      party: e.usedBy || 'Kitchen Prep',
+      notes: e.notes || ''
+    }))
+  ].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+
+  const filteredMovements = allWeeklyMovements.filter(m => {
+    if (weeklyMovementFilter === 'in' && m.type !== 'IN') return false;
+    if (weeklyMovementFilter === 'out' && m.type !== 'OUT') return false;
+    if (q) {
+      const match = m.name.toLowerCase().includes(q) || m.sku.toLowerCase().includes(q) || m.party.toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    return true;
+  });
+
   return `
     <!-- Category Filter Chips -->
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.6rem;margin-bottom:0.85rem;">
@@ -343,8 +400,13 @@ function renderWeeklyTab(period) {
                 <tr class="stk-row">
                   <!-- Item Details -->
                   <td>
-                    <div class="stk-item-name">${r.name}</div>
-                    <div class="stk-item-sku">${r.sku}</div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.4rem;">
+                      <div>
+                        <div class="stk-item-name">${r.name}</div>
+                        <div class="stk-item-sku">${r.sku}</div>
+                      </div>
+                      <button type="button" class="stk-btn-view-batch" data-view-batch="${r.sku}" title="View FIFO Batches &amp; History">📦 Batches</button>
+                    </div>
                   </td>
                   <td><span class="stk-pill-cat">${r.category}</span></td>
                   <td class="stk-cell-unit">${r.unit}</td>
@@ -397,6 +459,95 @@ function renderWeeklyTab(period) {
             </tr>
           </tfoot>
         </table>
+      </div>
+    </div>
+
+    <!-- 7. Weekly Movement Ledger ("Kab Kitna IN / OUT Hua") -->
+    <div class="stk-movement-section">
+      <div class="stk-movement-card">
+        <div class="stk-movement-head">
+          <div class="stk-movement-title">
+            <span>📜</span>
+            <span>This Week's Movement Log — Kab Kitna IN / OUT Hua (${allWeeklyMovements.length})</span>
+          </div>
+          <div class="stk-movement-pills">
+            <button type="button" class="stk-mv-filter-btn ${weeklyMovementFilter === 'all' ? 'active' : ''}" data-mv-filter="all">
+              All Movements (${allWeeklyMovements.length})
+            </button>
+            <button type="button" class="stk-mv-filter-btn in ${weeklyMovementFilter === 'in' ? 'active' : ''}" data-mv-filter="in">
+              📥 Purchases (+IN: ${period.ins.length}) · + ${inr(period.totals.inValue)}
+            </button>
+            <button type="button" class="stk-mv-filter-btn out ${weeklyMovementFilter === 'out' ? 'active' : ''}" data-mv-filter="out">
+              📤 Kitchen Usage (−OUT: ${period.outs.length}) · − ${inr(period.totals.outValue)}
+            </button>
+          </div>
+        </div>
+
+        <div class="stk-table-scroll" style="max-height:480px;">
+          <table class="stk-table">
+            <thead>
+              <tr style="background:#f8fafc;">
+                <th style="min-width:120px;">Date &amp; Time</th>
+                <th style="min-width:110px;text-align:center;">Type</th>
+                <th style="min-width:160px;">Item &amp; SKU</th>
+                <th class="num" style="min-width:90px;">Quantity</th>
+                <th class="num" style="min-width:110px;">Unit Rate (₹)</th>
+                <th class="num" style="min-width:110px;">Total Amount (₹)</th>
+                <th style="min-width:130px;">Party / Purpose</th>
+                <th style="min-width:130px;">Notes</th>
+                <th style="text-align:center;min-width:95px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredMovements.length === 0
+                ? `<tr><td colspan="9" style="text-align:center;padding:2.5rem;color:#94a3b8;font-weight:700;">No movements recorded for ${currentWeek.rangeLabel}. Click "+ Stock IN" or "− Stock OUT" above to add.</td></tr>`
+                : filteredMovements.map(m => `
+                  <tr>
+                    <td>${formatMovementDateTime(m.date, m.createdAt)}</td>
+                    <td style="text-align:center;">
+                      <span class="stk-pill ${m.type === 'IN' ? 'ok' : 'low'}" style="font-size:0.72rem;padding:0.2rem 0.55rem;">
+                        ${m.displayType}
+                      </span>
+                    </td>
+                    <td>
+                      <div style="font-weight:800;color:#0f172a;">${m.name}</div>
+                      <div style="font-size:0.72rem;font-family:monospace;color:#4f46e5;">${m.sku}</div>
+                    </td>
+                    <td class="num font-mono" style="font-weight:800;color:${m.type === 'IN' ? '#047857' : '#d97706'};">
+                      ${m.type === 'IN' ? '+' : '−'} ${fmtQty(m.qty)} ${m.unit}
+                    </td>
+                    <td class="num font-mono">
+                      <div>₹ ${safeNum(m.rate).toFixed(2)}</div>
+                      <div style="font-size:0.7rem;color:#64748b;">${m.type === 'IN' ? 'Purchase Rate' : 'FIFO Consumed'}</div>
+                    </td>
+                    <td class="num font-mono" style="font-weight:900;color:${m.type === 'IN' ? '#047857' : '#d97706'};">
+                      ${m.type === 'IN' ? '+' : '−'} ${inr(m.amount)}
+                    </td>
+                    <td style="font-size:0.82rem;font-weight:600;color:#334155;">${m.party || '—'}</td>
+                    <td style="font-size:0.78rem;color:#64748b;">${m.notes || '—'}</td>
+                    <td style="text-align:center;white-space:nowrap;">
+                      <button type="button" class="stk-btn-view-batch" data-view-batch="${m.sku}" title="Inspect FIFO Batches">📦 Batches</button>
+                      <button type="button" class="stk-btn-icon" data-del-${m.type.toLowerCase()}="${m.id}" title="Delete entry" style="color:#e11d48;margin-left:0.25rem;">🗑️</button>
+                    </td>
+                  </tr>
+                `).join('')
+              }
+            </tbody>
+            <tfoot>
+              <tr class="stk-tfoot-row">
+                <td colspan="3" class="stk-tfoot-label">
+                  <span>NET MOVEMENT IN CURRENT VIEW (${filteredMovements.length} TRANSACTIONS)</span>
+                </td>
+                <td class="num"></td>
+                <td class="num"></td>
+                <td class="num font-mono" style="font-weight:900;">
+                  ${inr(filteredMovements.reduce((sum, m) => sum + (m.type === 'IN' ? m.amount : -m.amount), 0))}
+                </td>
+                <td colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     </div>
   `;
@@ -731,7 +882,7 @@ function bindEvents() {
     b.addEventListener('click', () => openItemModal(b.dataset.editItem));
   });
 
-  // Delete daily entries
+  // Delete entries (daily & weekly)
   panel.querySelectorAll('[data-del-in]').forEach(b => {
     b.addEventListener('click', async () => {
       if (confirm('Delete this Stock IN entry?')) {
@@ -744,6 +895,22 @@ function bindEvents() {
       if (confirm('Delete this Stock OUT entry?')) {
         await stockStore.deleteEntry('OUT', b.dataset.delOut);
       }
+    });
+  });
+
+  // Inspect active FIFO batches
+  panel.querySelectorAll('[data-view-batch]').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openItemBatchModal(b.dataset.viewBatch);
+    });
+  });
+
+  // Weekly movement filter pills
+  panel.querySelectorAll('[data-mv-filter]').forEach(b => {
+    b.addEventListener('click', () => {
+      weeklyMovementFilter = b.dataset.mvFilter;
+      render();
     });
   });
 }
@@ -809,11 +976,13 @@ function openEntryModal(mode = 'IN', presetSku = null) {
               <div class="stk-form-row">
                 <div>
                   <label class="stk-label">Purchase Rate (₹ / unit) *</label>
-                  <input type="number" step="any" min="0" id="stk-form-cost" class="stk-input" value="${selectedItem?.cost || ''}" placeholder="0.00" />
+                  <input type="number" step="any" min="0.01" id="stk-form-cost" class="stk-input" value="${selectedItem?.cost || ''}" placeholder="0.00 (Required)" required />
+                  <span style="font-size:0.72rem;color:#059669;display:block;margin-top:2px;">💡 Required: FIFO uses this price to value inventory &amp; usage</span>
                 </div>
                 <div>
                   <label class="stk-label">Total Cost (₹)</label>
-                  <input type="number" step="any" min="0" id="stk-form-total" class="stk-input" placeholder="0.00" />
+                  <input type="number" step="any" min="0.01" id="stk-form-total" class="stk-input" placeholder="0.00" />
+                  <span style="font-size:0.72rem;color:#64748b;display:block;margin-top:2px;">Rate × Qty (Auto-calculated)</span>
                 </div>
               </div>
 
@@ -901,13 +1070,20 @@ function openEntryModal(mode = 'IN', presetSku = null) {
       if (q > 0) {
         const pv = previewOut(data, sku, q);
         const rem = pv.available - q;
+        const lotsHtml = pv.lotsUsed && pv.lotsUsed.length > 0
+          ? `<div style="margin-top:6px;padding:6px 10px;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;font-size:0.76rem;color:#92400e;">
+               <strong style="display:block;margin-bottom:3px;">📦 FIFO Batches Consumed (Oldest First):</strong>
+               ${pv.lotsUsed.map((l, i) => `• Batch #${i + 1} (${l.dateStr}): <strong>${fmtQty(l.qty)} ${itm.unit}</strong> @ ₹${l.cost.toFixed(2)} = ₹${l.amount.toFixed(2)}`).join('<br/>')}
+             </div>`
+          : '';
         previewText.innerHTML = `
-          Deducting <strong>${fmtQty(q)} ${itm.unit}</strong>: Total FIFO cost will be <strong>${inr(pv.cost)}</strong>.<br/>
-          New Balance will be <strong style="color:${rem < 0 ? '#be123c' : '#047857'};">${fmtQty(rem)} ${itm.unit}</strong>.
-          ${rem < 0 ? '<span style="color:#be123c;display:block;margin-top:2px;">⚠️ Insufficient balance! Negative stock will be logged.</span>' : ''}
+          Deducting <strong>${fmtQty(q)} ${itm.unit}</strong>: Total FIFO cost will be <strong>${inr(pv.cost)}</strong> (Avg ₹${pv.effectiveRate.toFixed(2)}/${itm.unit}).<br/>
+          New Stock Balance will be <strong style="color:${rem < 0 ? '#be123c' : '#047857'};">${fmtQty(rem)} ${itm.unit}</strong>.
+          ${lotsHtml}
+          ${rem < 0 ? '<span style="color:#be123c;display:block;margin-top:3px;font-weight:700;">⚠️ Insufficient balance! Negative stock will be logged.</span>' : ''}
         `;
       } else {
-        previewText.textContent = `Available Balance: ${fmtQty(itm.storedQty)} ${itm.unit}.`;
+        previewText.textContent = `Available Balance: ${fmtQty(itm.storedQty)} ${itm.unit}. (Cost is auto-calculated using FIFO)`;
       }
     }
   };
@@ -948,6 +1124,7 @@ function openEntryModal(mode = 'IN', presetSku = null) {
 
     if (curMode === 'IN') {
       const costPrice = safeNum(costInput.value);
+      if (costPrice <= 0) return alert('Purchase Rate / Price (₹) per unit is required for Stock IN.');
       const supplier = document.getElementById('stk-form-supplier')?.value;
       const updateMasterCost = document.getElementById('stk-form-update-master')?.checked;
       await stockStore.recordIn({ sku, date, qty, costPrice, supplier, notes, updateMasterCost });
@@ -958,6 +1135,164 @@ function openEntryModal(mode = 'IN', presetSku = null) {
 
     closeModal();
   });
+}
+
+// ───────────── FIFO Batch Inspector & Item History Modal ─────────────
+function openItemBatchModal(sku) {
+  const root = document.getElementById('stk-modal-root');
+  if (!root) return;
+
+  const data = stockStore.getData();
+  const info = getItemLots(data, sku);
+  const itm = data.items.find(i => i.sku === sku);
+
+  root.innerHTML = `
+    <div class="stk-modal-backdrop" id="stk-batch-modal">
+      <div class="stk-modal-card" style="max-width:780px;width:95%;">
+        <div class="stk-modal-head" style="background:#0f172a;color:#fff;">
+          <div>
+            <h3 class="stk-modal-title" style="color:#fff;">📦 FIFO Inventory Batches &amp; Movement Log</h3>
+            <div style="font-size:0.8rem;color:#94a3b8;margin-top:2px;">
+              ${info.name} (${info.sku}) · Category: ${itm?.category || 'General'}
+            </div>
+          </div>
+          <button type="button" class="stk-modal-close" id="stk-batch-modal-close" style="color:#fff;">&times;</button>
+        </div>
+
+        <div class="stk-modal-body" style="display:flex;flex-direction:column;gap:1.25rem;max-height:75vh;overflow-y:auto;">
+          <!-- Summary Strip -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:0.75rem;">
+            <div style="background:#f8fafc;padding:0.75rem;border-radius:12px;border:1px solid #e2e8f0;">
+              <div style="font-size:0.72rem;color:#64748b;font-weight:700;text-transform:uppercase;">Current Stock</div>
+              <div style="font-size:1.2rem;font-weight:900;color:#0f172a;font-family:monospace;">${fmtQty(info.totalQty)} ${info.unit}</div>
+            </div>
+            <div style="background:#f8fafc;padding:0.75rem;border-radius:12px;border:1px solid #e2e8f0;">
+              <div style="font-size:0.72rem;color:#64748b;font-weight:700;text-transform:uppercase;">Total Inventory Value</div>
+              <div style="font-size:1.2rem;font-weight:900;color:#047857;font-family:monospace;">${inr(info.totalValue)}</div>
+            </div>
+            <div style="background:#f8fafc;padding:0.75rem;border-radius:12px;border:1px solid #e2e8f0;">
+              <div style="font-size:0.72rem;color:#64748b;font-weight:700;text-transform:uppercase;">FIFO Avg Valuation</div>
+              <div style="font-size:1.2rem;font-weight:900;color:#3b82f6;font-family:monospace;">₹ ${info.avgRate.toFixed(2)} / ${info.unit}</div>
+            </div>
+            <div style="background:#f8fafc;padding:0.75rem;border-radius:12px;border:1px solid #e2e8f0;">
+              <div style="font-size:0.72rem;color:#64748b;font-weight:700;text-transform:uppercase;">Active Batches</div>
+              <div style="font-size:1.2rem;font-weight:900;color:#7c3aed;font-family:monospace;">${info.activeLots.length} lot(s)</div>
+            </div>
+          </div>
+
+          <!-- FIFO Explanation Banner -->
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:0.75rem 1rem;font-size:0.82rem;color:#166534;display:flex;align-items:flex-start;gap:0.6rem;">
+            <span style="font-size:1.2rem;line-height:1;">ℹ️</span>
+            <div>
+              <strong>FIFO (First In, First Out) Rule:</strong>
+              Jo batch pehle khareeda gaya tha (oldest purchase), kitchen use (OUT) ke waqt sabse pehle wahi batch consume hoga uske purchase rate par. Naya batch purane batch ke khatam hone ke baad consume hota hai.
+            </div>
+          </div>
+
+          <!-- Section 1: Active Batches Remaining On Hand -->
+          <div>
+            <h4 style="margin:0 0 0.5rem;font-size:0.95rem;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:0.4rem;">
+              <span>📦</span> Active FIFO Batches on Shelf (${info.activeLots.length})
+            </h4>
+            ${info.activeLots.length === 0
+              ? `<div style="padding:1.5rem;text-align:center;background:#f8fafc;border-radius:10px;color:#94a3b8;font-weight:600;">No active stock batches in hand. Stock is 0 or negative.</div>`
+              : `
+                <div class="stk-table-scroll" style="border:1px solid #e2e8f0;border-radius:10px;">
+                  <table class="stk-table">
+                    <thead>
+                      <tr style="background:#f8fafc;">
+                        <th style="font-size:0.75rem;">Batch Queue</th>
+                        <th style="font-size:0.75rem;">Received Date</th>
+                        <th class="num" style="font-size:0.75rem;">Remaining Qty</th>
+                        <th class="num" style="font-size:0.75rem;">Purchase Rate (₹)</th>
+                        <th class="num" style="font-size:0.75rem;">Batch Value (₹)</th>
+                        <th style="font-size:0.75rem;">Supplier / Source</th>
+                        <th style="font-size:0.75rem;text-align:center;">Priority</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${info.activeLots.map((lot, idx) => `
+                        <tr style="${idx === 0 ? 'background:#ecfdf5;' : ''}">
+                          <td><strong>Batch #${idx + 1}</strong></td>
+                          <td style="font-family:monospace;font-size:0.8rem;">${lot.dateStr}</td>
+                          <td class="num font-mono" style="font-weight:800;">${fmtQty(lot.qty)} ${info.unit}</td>
+                          <td class="num font-mono" style="font-weight:800;color:#047857;">₹ ${lot.cost.toFixed(2)}</td>
+                          <td class="num font-mono" style="font-weight:800;">${inr(lot.total)}</td>
+                          <td style="font-size:0.8rem;color:#475569;">${lot.supplier || '—'}</td>
+                          <td style="text-align:center;">
+                            ${idx === 0
+                              ? `<span class="stk-pill ok" style="font-size:0.7rem;padding:0.2rem 0.5rem;">⚡ 1st In Line (Next OUT)</span>`
+                              : `<span class="stk-pill" style="font-size:0.7rem;padding:0.2rem 0.5rem;background:#e0e7ff;color:#4338ca;">Queue #${idx + 1}</span>`
+                            }
+                          </td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              `
+            }
+          </div>
+
+          <!-- Section 2: Complete Movement Activity Timeline -->
+          <div>
+            <h4 style="margin:0 0 0.5rem;font-size:0.95rem;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:0.4rem;">
+              <span>📜</span> Complete Activity History (IN &amp; OUT Timeline)
+            </h4>
+            ${info.timeline.length === 0
+              ? `<div style="padding:1.5rem;text-align:center;background:#f8fafc;border-radius:10px;color:#94a3b8;font-weight:600;">No movement history recorded yet.</div>`
+              : `
+                <div class="stk-table-scroll" style="border:1px solid #e2e8f0;border-radius:10px;max-height:280px;">
+                  <table class="stk-table">
+                    <thead>
+                      <tr style="background:#f8fafc;">
+                        <th style="font-size:0.75rem;">Date</th>
+                        <th style="font-size:0.75rem;">Type</th>
+                        <th class="num" style="font-size:0.75rem;">Qty</th>
+                        <th class="num" style="font-size:0.75rem;">Rate (₹)</th>
+                        <th class="num" style="font-size:0.75rem;">Total (₹)</th>
+                        <th style="font-size:0.75rem;">Party / Purpose</th>
+                        <th style="font-size:0.75rem;">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${info.timeline.map(m => `
+                        <tr>
+                          <td style="font-family:monospace;font-size:0.8rem;">${m.date instanceof Date ? m.date.toLocaleDateString('en-GB') : m.date}</td>
+                          <td>
+                            <span class="stk-pill ${m.type === 'IN' ? 'ok' : 'low'}" style="font-size:0.7rem;padding:0.2rem 0.45rem;">
+                              ${m.type === 'IN' ? '📥 IN (Purchase)' : '📤 OUT (Usage)'}
+                            </span>
+                          </td>
+                          <td class="num font-mono" style="font-weight:800;color:${m.type === 'IN' ? '#047857' : '#d97706'};">
+                            ${m.type === 'IN' ? '+' : '−'} ${fmtQty(m.qty)} ${info.unit}
+                          </td>
+                          <td class="num font-mono">₹ ${safeNum(m.rate).toFixed(2)}</td>
+                          <td class="num font-mono" style="font-weight:800;color:${m.type === 'IN' ? '#047857' : '#d97706'};">
+                            ${m.type === 'IN' ? '+' : '−'} ${inr(m.amount)}
+                          </td>
+                          <td style="font-size:0.8rem;color:#334155;">${m.party || '—'}</td>
+                          <td style="font-size:0.75rem;color:#64748b;">${m.notes || '—'}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              `
+            }
+          </div>
+        </div>
+
+        <div class="stk-modal-foot">
+          <button type="button" class="stk-btn-subtle" id="stk-batch-modal-ok">Close</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const close = () => { root.innerHTML = ''; };
+  document.getElementById('stk-batch-modal-close')?.addEventListener('click', close);
+  document.getElementById('stk-batch-modal-ok')?.addEventListener('click', close);
 }
 
 // ───────────── Add / Edit Item Modal ─────────────
@@ -1009,7 +1344,8 @@ function openItemModal(itemId = null) {
               </div>
               <div>
                 <label class="stk-label">Default Purchase Rate (₹) *</label>
-                <input type="number" step="any" min="0" id="stk-item-cost" class="stk-input" value="${item ? item.cost : ''}" required placeholder="0.00" />
+                <input type="number" step="any" min="0.01" id="stk-item-cost" class="stk-input" value="${item ? item.cost : ''}" required placeholder="0.00 (Required)" />
+                <span style="font-size:0.72rem;color:#059669;display:block;margin-top:2px;">💡 Required for FIFO valuation &amp; food costing</span>
               </div>
             </div>
 
@@ -1045,15 +1381,23 @@ function openItemModal(itemId = null) {
 
   document.getElementById('stk-item-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const cost = safeNum(document.getElementById('stk-item-cost').value);
+    const storedQty = safeNum(document.getElementById('stk-item-qty').value);
+    if (cost <= 0) {
+      return alert('Default Purchase Rate (₹) is required and must be greater than 0.');
+    }
+    if (!item && storedQty > 0 && cost <= 0) {
+      return alert('Please enter purchase rate (price) for initial stock.');
+    }
     await stockStore.saveItem({
       id: item?.id,
       sku: document.getElementById('stk-item-sku').value,
       name: document.getElementById('stk-item-name').value,
       category: document.getElementById('stk-item-cat').value,
       unit: document.getElementById('stk-item-unit').value,
-      cost: safeNum(document.getElementById('stk-item-cost').value),
+      cost,
       min: safeNum(document.getElementById('stk-item-min').value),
-      storedQty: safeNum(document.getElementById('stk-item-qty').value),
+      storedQty,
       supplier: document.getElementById('stk-item-supplier').value
     });
     closeModal();

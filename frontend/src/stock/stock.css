@@ -1070,3 +1070,97 @@
   background: #f1f5f9;
   color: #0f172a;
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   11. WEEKLY MOVEMENT LOG & FIFO BATCH STYLES
+   ───────────────────────────────────────────────────────────────────── */
+.stk-movement-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 1.25rem;
+}
+
+.stk-movement-card {
+  background: var(--adm-card, #ffffff);
+  border: 1px solid var(--adm-border, #e2e8f0);
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.stk-movement-head {
+  padding: 1rem 1.4rem;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.stk-movement-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stk-movement-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.stk-mv-filter-btn {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0.32rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.stk-mv-filter-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.stk-mv-filter-btn.active {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+}
+.stk-mv-filter-btn.in.active {
+  background: #059669;
+  border-color: #059669;
+  color: #ffffff;
+}
+.stk-mv-filter-btn.out.active {
+  background: #d97706;
+  border-color: #d97706;
+  color: #ffffff;
+}
+
+.stk-btn-view-batch {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.22rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #4338ca;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.stk-btn-view-batch:hover {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+}

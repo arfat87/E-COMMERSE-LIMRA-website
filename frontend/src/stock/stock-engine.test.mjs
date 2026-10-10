@@ -1,6 +1,6 @@
 // Run:  node src/stock/stock-engine.test.mjs
 import assert from 'node:assert/strict';
-import { computePeriod, getWeekInfo, shiftWeek, previewOut, inr } from './stock-engine.js';
+import { computePeriod, getWeekInfo, shiftWeek, previewOut, getItemLots, inr } from './stock-engine.js';
 
 let passed = 0;
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name); };
@@ -106,5 +106,28 @@ t('previewOut gives FIFO cost for a planned OUT', () => {
   near(pv.cost, 10 * 20 + 2 * 30); near(pv.available, 20);
 });
 t('inr() formats Indian grouping', () => assert.equal(inr(1234567.5), '₹ 12,34,567.50'));
+t('getItemLots returns remaining batches in strict FIFO order', () => {
+  const d = {
+    items: [{ ...onion, storedQty: 15 }],
+    ins: [
+      { id: 'b1', sku: 'ON', date: '2026-10-01', qty: 10, costPrice: 20, createdAt: '2026-10-01T10:00:00Z' },
+      { id: 'b2', sku: 'ON', date: '2026-10-03', qty: 10, costPrice: 30, createdAt: '2026-10-03T10:00:00Z' }
+    ],
+    outs: [
+      { id: 'o1', sku: 'ON', date: '2026-10-04', qty: 5, createdAt: '2026-10-04T12:00:00Z' }
+    ]
+  };
+  const lotsInfo = getItemLots(d, 'ON');
+  // 10@20 + 10@30 = 20 total in. Out of 5 consumed oldest batch b1 first!
+  // b1 now has 5 remaining @ 20. b2 has 10 remaining @ 30.
+  assert.equal(lotsInfo.activeLots.length, 2);
+  assert.equal(lotsInfo.activeLots[0].qty, 5);
+  assert.equal(lotsInfo.activeLots[0].cost, 20);
+  assert.equal(lotsInfo.activeLots[1].qty, 10);
+  assert.equal(lotsInfo.activeLots[1].cost, 30);
+  near(lotsInfo.totalQty, 15);
+  near(lotsInfo.totalValue, 5 * 20 + 10 * 30); // 400
+  near(lotsInfo.avgRate, 400 / 15);
+});
 
 console.log(`\n${passed} tests passed`);

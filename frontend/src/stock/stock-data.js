@@ -188,6 +188,7 @@ class StockStore {
     const q = safeNum(qty);
     const cost = safeNum(costPrice, item.cost);
     if (q <= 0) throw new Error('Quantity must be greater than 0');
+    if (cost <= 0) throw new Error('Purchase rate / cost price per unit is required and must be greater than 0.');
 
     const entryId = 'in_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
     const nowIso = new Date().toISOString();
@@ -208,9 +209,11 @@ class StockStore {
 
     // Optimistic local add
     this.ins.unshift(entry);
-    if (updateMasterCost && cost > 0) {
+    item.storedQty = safeNum(item.storedQty, 0) + q;
+    if (cost > 0) {
       item.cost = cost;
     }
+    this.saveCache();
     this.notify();
 
     // Call RPC or DB insert
@@ -277,6 +280,8 @@ class StockStore {
 
     // Optimistic local add
     this.outs.unshift(entry);
+    item.storedQty = Math.max(0, safeNum(item.storedQty, 0) - q);
+    this.saveCache();
     this.notify();
 
     // Call RPC or DB insert
@@ -316,7 +321,12 @@ class StockStore {
     if (type === 'IN') {
       const idx = this.ins.findIndex(e => e.id === entryId);
       if (idx !== -1) {
-        this.ins.splice(idx, 1);
+        const removed = this.ins.splice(idx, 1)[0];
+        const item = this.items.find(i => i.sku === removed.sku);
+        if (item) {
+          item.storedQty = Math.max(0, safeNum(item.storedQty, 0) - safeNum(removed.qty, 0));
+        }
+        this.saveCache();
         this.notify();
         try {
           await insforge.database.from('stock_in').delete().eq('id', entryId);
@@ -327,7 +337,12 @@ class StockStore {
     } else {
       const idx = this.outs.findIndex(e => e.id === entryId);
       if (idx !== -1) {
-        this.outs.splice(idx, 1);
+        const removed = this.outs.splice(idx, 1)[0];
+        const item = this.items.find(i => i.sku === removed.sku);
+        if (item) {
+          item.storedQty = safeNum(item.storedQty, 0) + safeNum(removed.qty, 0);
+        }
+        this.saveCache();
         this.notify();
         try {
           await insforge.database.from('stock_out').delete().eq('id', entryId);
@@ -343,6 +358,12 @@ class StockStore {
     const nowIso = new Date().toISOString();
     const id = itemData.id || `stk_${Date.now()}`;
     const sku = itemData.sku || `J${String(this.items.length + 1).padStart(3, '0')}`;
+    const initialQty = safeNum(itemData.storedQty, 0);
+    const cost = safeNum(itemData.cost, 0);
+
+    if (isNew && initialQty > 0 && cost <= 0) {
+      throw new Error('Please enter purchase rate (price) for initial stock.');
+    }
 
     const formatted = {
       id,
@@ -351,20 +372,22 @@ class StockStore {
       category: itemData.category || 'Bhusimal & Spices',
       unit: itemData.unit || 'pcs',
       min: safeNum(itemData.min, 5),
-      cost: safeNum(itemData.cost, 0),
+      cost: cost,
       salePrice: safeNum(itemData.salePrice, 0),
       supplier: itemData.supplier || '',
-      storedQty: safeNum(itemData.storedQty, 0),
+      storedQty: isNew ? 0 : safeNum(itemData.storedQty, 0),
       isAvailable: itemData.isAvailable ?? true
     };
 
     if (isNew) {
       this.items.unshift(formatted);
-      // If initial quantity is given, create an initial IN entry
-      if (formatted.storedQty > 0) {
+      this.saveCache();
+      this.notify();
+      // If initial quantity is given, create an initial IN entry (which adds storedQty)
+      if (initialQty > 0) {
         await this.recordIn({
           sku: formatted.sku,
-          qty: formatted.storedQty,
+          qty: initialQty,
           costPrice: formatted.cost,
           supplier: formatted.supplier,
           notes: 'Initial opening stock balance'
@@ -375,9 +398,9 @@ class StockStore {
       if (idx !== -1) {
         this.items[idx] = { ...this.items[idx], ...formatted };
       }
+      this.saveCache();
+      this.notify();
     }
-
-    this.notify();
 
     // Async DB update
     try {
@@ -396,7 +419,7 @@ class StockStore {
       };
 
       if (isNew) {
-        await insforge.database.from('stock_items').insert([{ ...dbPayload, qty: formatted.storedQty }]);
+        await insforge.database.from('stock_items').insert([{ ...dbPayload, qty: initialQty }]);
       } else {
         await insforge.database.from('stock_items').update(dbPayload).eq('id', formatted.id);
       }
