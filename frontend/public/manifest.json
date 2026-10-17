@@ -1,0 +1,21 @@
+{
+  "name": "LIMRA Restaurant & POS",
+  "short_name": "LIMRA",
+  "description": "LIMRA Restaurant Online Ordering, Dine-In Tables, and POS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#e11d48",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

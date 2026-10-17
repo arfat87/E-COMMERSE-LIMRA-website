@@ -2,6 +2,7 @@
  * LIMRA Restaurant POS V2 — ESC/POS Thermal Printing Formatter
  * Supports both standard 80mm (48 cols) and compact 58mm (32 cols) hardware printers.
  */
+import { calculateOrderBilling, parseNotesBillingMetadata } from './billing-engine.js';
 
 // ESC/POS Command Codes
 export const COMMANDS = {
@@ -89,11 +90,12 @@ export function wrapText(text = '', maxWidth = 48) {
  * @param {Object} settings - Printer settings record
  * @returns {string} Raw ESC/POS text/command buffer string
  */
-export function buildEscPosBill(order = {}, items = [], settings = {}) {
+export function buildEscPosBill(order = {}, items = [], settings = {}, options = {}) {
   const width = getColumnWidth(settings.bill_paper_width || 80);
   const is58 = width === 32;
   const separator = '-'.repeat(width);
   const doubleSeparator = '='.repeat(width);
+  const isReprint = Boolean(options && options.isReprint);
 
   let out = COMMANDS.INIT;
 
@@ -124,17 +126,27 @@ export function buildEscPosBill(order = {}, items = [], settings = {}) {
     out += `FSSAI: ${settings.restaurant_fssai}` + COMMANDS.LINE_FEED;
   }
 
+  if (isReprint) {
+    out += doubleSeparator + COMMANDS.LINE_FEED;
+    out += COMMANDS.ALIGN_CENTER;
+    out += COMMANDS.BOLD_ON;
+    out += '*** DUPLICATE / REPRINT INVOICE ***' + COMMANDS.LINE_FEED;
+    out += '(ORIGINAL BILL ALREADY ISSUED)' + COMMANDS.LINE_FEED;
+    out += COMMANDS.BOLD_OFF;
+  }
+
   // 3. Invoice Title
   out += doubleSeparator + COMMANDS.LINE_FEED;
   out += COMMANDS.BOLD_ON;
   const tableNum = order.table_number || (order.notes && order.notes.match(/Table\s*#?(\d+)/i)?.[1]) || '';
   const orderType = (order.order_type || 'dine_in').toUpperCase();
+  const invoicePrefix = isReprint ? 'DUPLICATE TAX INVOICE' : 'TAX INVOICE';
   if (tableNum) {
-    out += `TAX INVOICE — TABLE ${tableNum}` + COMMANDS.LINE_FEED;
+    out += `${invoicePrefix} — TABLE ${tableNum}` + COMMANDS.LINE_FEED;
   } else if (orderType === 'DELIVERY') {
-    out += `TAX INVOICE — HOME DELIVERY` + COMMANDS.LINE_FEED;
+    out += `${invoicePrefix} — HOME DELIVERY` + COMMANDS.LINE_FEED;
   } else {
-    out += `TAX INVOICE — ${orderType}` + COMMANDS.LINE_FEED;
+    out += `${invoicePrefix} — ${orderType}` + COMMANDS.LINE_FEED;
   }
   out += COMMANDS.BOLD_OFF;
   out += separator + COMMANDS.LINE_FEED;
@@ -203,23 +215,41 @@ export function buildEscPosBill(order = {}, items = [], settings = {}) {
   out += separator + COMMANDS.LINE_FEED;
 
   // 7. Totals & Tax Calculation
-  const discountAmt = Number(order.discount_amount || 0);
-  const taxable = Math.max(0, itemsSubtotal - discountAmt);
-  const cgstRate = Number(settings.cgst_rate ?? 2.5);
-  const sgstRate = Number(settings.sgst_rate ?? 2.5);
-  const cgst = taxable * (cgstRate / 100);
-  const sgst = taxable * (sgstRate / 100);
-  const deliveryFee = Number(order.delivery_fee || 0);
-  const grandTotal = Number(order.total_amount || (taxable + cgst + sgst + deliveryFee));
+  const parsedMeta = parseNotesBillingMetadata(order.notes);
+  const deliveryFee = Number(order.delivery_fee ?? parsedMeta.deliveryFee ?? 0);
+  const discountAmt = Number(order.discount_amount ?? parsedMeta.discountAmt ?? 0);
+  const discountPct = Number(parsedMeta.discountPct ?? 0);
+  const cgstRate = Number(settings.cgst_rate ?? parsedMeta.cgstRate ?? 2.5);
+  const sgstRate = Number(settings.sgst_rate ?? parsedMeta.sgstRate ?? 2.5);
 
-  out += formatTwoColumns('Subtotal:', `₹${itemsSubtotal.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
-  if (discountAmt > 0) {
-    out += formatTwoColumns('Discount:', `-₹${discountAmt.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
+  const billing = calculateOrderBilling({
+    items: items,
+    deliveryFee,
+    discountAmt,
+    discountPct,
+    cgstRate,
+    sgstRate,
+    isInterstate: Boolean(parsedMeta.isInterstate)
+  });
+
+  const subtotal = billing.subtotal > 0 ? billing.subtotal : itemsSubtotal;
+  const taxable = billing.taxableValue;
+  const cgst = billing.cgstAmt;
+  const sgst = billing.sgstAmt;
+  const grandTotal = Number(order.total_amount || billing.grandTotal);
+
+  out += formatTwoColumns('Subtotal:', `₹${subtotal.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
+  if (billing.discountAmt > 0) {
+    out += formatTwoColumns('Discount:', `-₹${billing.discountAmt.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
     out += formatTwoColumns('Net Taxable:', `₹${taxable.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
   }
   if (settings.bill_show_tax_summary !== false) {
-    out += formatTwoColumns(`CGST @ ${cgstRate}%:`, `₹${cgst.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
-    out += formatTwoColumns(`SGST @ ${sgstRate}%:`, `₹${sgst.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
+    if (billing.isInterstate) {
+      out += formatTwoColumns(`IGST @ ${billing.totalGstRate}%:`, `₹${billing.totalGst.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
+    } else {
+      out += formatTwoColumns(`CGST @ ${cgstRate}%:`, `₹${cgst.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
+      out += formatTwoColumns(`SGST @ ${sgstRate}%:`, `₹${sgst.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
+    }
   }
   if (deliveryFee > 0) {
     out += formatTwoColumns('Delivery Fee:', `₹${deliveryFee.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
@@ -270,16 +300,35 @@ export function buildEscPosBill(order = {}, items = [], settings = {}) {
  * @param {Object} settings - Printer settings record
  * @returns {string} Raw ESC/POS text/command buffer string
  */
-export function buildEscPosKOT(order = {}, items = [], settings = {}) {
+export function buildEscPosKOT(order = {}, items = [], settings = {}, options = {}) {
   const width = getColumnWidth(settings.kot_paper_width || 80);
   const separator = '-'.repeat(width);
   const doubleSeparator = '='.repeat(width);
 
+  const isReprint = Boolean(typeof options === 'object' ? options?.isReprint : false);
+  const isNewOnly = Boolean(typeof options === 'boolean' ? options : options?.isNewOnly);
+  const roundNumber = Number((typeof options === 'object' && options?.roundNumber) || (isNewOnly ? (order.current_round || 2) : 1));
+
   let out = COMMANDS.INIT;
   out += COMMANDS.ALIGN_CENTER;
+
+  if (isReprint) {
+    out += COMMANDS.BOLD_ON + COMMANDS.DOUBLE_HEIGHT;
+    out += '*** REPRINT - DUPLICATE KOT ***' + COMMANDS.LINE_FEED;
+    out += '*** DO NOT RE-COOK ***' + COMMANDS.LINE_FEED;
+    out += COMMANDS.NORMAL;
+    out += doubleSeparator + COMMANDS.LINE_FEED;
+  }
+
   out += COMMANDS.BOLD_ON + COMMANDS.DOUBLE_SIZE;
   out += '*** KITCHEN ORDER TICKET ***' + COMMANDS.LINE_FEED;
   out += COMMANDS.NORMAL;
+
+  if (isNewOnly || roundNumber > 1) {
+    out += COMMANDS.BOLD_ON;
+    out += `>>> ROUND #${roundNumber} (NEW ITEMS ONLY) <<<` + COMMANDS.LINE_FEED;
+    out += COMMANDS.BOLD_OFF;
+  }
 
   const tableNum = order.table_number || (order.notes && order.notes.match(/Table\s*#?(\d+)/i)?.[1]) || '';
   const orderType = (order.order_type || 'dine_in').toUpperCase();
@@ -299,7 +348,8 @@ export function buildEscPosKOT(order = {}, items = [], settings = {}) {
   const timeStr = new Date(order.created_at || Date.now()).toLocaleTimeString('en-IN', {
     hour: '2-digit', minute: '2-digit', hour12: true
   });
-  out += formatTwoColumns(`KOT #${ordNo}`, `Time: ${timeStr}`, width) + COMMANDS.LINE_FEED;
+  const kotTitle = roundNumber > 1 ? `KOT ${ordNo} (R${roundNumber})` : `KOT ${ordNo}`;
+  out += formatTwoColumns(kotTitle, `Time: ${timeStr}`, width) + COMMANDS.LINE_FEED;
   if (order.customer_name) {
     out += `Guest: ${order.customer_name}`.slice(0, width) + COMMANDS.LINE_FEED;
   }

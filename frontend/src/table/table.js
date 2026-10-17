@@ -1,4 +1,5 @@
-import { insforge, saveOrder, saveTableRound, getMenuOverrides, validateCouponCode, redeemCoupon, getCombos, getCustomDishes } from '../lib/insforge.js';
+import { insforge, saveOrder, saveTableRound, requestTableService, getMenuOverrides, validateCouponCode, redeemCoupon, getCombos, getCustomDishes } from '../lib/insforge.js';
+import { calculateOrderBilling } from '../lib/billing-engine.js';
 import { menuItems, categoryTabOrder, categoryLabels, categoryEmojis } from '../data/menu.js';
 import { initLanguageSystem, applyTranslations, t, getLanguage, setLanguage } from '../lib/i18n.js';
 
@@ -546,13 +547,22 @@ function updateCartUI() {
     }
   }
 
-  const discountAmt = appliedCoupon ? Math.round(subtotal * (appliedCoupon.discount_pct / 100)) : 0;
-  const taxableItems = cart.filter(c => c.item && c.item.gst_applicable !== false);
-  const taxableSub = taxableItems.reduce((s, c) => s + (c.item.price * c.quantity), 0);
-  const discountRatio = subtotal > 0 ? (discountAmt / subtotal) : 0;
-  const netTaxable = Math.max(0, taxableSub - (taxableSub * discountRatio));
-  const gst = Math.round(netTaxable * 0.05);
-  const totalAmt = subtotal - discountAmt + gst;
+  const billing = calculateOrderBilling({
+    items: cart.map(c => ({
+      name: c.item?.name || 'Item',
+      price: c.item?.price || 0,
+      qty: c.quantity || 1,
+      gst_applicable: c.item?.gst_applicable !== false
+    })),
+    coupon: appliedCoupon,
+    deliveryFee: 0,
+    cgstRate: 2.5,
+    sgstRate: 2.5
+  });
+
+  const discountAmt = billing.discountAmt;
+  const gst = billing.totalGst;
+  const totalAmt = billing.grandTotal;
 
   // Update Badges & Totals
   if ($('#cart-count-desktop')) $('#cart-count-desktop').textContent = `${totalQty} item${totalQty === 1 ? '' : 's'}`;
@@ -806,22 +816,26 @@ function setupCartUI() {
     try {
       const zone = currentTable <= 9 ? 'indoor' : 'outdoor';
 
-      const subtotal = cart.reduce((s, c) => s + (c.item.price * c.quantity), 0);
-      const taxableSubtotal = cart.reduce((s, c) => {
-        if (c.item && c.item.gst_applicable === false) return s;
-        return s + (c.item.price * c.quantity);
-      }, 0);
-      const discountAmt = appliedCoupon ? Math.round(subtotal * (appliedCoupon.discount_pct / 100)) : 0;
-      const taxableDiscount = appliedCoupon && subtotal > 0 ? Math.round(taxableSubtotal * (appliedCoupon.discount_pct / 100)) : 0;
-      const gst = Math.round(Math.max(0, taxableSubtotal - taxableDiscount) * 0.05);
+      const billing = calculateOrderBilling({
+        items: cart.map(c => ({
+          name: c.item?.name || 'Item',
+          price: c.item?.price || 0,
+          qty: c.quantity || 1,
+          gst_applicable: c.item?.gst_applicable !== false
+        })),
+        coupon: appliedCoupon,
+        deliveryFee: 0,
+        cgstRate: 2.5,
+        sgstRate: 2.5
+      });
 
       // Clean up legacy client round storage so browser never forces round 2
       try {
         sessionStorage.removeItem(`limra_table_session_round_${currentTable}`);
       } catch (e) {}
 
-      const couponNote = appliedCoupon ? `[COUPON: ${appliedCoupon.code}] [DISCOUNT_PCT: ${appliedCoupon.discount_pct}%] [DISCOUNT_AMT: ${discountAmt}]` : '';
-      const taxNote = `[CGST: 2.5%] [SGST: 2.5%]`;
+      const couponNote = appliedCoupon ? `[COUPON: ${appliedCoupon.code}] [DISCOUNT_PCT: ${billing.discountPct}%] [DISCOUNT_AMT: ${billing.discountAmt}]` : '';
+      const taxNote = `[CGST: ${billing.cgstRate}%] [SGST: ${billing.sgstRate}%]`;
       const paymentNote = `[PAYMENT: ${payment}] | [PAYMENT_STATUS: ${payment === 'upi' ? 'PAID' : 'PENDING'}]`;
       const combinedNotes = [paymentNote, taxNote, couponNote, instruction].filter(Boolean).join(' | ');
 
@@ -833,6 +847,8 @@ function setupCartUI() {
         qty: Number(c.quantity)
       }));
 
+      const idempotencyKey = `table_${currentTable}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
       // Server-side authoritative round determination via place_table_round RPC
       const orderData = await saveTableRound({
         tableNumber: currentTable,
@@ -840,7 +856,8 @@ function setupCartUI() {
         customerName: name,
         customerPhone: phone,
         items: orderItems,
-        notes: combinedNotes
+        notes: combinedNotes,
+        idempotencyKey
       });
 
       if (appliedCoupon) {
@@ -885,22 +902,36 @@ function setupCartUI() {
       updateCartState();
       
       const isBnLang = getLanguage() === 'bn';
-      const rawNum = parseInt(orderData.order_number, 10);
-      const formattedNum = !isNaN(rawNum) && rawNum > 0 ? (rawNum < 10 ? `0${rawNum}` : `${rawNum}`) : String(orderData.order_number || '01');
-      $('#success-order-number').textContent = `#${formattedNum}`;
-      $('#success-table-number').textContent = isBnLang ? `টেবিল ${currentTable}` : `Table ${currentTable}`;
-      $('#success-diner-name').textContent = name;
-
       const appendBadge = $('#success-append-badge');
-      if (appendBadge) {
-        if (orderData.is_subsequent_round || orderData.is_appended) {
-          const roundText = orderData.round_number
-            ? (isBnLang ? `রাউন্ড ${orderData.round_number} রান্নাঘরে পাঠানো হয়েছে! 🍽️` : `Round ${orderData.round_number} Sent to Kitchen! 🍽️`)
-            : (isBnLang ? 'নতুন খাবার রান্নাঘরে পাঠানো হয়েছে! 🍽️' : 'Additional Round Sent to Kitchen! 🍽️');
-          appendBadge.textContent = roundText;
+
+      if (orderData.isLocalPending) {
+        $('#success-order-number').textContent = '#OFFLINE';
+        $('#success-table-number').textContent = isBnLang ? `টেবিল ${currentTable}` : `Table ${currentTable}`;
+        $('#success-diner-name').textContent = name;
+        if (appendBadge) {
+          appendBadge.textContent = isBnLang
+            ? 'অফলাইনে সংরক্ষিত — ইন্টারনেট সংযোগ পেলে রান্নাঘরে পাঠানো হবে ⏳'
+            : 'Saved Offline — Sent to kitchen when reconnected ⏳';
+          appendBadge.className = 'inline-block px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full text-xs font-semibold mb-2';
           show(appendBadge);
-        } else {
-          hide(appendBadge);
+        }
+      } else {
+        const rawNum = parseInt(orderData.order_number, 10);
+        const formattedNum = !isNaN(rawNum) && rawNum > 0 ? (rawNum < 10 ? `0${rawNum}` : `${rawNum}`) : String(orderData.order_number || '01');
+        $('#success-order-number').textContent = `#${formattedNum}`;
+        $('#success-table-number').textContent = isBnLang ? `টেবিল ${currentTable}` : `Table ${currentTable}`;
+        $('#success-diner-name').textContent = name;
+
+        if (appendBadge) {
+          if (orderData.is_subsequent_round || orderData.is_appended) {
+            const roundText = orderData.round_number
+              ? (isBnLang ? `রাউন্ড ${orderData.round_number} রান্নাঘরে পাঠানো হয়েছে! 🍽️` : `Round ${orderData.round_number} Sent to Kitchen! 🍽️`)
+              : (isBnLang ? 'নতুন খাবার রান্নাঘরে পাঠানো হয়েছে! 🍽️' : 'Additional Round Sent to Kitchen! 🍽️');
+            appendBadge.textContent = roundText;
+            show(appendBadge);
+          } else {
+            hide(appendBadge);
+          }
         }
       }
 
@@ -956,8 +987,114 @@ function setupCartUI() {
     }
   });
 
+  // Table Service Request Logic (Call Waiter & Request Bill)
+  const serviceRequestCooldown = { call_waiter: 0, request_bill: 0 };
+
+  function showServiceToast(msg, type = 'info') {
+    let toast = $('#service-request-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'service-request-toast';
+      toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%) translateY(-100px);
+        background: #0f172a;
+        color: #ffffff;
+        padding: 12px 20px;
+        border-radius: 9999px;
+        font-size: 13px;
+        font-weight: 700;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+        opacity: 0;
+        pointer-events: none;
+        max-width: 90vw;
+        text-align: center;
+      `;
+      document.body.appendChild(toast);
+    }
+
+    if (type === 'success') {
+      toast.style.background = '#0c831f';
+    } else if (type === 'error') {
+      toast.style.background = '#dc2626';
+    } else if (type === 'loading') {
+      toast.style.background = '#1e293b';
+    } else {
+      toast.style.background = '#0284c7';
+    }
+
+    toast.innerHTML = msg;
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+
+    clearTimeout(toast._timeout);
+    if (type !== 'loading') {
+      toast._timeout = setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(-100px)';
+      }, 3500);
+    }
+  }
+
+  async function handleServiceRequest(serviceType) {
+    if (!currentTable) {
+      alert('Please select or scan your table first.');
+      return;
+    }
+    const now = Date.now();
+    const lastTime = serviceRequestCooldown[serviceType] || 0;
+    if (now - lastTime < 30000) {
+      const remaining = Math.ceil((30000 - (now - lastTime)) / 1000);
+      const msg = getLanguage() === 'bn'
+        ? `⏳ অনুগ্রহ করে ${remaining} সেকেন্ড অপেক্ষা করুন। কর্মীরা ইতিমধ্যেই অবহিত!`
+        : `⏳ Please wait ${remaining}s before requesting again. Staff is already notified!`;
+      showServiceToast(msg, 'info');
+      return;
+    }
+
+    const isBn = getLanguage() === 'bn';
+    const loadingMsg = serviceType === 'call_waiter'
+      ? (isBn ? '🔔 বেয়ারা ডাকা হচ্ছে...' : '🔔 Calling waiter...')
+      : (isBn ? '🧾 বিল অনুরোধ করা হচ্ছে...' : '🧾 Requesting bill...');
+    showServiceToast(loadingMsg, 'loading');
+
+    try {
+      const res = await requestTableService({
+        tableNumber: currentTable,
+        serviceType: serviceType,
+        customerName: `Table ${currentTable} Diner`
+      });
+
+      serviceRequestCooldown[serviceType] = Date.now();
+      const successMsg = res.message || (serviceType === 'call_waiter'
+        ? (isBn ? '🔔 বেয়ারা ডাকা হয়েছে! শীঘ্রই আসছেন।' : '🔔 Waiter has been called! Staff will assist shortly.')
+        : (isBn ? '🧾 বিল চাওয়া হয়েছে! ক্যাশিয়ার বিল নিয়ে আসছেন।' : '🧾 Bill requested! Cashier will bring your bill.'));
+      showServiceToast(successMsg, 'success');
+    } catch (err) {
+      console.error('[TableServiceRequest] Error:', err);
+      showServiceToast(err.message || 'Failed to notify staff. Please alert a waiter directly.', 'error');
+    }
+  }
+
+  ['#btn-call-waiter', '#btn-success-call-waiter'].forEach(selector => {
+    const btn = $(selector);
+    if (btn) btn.addEventListener('click', () => handleServiceRequest('call_waiter'));
+  });
+
+  ['#btn-request-bill', '#btn-success-request-bill'].forEach(selector => {
+    const btn = $(selector);
+    if (btn) btn.addEventListener('click', () => handleServiceRequest('request_bill'));
+  });
+
   // Success view ordering more
-  $('#btn-order-more').addEventListener('click', () => {
+  $('#btn-order-more')?.addEventListener('click', () => {
     hide($('#success-view'));
     show($('#customer-view'));
   });

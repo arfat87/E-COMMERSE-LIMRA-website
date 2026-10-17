@@ -47,6 +47,8 @@ const apiHandlers = {
   "/api/db-status": () => import("./api/db-status.js"),
   "/api/verify-payment": () => import("./api/verify-payment.js"),
   "/api/create-order": () => import("./api/create-order.js"),
+  "/api/webhook": () => import("./api/webhook.js"),
+  "/api/razorpay-webhook": () => import("./api/webhook.js"),
   "/api/analytics": () => import("./api/analytics.js"),
   "/api/auth": () => import("./api/auth.js")
 };
@@ -54,17 +56,17 @@ const apiHandlers = {
 async function parseBody(req) {
   return new Promise((resolve) => {
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
-      return resolve({});
+      return resolve({ body: {}, rawBody: "" });
     }
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
-      const raw = Buffer.concat(chunks).toString();
-      if (!raw) return resolve({});
+      const rawBody = Buffer.concat(chunks).toString();
+      if (!rawBody) return resolve({ body: {}, rawBody: "" });
       try {
-        resolve(JSON.parse(raw));
+        resolve({ body: JSON.parse(rawBody), rawBody });
       } catch (e) {
-        resolve(raw);
+        resolve({ body: rawBody, rawBody });
       }
     });
   });
@@ -74,13 +76,20 @@ const server = http.createServer(async (req, res) => {
   const reqUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const pathname = reqUrl.pathname.replace(/\/+$/, "") || "/";
 
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const reqOrigin = req.headers.origin;
+  if (reqOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", reqOrigin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
+    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, X-Idempotency-Key"
   );
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
 
   if (req.method === "OPTIONS") {
     res.statusCode = 200;
@@ -93,13 +102,14 @@ const server = http.createServer(async (req, res) => {
     if (handlerLoader) {
       try {
         const { default: handler } = await handlerLoader();
-        const body = await parseBody(req);
+        const { body, rawBody } = await parseBody(req);
         
         const mockReq = {
           method: req.method,
           url: req.url,
           query: Object.fromEntries(reqUrl.searchParams.entries()),
           body,
+          rawBody,
           headers: req.headers
         };
 
@@ -200,6 +210,13 @@ server.listen(PORT, async () => {
   console.log(`🍽️ Table Order:     http://localhost:${PORT}/table/index.html`);
   console.log(`📦 Stock Manager:   http://localhost:${PORT}/stock-manager/index.html`);
   console.log(`==================================================\n`);
+
+  try {
+    const { validateStartupConfig } = await import("./api/lib/env-validator.js");
+    validateStartupConfig();
+  } catch (valErr) {
+    console.warn("⚠️ [Config Validator Notice]:", valErr.message);
+  }
 
   try {
     const { pingDatabase } = await import("./api/lib/supabase.js");

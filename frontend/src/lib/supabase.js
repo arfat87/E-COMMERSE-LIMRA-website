@@ -1,4 +1,24 @@
 import { createClient } from "@supabase/supabase-js";
+import { offlineSync } from "./offline-sync.js";
+import {
+  getOrFetchRef,
+  invalidateRefCache,
+  invalidateAllRefCaches,
+  setRefCache,
+  getCachedRef,
+  getCacheStats,
+  DEFAULT_TTLS
+} from "./reference-cache.js";
+export {
+  offlineSync,
+  getOrFetchRef,
+  invalidateRefCache,
+  invalidateAllRefCaches,
+  setRefCache,
+  getCachedRef,
+  getCacheStats,
+  DEFAULT_TTLS
+};
 
 const DEFAULT_URL = "https://ynrtlcasbndkrqeotgzt.supabase.co";
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlucnRsY2FzYm5ka3JxZW90Z3p0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMTgyMjEsImV4cCI6MjEwMzg5NDIyMX0.xTeCPhHFhlGz3fm6hcfstN1DPWuhhRSlLJnXtTCOkm4";
@@ -140,11 +160,33 @@ supabase.realtime.unsubscribe = async function (channelName) {
 
 supabase.realtime.publish = async function (channelName, event, payload) {
   try {
-    const ch = activeChannels.get(channelName) || supabase.channel(channelName);
-    ch.send({ type: "broadcast", event, payload });
+    const existing = activeChannels.get(channelName);
+    if (existing) {
+      existing.send({ type: "broadcast", event, payload });
+    } else {
+      // Ephemeral channel: broadcast and immediately clean up to prevent channel accumulation
+      const ch = supabase.channel(channelName);
+      await ch.subscribe();
+      await ch.send({ type: "broadcast", event, payload });
+      await supabase.removeChannel(ch);
+    }
   } catch (e) {
     console.warn("[Realtime Publish Notice]:", e.message);
   }
+};
+
+supabase.realtime.teardownAll = async function () {
+  for (const [name, ch] of activeChannels.entries()) {
+    try {
+      await supabase.removeChannel(ch);
+    } catch (e) {}
+  }
+  activeChannels.clear();
+  realtimeEventHandlers.clear();
+};
+
+supabase.realtime.getActiveChannels = function () {
+  return Array.from(activeChannels.keys());
 };
 
 // Aliases for compatibility
@@ -174,10 +216,38 @@ export async function saveOrder({
   tableZone = null,
   paymentMethod = null,
   paymentStatus = null,
-  txnRef = null
+  txnRef = null,
+  idempotencyKey = null
 }) {
   if (!items || !items.length) {
     throw new Error("Your cart is empty");
+  }
+
+  const isOnlinePayment = paymentMethod === "online" || (paymentStatus === "paid" && txnRef);
+
+  // If client is currently offline
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    if (isOnlinePayment) {
+      throw new Error("Online payment requires an active internet connection. Please choose Cash on Delivery or connect to the internet.");
+    }
+    return offlineSync.enqueueCustomerOrder({
+      customerName,
+      customerPhone,
+      items,
+      notes,
+      latitude,
+      longitude,
+      landmark,
+      deliveryNotes,
+      locationVerified,
+      orderType,
+      tableNumber,
+      tableZone,
+      paymentMethod: paymentMethod || "cod",
+      paymentStatus: "unpaid",
+      txnRef: null,
+      idempotencyKey
+    });
   }
 
   const p_items = items.map(function (item) {
@@ -193,6 +263,7 @@ export async function saveOrder({
 
   const finalPayStatus = (txnRef || paymentStatus === "paid") ? "paid" : (paymentStatus || "unpaid");
   const finalPayMethod = paymentMethod || (txnRef ? "online" : "cod");
+  const cleanKey = idempotencyKey ? String(idempotencyKey).trim() : null;
 
   try {
     const result = await supabase.rpc("place_order", {
@@ -208,7 +279,8 @@ export async function saveOrder({
       p_order_type: orderType,
       p_table_number: tableNumber,
       p_table_zone: tableZone,
-      p_txn_ref: txnRef
+      p_txn_ref: txnRef,
+      p_idempotency_key: cleanKey
     });
 
     if (!result.error && result.data) {
@@ -220,33 +292,64 @@ export async function saveOrder({
       }
       return result.data;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn("[supabase] place_order RPC failed, falling back to backend API:", e);
+  }
 
   // Fallback to backend /api/orders
-  const res = await fetch("/api/orders", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (cleanKey) headers["x-idempotency-key"] = cleanKey;
+
+    const res = await fetch("/api/orders", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        customerName,
+        customerPhone,
+        items: p_items,
+        notes,
+        latitude,
+        longitude,
+        landmark,
+        deliveryNotes,
+        orderType,
+        tableNumber,
+        tableZone,
+        paymentMethod: finalPayMethod,
+        paymentStatus: finalPayStatus,
+        txnRef,
+        idempotencyKey: cleanKey
+      })
+    });
+
+    const json = await res.json();
+    if (json.success && json.data) return json.data;
+    throw new Error(json.error || "Failed to place order");
+  } catch (networkErr) {
+    if (isOnlinePayment) {
+      throw networkErr;
+    }
+    console.warn("[supabase] Network error during order placement. Enqueueing offline sync:", networkErr);
+    return offlineSync.enqueueCustomerOrder({
       customerName,
       customerPhone,
-      items: p_items,
+      items,
       notes,
       latitude,
       longitude,
       landmark,
       deliveryNotes,
+      locationVerified,
       orderType,
       tableNumber,
       tableZone,
       paymentMethod: finalPayMethod,
-      paymentStatus: finalPayStatus,
-      txnRef
-    })
-  });
-
-  const json = await res.json();
-  if (json.success && json.data) return json.data;
-  throw new Error(json.error || "Failed to place order");
+      paymentStatus: "unpaid",
+      txnRef: null,
+      idempotencyKey: cleanKey
+    });
+  }
 }
 
 /**
@@ -259,10 +362,27 @@ export async function saveTableRound({
   items,
   notes = "",
   tableZone = "indoor",
-  roundNumber = 1
+  roundNumber = 1,
+  idempotencyKey = null
 }) {
   if (!items || !items.length) {
     throw new Error("Cannot place an empty round");
+  }
+
+  const cleanKey = idempotencyKey ? String(idempotencyKey).trim() : null;
+
+  // If client is currently offline
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return offlineSync.enqueueTableRound({
+      tableNumber: Number(tableNumber) || 1,
+      customerName: (customerName || "Table Customer").trim(),
+      customerPhone: (customerPhone || "").trim(),
+      tableZone,
+      roundNumber: Number(roundNumber) || 1,
+      notes: notes ? notes.trim() : "",
+      items,
+      idempotencyKey: cleanKey
+    });
   }
 
   const p_items = items.map(function (item) {
@@ -284,7 +404,8 @@ export async function saveTableRound({
       p_table_zone: tableZone,
       p_round_number: Number(roundNumber) || 1,
       p_notes: notes ? notes.trim() : "",
-      p_items: p_items
+      p_items: p_items,
+      p_idempotency_key: cleanKey
     });
 
     if (!result.error && result.data) return result.data;
@@ -305,7 +426,8 @@ export async function saveTableRound({
           p_table_zone: tableZone,
           p_round_number: Number(roundNumber) || 1,
           p_notes: notes ? notes.trim() : "",
-          p_items: p_items
+          p_items: p_items,
+          p_idempotency_key: cleanKey
         }
       })
     });
@@ -315,23 +437,89 @@ export async function saveTableRound({
   } catch (e) {}
 
   // Fallback to /api/orders backend endpoint
-  const res2 = await fetch("/api/orders", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (cleanKey) headers["x-idempotency-key"] = cleanKey;
+
+    const res2 = await fetch("/api/orders", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        customerName: (customerName || "Table Customer").trim(),
+        customerPhone: (customerPhone || "").trim(),
+        items: p_items,
+        notes,
+        orderType: "table",
+        tableNumber: Number(tableNumber) || 1,
+        tableZone: tableZone,
+        idempotencyKey: cleanKey
+      })
+    });
+
+    const json2 = await res2.json();
+    if (json2.data || json2.success) return json2.data || json2;
+    throw new Error(json2.error || "Failed to place table round");
+  } catch (networkErr) {
+    console.warn("[supabase] Table round network failed, enqueueing offline:", networkErr);
+    return offlineSync.enqueueTableRound({
+      tableNumber: Number(tableNumber) || 1,
       customerName: (customerName || "Table Customer").trim(),
       customerPhone: (customerPhone || "").trim(),
-      items: p_items,
-      notes,
-      orderType: "table",
-      tableNumber: Number(tableNumber) || 1,
-      tableZone: tableZone
-    })
-  });
+      tableZone,
+      roundNumber: Number(roundNumber) || 1,
+      notes: notes ? notes.trim() : "",
+      items,
+      idempotencyKey: cleanKey
+    });
+  }
+}
 
-  const json2 = await res2.json();
-  if (json2.data || json2.success) return json2.data || json2;
-  throw new Error(json2.error || "Failed to place table round");
+/**
+ * 2.1 Request Table Service (Call Waiter / Request Bill)
+ */
+export async function requestTableService({
+  tableNumber,
+  serviceType,
+  customerName = "Dine-in Guest",
+  notes = ""
+}) {
+  const tblNum = Number(tableNumber) || 1;
+  const sType = serviceType === "request_bill" ? "request_bill" : "call_waiter";
+
+  try {
+    const result = await supabase.rpc("request_table_service", {
+      p_table_number: tblNum,
+      p_service_type: sType,
+      p_customer_name: (customerName || "Dine-in Guest").trim(),
+      p_notes: notes ? notes.trim() : null
+    });
+    if (!result.error && result.data) return result.data;
+  } catch (e) {}
+
+  // Fallback to /api/db rpc
+  try {
+    const res = await fetch("/api/db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "rpc",
+        rpc: "request_table_service",
+        params: {
+          p_table_number: tblNum,
+          p_service_type: sType,
+          p_customer_name: (customerName || "Dine-in Guest").trim(),
+          p_notes: notes ? notes.trim() : null
+        }
+      })
+    });
+    const json = await res.json();
+    if (json.data) return json.data;
+    if (json.error) throw new Error(json.error.message || json.error);
+  } catch (e) {
+    throw e;
+  }
+
+  throw new Error("Failed to send service request. Please notify staff directly.");
 }
 
 /**
@@ -422,25 +610,27 @@ export async function getCustomerOrders(phone) {
   return normalizeRpcList(json.data);
 }
 
-export async function getMenuOverrides() {
-  const { data, error } = await supabase.from("menu_overrides").select("*");
-  if (!error && data) {
-    return data.map(item => ({
+export async function getMenuOverrides(force = false) {
+  return await getOrFetchRef('menu_overrides', async () => {
+    const { data, error } = await supabase.from("menu_overrides").select("*");
+    if (!error && data) {
+      return data.map(item => ({
+        ...item,
+        gst_applicable: item.gst_applicable !== undefined
+          ? item.gst_applicable
+          : !(typeof item.description === 'string' && item.description.includes('[NO_GST]'))
+      }));
+    }
+
+    const res = await fetch("/api/menu");
+    const json = await res.json();
+    return (json.data || []).map(item => ({
       ...item,
       gst_applicable: item.gst_applicable !== undefined
         ? item.gst_applicable
         : !(typeof item.description === 'string' && item.description.includes('[NO_GST]'))
     }));
-  }
-
-  const res = await fetch("/api/menu");
-  const json = await res.json();
-  return (json.data || []).map(item => ({
-    ...item,
-    gst_applicable: item.gst_applicable !== undefined
-      ? item.gst_applicable
-      : !(typeof item.description === 'string' && item.description.includes('[NO_GST]'))
-  }));
+  }, force, DEFAULT_TTLS.menu_overrides);
 }
 
 export async function saveMenuOverride(override) {
@@ -465,22 +655,26 @@ export async function saveMenuOverride(override) {
 
   const { data, error } = await supabase.from("menu_overrides").upsert(payload).select();
   if (error) throw new Error(formatError(error));
+  invalidateRefCache('menu_overrides');
   return data;
 }
 
-export async function getCoupons() {
-  const { data, error } = await supabase
-    .from("coupons")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(formatError(error));
-  return data || [];
+export async function getCoupons(force = false) {
+  return await getOrFetchRef('coupons', async () => {
+    const { data, error } = await supabase
+      .from("coupons")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(formatError(error));
+    return data || [];
+  }, force, DEFAULT_TTLS.coupons);
 }
 
 export async function deleteCoupon(code) {
   const cleanCode = String(code).trim().toUpperCase();
   const { data, error } = await supabase.from("coupons").delete().eq("code", cleanCode);
   if (error) throw new Error(formatError(error));
+  invalidateRefCache('coupons');
   return data;
 }
 
@@ -503,6 +697,7 @@ export async function saveCoupon(coupon) {
 
   const { data, error } = await supabase.from("coupons").upsert(payload).select();
   if (error) throw new Error(formatError(error));
+  invalidateRefCache('coupons');
   return data;
 }
 
@@ -575,6 +770,7 @@ export async function redeemCoupon(code, phone, orderId) {
 
   const newCount = (current && current[0] ? current[0].used_count : 0) + 1;
   await supabase.from("coupons").update({ used_count: newCount }).eq("code", cleanCode);
+  invalidateRefCache('coupons');
 
   return true;
 }
@@ -583,20 +779,24 @@ export async function recordCouponUsage(couponCode, orderId, discountAmount, cus
   return await redeemCoupon(couponCode, customerPhone, orderId);
 }
 
-export async function getCombos() {
-  const { data, error } = await supabase
-    .from("combos")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(formatError(error));
-  const rows = data || [];
-  // Exclude custom dishes so combo deals only list real combo packages
-  return rows.filter(r => !(r.items && (r.items.is_custom_dish === true || r.items.is_custom_dish === 'true')));
+export async function getCombos(force = false) {
+  return await getOrFetchRef('combos', async () => {
+    const { data, error } = await supabase
+      .from("combos")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(formatError(error));
+    const rows = data || [];
+    // Exclude custom dishes so combo deals only list real combo packages
+    return rows.filter(r => !(r.items && (r.items.is_custom_dish === true || r.items.is_custom_dish === 'true')));
+  }, force, DEFAULT_TTLS.combos);
 }
 
 export async function deleteCombo(id) {
   const { data, error } = await supabase.from("combos").delete().eq("id", Number(id));
   if (error) throw new Error(formatError(error));
+  invalidateRefCache('combos');
+  invalidateRefCache('custom_dishes');
   return data;
 }
 
@@ -617,57 +817,81 @@ export async function saveCombo(combo) {
 
   const { data, error } = await supabase.from("combos").upsert(payload).select();
   if (error) throw new Error(formatError(error));
+  invalidateRefCache('combos');
+  invalidateRefCache('custom_dishes');
   return data;
 }
 
 // ────────────────────────────────────────────────────────
 // 🍽️ PERMANENT CUSTOM DISHES DATABASE CRUD
 // ────────────────────────────────────────────────────────
-export async function getCustomDishes() {
-  try {
-    const { data, error } = await supabase
-      .from("combos")
-      .select("*")
-      .order("created_at", { ascending: false });
+export async function getCustomDishes(force = false) {
+  return await getOrFetchRef('custom_dishes', async () => {
+    try {
+      const { data, error } = await supabase
+        .from("combos")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      console.warn("[Database] Supabase custom dishes fetch warning:", error);
+      if (error) {
+        console.warn("[Database] Supabase custom dishes fetch warning:", error);
+        const saved = (typeof localStorage !== 'undefined') ? localStorage.getItem('limra_custom_foods') : null;
+        return saved ? JSON.parse(saved) : [];
+      }
+
+      const rows = data || [];
+      const customDishes = rows
+        .filter(r => r.items && (r.items.is_custom_dish === true || r.items.is_custom_dish === 'true'))
+        .map(r => ({
+          id: `custom_${r.id}`,
+          db_id: r.id,
+          name: r.name,
+          category: r.items?.category || 'General',
+          diet: r.items?.diet || (r.items?.is_veg ? 'veg' : 'nonveg'),
+          is_veg: r.items?.is_veg !== false && r.items?.diet !== 'nonveg',
+          price: parseFloat(r.price || 0),
+          mrp: r.mrp ? parseFloat(r.mrp) : null,
+          image: r.image_url || null,
+          description: r.description || '',
+          available: r.available !== false,
+          featured: Boolean(r.items?.featured),
+          is_custom: true,
+          gst_applicable: r.items?.gst_applicable !== false
+        }));
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem('limra_custom_foods', JSON.stringify(customDishes));
+        } catch {}
+      }
+
+      return customDishes;
+    } catch (err) {
+      console.error("[Database] Failed to get custom dishes from database:", err);
       const saved = (typeof localStorage !== 'undefined') ? localStorage.getItem('limra_custom_foods') : null;
       return saved ? JSON.parse(saved) : [];
     }
+  }, force, DEFAULT_TTLS.custom_dishes);
+}
 
-    const rows = data || [];
-    const customDishes = rows
-      .filter(r => r.items && (r.items.is_custom_dish === true || r.items.is_custom_dish === 'true'))
-      .map(r => ({
-        id: `custom_${r.id}`,
-        db_id: r.id,
-        name: r.name,
-        category: r.items?.category || 'General',
-        diet: r.items?.diet || (r.items?.is_veg ? 'veg' : 'nonveg'),
-        is_veg: r.items?.is_veg !== false && r.items?.diet !== 'nonveg',
-        price: parseFloat(r.price || 0),
-        mrp: r.mrp ? parseFloat(r.mrp) : null,
-        image: r.image_url || null,
-        description: r.description || '',
-        available: r.available !== false,
-        featured: Boolean(r.items?.featured),
-        is_custom: true,
-        gst_applicable: r.items?.gst_applicable !== false
-      }));
-
-    if (typeof localStorage !== 'undefined') {
-      try {
-        localStorage.setItem('limra_custom_foods', JSON.stringify(customDishes));
-      } catch {}
-    }
-
-    return customDishes;
-  } catch (err) {
-    console.error("[Database] Failed to get custom dishes from database:", err);
-    const saved = (typeof localStorage !== 'undefined') ? localStorage.getItem('limra_custom_foods') : null;
-    return saved ? JSON.parse(saved) : [];
-  }
+// ────────────────────────────────────────────────────────
+// 📍 DELIVERY AREAS WITH TTL CACHING
+// ────────────────────────────────────────────────────────
+export async function getDeliveryAreas(force = false) {
+  return await getOrFetchRef('delivery_areas', async () => {
+    const { data, error } = await supabase
+      .from("delivery_areas")
+      .select("id, name, delivery_fee, min_order, estimated_time")
+      .order("name", { ascending: true });
+    if (error) throw new Error(formatError(error));
+    return (data || []).map(p => ({
+      ...p,
+      id: String(p.id),
+      name: p.name || '',
+      charge: Number(p.delivery_fee ?? 0),
+      delivery_fee: Number(p.delivery_fee ?? 0)
+    }));
+  }, force, DEFAULT_TTLS.delivery_areas);
 }
 
 export async function saveCustomDish(dish) {
@@ -699,6 +923,8 @@ export async function saveCustomDish(dish) {
 
   const { data, error } = await supabase.from("combos").upsert(payload).select();
   if (error) throw new Error(formatError(error));
+  invalidateRefCache('custom_dishes');
+  invalidateRefCache('combos');
 
   const saved = data && data[0] ? data[0] : payload;
   const savedId = saved.id || payload.id;
@@ -729,6 +955,8 @@ export async function deleteCustomDish(id) {
 
   const { data, error } = await supabase.from("combos").delete().eq("id", numId);
   if (error) throw new Error(formatError(error));
+  invalidateRefCache('custom_dishes');
+  invalidateRefCache('combos');
   return data;
 }
 

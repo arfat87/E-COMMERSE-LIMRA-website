@@ -17,7 +17,8 @@ const emailJsConfig = {
   publicKey: env.VITE_EMAILJS_PUBLIC_KEY || ''
 };
 
-const resendApiKey = env.VITE_RESEND_API_KEY || '';
+// Note: Server API keys like Resend secret keys must NEVER be exposed via client-side VITE_* variables.
+// EmailJS is safe for client-side use with public keys. For backend Resend integration, use a backend route.
 
 /**
  * Sends a premium HTML email notification.
@@ -32,34 +33,7 @@ export async function sendEmailNotification(toEmail, subject, htmlContent, templ
     return { success: false, reason: 'Invalid email' };
   }
 
-  // ─── OPTION A: RESEND API ───
-  if (resendApiKey) {
-    try {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${resendApiKey}`
-        },
-        body: JSON.stringify({
-          from: 'LIMRA Restaurant <onboarding@resend.dev>', // Resend verified domain or onboarding address
-          to: toEmail,
-          subject: subject,
-          html: htmlContent
-        })
-      });
-      const data = await response.json();
-      if (response.ok) {
-        console.log('[EmailService] Email sent successfully via Resend:', data);
-        return { success: true, provider: 'resend', data };
-      }
-      console.warn('[EmailService] Resend API error response:', data);
-    } catch (err) {
-      console.error('[EmailService] Failed to send via Resend:', err);
-    }
-  }
-
-  // ─── OPTION B: EMAILJS API ───
+  // ─── OPTION A: EMAILJS API (Client-Safe) ───
   if (emailJsConfig.serviceId && emailJsConfig.templateId && emailJsConfig.publicKey) {
     try {
       const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {

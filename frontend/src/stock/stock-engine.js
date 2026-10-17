@@ -42,6 +42,10 @@ export function round2(n) {
   return Math.round((safeNum(n) + Number.EPSILON) * 100) / 100;
 }
 
+export function roundQty(n) {
+  return Math.round((safeNum(n) + Number.EPSILON) * 10000) / 10000;
+}
+
 export function inr(n) {
   const v = round2(n);
   return '₹ ' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -50,6 +54,10 @@ export function inr(n) {
 export function fmtQty(n) {
   const v = Math.round(safeNum(n) * 1000) / 1000;
   return v.toLocaleString('en-IN', { maximumFractionDigits: 3 });
+}
+
+export function normalizeUnit(u) {
+  return String(u || 'pcs').trim().toLowerCase();
 }
 
 // ───────────── date helpers ─────────────
@@ -163,15 +171,22 @@ export function computePeriod(data, start, end) {
     sku: src.sku || key,
     name: src.name || src.description || key,
     category: src.category || 'Other',
-    unit: src.unit || 'pcs',
+    unit: normalizeUnit(src.unit || 'pcs'),
     min: safeNum(src.min, 0),
     rate: safeNum(src.cost, 0),
     supplier: src.supplier || '',
     orphan: !src.id,
     openQty: 0, openValue: 0,
+    openDeficitQty: 0, openDeficitValue: 0, netOpenValue: 0,
     inQty: 0, inValue: 0,
     outQty: 0, outValue: 0,
     closeQty: 0, closeValue: 0,
+    deficitQty: 0, deficitValue: 0, netCloseValue: 0,
+    deficitCoveredQty: 0, deficitCoveredValue: 0,
+    deficitVariance: 0,
+    ledgerVariance: 0,
+    hasDiscrepancy: false,
+    unitMismatch: false,
     oldestLot: null,
     missingRate: false,
     status: 'OK'
@@ -185,7 +200,11 @@ export function computePeriod(data, start, end) {
     if (!rows.has(key)) {
       rows.set(key, mkRow(key, { sku: e.sku, name: e.description, unit: e.unit, cost: e.costPrice }));
     }
-    return rows.get(key);
+    const r = rows.get(key);
+    if (e.unit && normalizeUnit(e.unit) !== r.unit) {
+      r.unitMismatch = true;
+    }
+    return r;
   };
 
   // Build chronological event list
@@ -222,37 +241,57 @@ export function computePeriod(data, start, end) {
   const sumIn = {}, sumOut = {};
   events.forEach(ev => {
     if (ev.e?.id === '__preview__') return;
-    const q = safeNum(ev.e.qty, 0);
-    if (ev.type === 'IN') sumIn[ev.key] = (sumIn[ev.key] || 0) + q;
-    else sumOut[ev.key] = (sumOut[ev.key] || 0) + q;
+    const q = roundQty(ev.e.qty);
+    if (ev.type === 'IN') sumIn[ev.key] = roundQty((sumIn[ev.key] || 0) + q);
+    else sumOut[ev.key] = roundQty((sumOut[ev.key] || 0) + q);
   });
   items.forEach(it => {
     const key = it.sku || it.id;
     if (!key || it.storedQty === undefined) return;
-    const base = safeNum(it.storedQty, 0) - ((sumIn[key] || 0) - (sumOut[key] || 0));
+    const netLedger = roundQty((sumIn[key] || 0) - (sumOut[key] || 0));
+    const base = roundQty(safeNum(it.storedQty, 0) - netLedger);
     if (base > 0.001) {
       const cost = safeNum(it.cost, 0);
       lotsOf(key).push({ qty: base, cost, t: new Date(0), base: true });
       lastCost.set(key, cost);
       total += base * cost;
+      if (cost <= 0) {
+        const row = rows.get(key);
+        if (row) row.missingRate = true;
+      }
+    } else if (base < -0.001) {
+      const row = rows.get(key);
+      if (row) {
+        row.ledgerVariance = base;
+        row.hasDiscrepancy = true;
+      }
     }
   });
 
   const snapshot = (key) => {
     const ls = lots.get(key) || [];
-    const q = ls.reduce((s, l) => s + l.qty, 0) - (deficit.get(key) || 0);
-    const v = ls.reduce((s, l) => s + l.qty * l.cost, 0);
+    const q = roundQty(ls.reduce((s, l) => s + l.qty, 0) - (deficit.get(key) || 0));
+    const v = round2(ls.reduce((s, l) => s + l.qty * l.cost, 0));
     return { q, v };
   };
 
   let openCaptured = false;
   let openTotal = 0;
+  let openDeficitTotal = 0;
   const captureOpen = () => {
     openTotal = total;
+    openDeficitTotal = 0;
     rows.forEach((row, key) => {
       const s = snapshot(key);
-      row.openQty = s.q;
-      row.openValue = s.v;
+      const defQty = deficit.get(key) || 0;
+      const defRate = lastCost.has(key) ? lastCost.get(key) : row.rate;
+      const defVal = round2(defQty * defRate);
+      row.openQty = roundQty(s.q);
+      row.openValue = round2(s.v);
+      row.openDeficitQty = roundQty(defQty);
+      row.openDeficitValue = defVal;
+      row.netOpenValue = round2(row.openValue - row.openDeficitValue);
+      openDeficitTotal += defVal;
     });
     openCaptured = true;
   };
@@ -260,6 +299,7 @@ export function computePeriod(data, start, end) {
   const periodIns = [];
   const periodOuts = [];
   const dayClose = {};
+  let periodDeficitVariance = 0;
 
   for (const ev of events) {
     if (ev.t > end) break;
@@ -267,17 +307,24 @@ export function computePeriod(data, start, end) {
 
     const row = ensure(ev.key, ev.e);
     const ls = lotsOf(ev.key);
-    const qty = safeNum(ev.e.qty, 0);
+    const qty = roundQty(ev.e.qty);
     const inPeriod = ev.t >= start;
 
     if (ev.type === 'IN') {
       const cost = safeNum(ev.e.costPrice, row.rate);
+      if (cost <= 0) {
+        row.missingRate = true;
+      }
       let remaining = qty;
       const d = deficit.get(ev.key) || 0;
+      let settledDeficitQty = 0;
+      let defVariance = 0;
       if (d > EPS) {
-        const cover = Math.min(d, qty);
-        deficit.set(ev.key, d - cover);
-        remaining -= cover;
+        settledDeficitQty = Math.min(d, remaining);
+        const prevDefRate = lastCost.has(ev.key) ? lastCost.get(ev.key) : row.rate;
+        defVariance = round2(settledDeficitQty * (cost - prevDefRate));
+        deficit.set(ev.key, roundQty(d - settledDeficitQty));
+        remaining = roundQty(remaining - settledDeficitQty);
       }
       if (remaining > EPS) {
         ls.push({ qty: remaining, cost, t: ev.t });
@@ -285,9 +332,13 @@ export function computePeriod(data, start, end) {
       }
       lastCost.set(ev.key, cost);
       if (inPeriod) {
-        row.inQty += qty;
-        row.inValue += qty * cost;
-        periodIns.push({ ...ev.e, key: ev.key, entryDate: ev.t, name: row.name, amount: qty * cost, rate: cost });
+        row.inQty = roundQty(row.inQty + qty);
+        row.inValue = round2(row.inValue + qty * cost);
+        row.deficitCoveredQty = roundQty(row.deficitCoveredQty + settledDeficitQty);
+        row.deficitCoveredValue = round2(row.deficitCoveredValue + settledDeficitQty * cost);
+        row.deficitVariance = round2(row.deficitVariance + defVariance);
+        periodDeficitVariance += defVariance;
+        periodIns.push({ ...ev.e, key: ev.key, entryDate: ev.t, name: row.name, amount: round2(qty * cost), rate: cost, missingRate: cost <= 0 });
       }
     } else {
       let remaining = qty;
@@ -296,37 +347,48 @@ export function computePeriod(data, start, end) {
         const lot = ls[0];
         const take = Math.min(lot.qty, remaining);
         consumed += take * lot.cost;
-        lot.qty -= take;
-        remaining -= take;
+        lot.qty = roundQty(lot.qty - take);
+        remaining = roundQty(remaining - take);
         if (lot.qty <= EPS) ls.shift();
       }
       let usage = consumed;
       if (remaining > EPS) {
         const fb = lastCost.has(ev.key) ? lastCost.get(ev.key) : row.rate;
         usage += remaining * fb;
-        deficit.set(ev.key, (deficit.get(ev.key) || 0) + remaining);
+        deficit.set(ev.key, roundQty((deficit.get(ev.key) || 0) + remaining));
       }
       total -= consumed;
       if (inPeriod) {
-        row.outQty += qty;
-        row.outValue += usage;
-        periodOuts.push({ ...ev.e, key: ev.key, entryDate: ev.t, name: row.name, amount: usage, rate: qty > 0 ? usage / qty : 0 });
+        row.outQty = roundQty(row.outQty + qty);
+        row.outValue = round2(row.outValue + usage);
+        periodOuts.push({ ...ev.e, key: ev.key, entryDate: ev.t, name: row.name, amount: round2(usage), rate: qty > 0 ? round2(usage / qty) : 0, isDeficit: remaining > EPS });
       }
     }
-    if (inPeriod) dayClose[dayKey(ev.t)] = total;
+    if (inPeriod) dayClose[dayKey(ev.t)] = round2(total);
   }
   if (!openCaptured) captureOpen();
-  const closeTotal = total;
+  const closeTotal = round2(total);
 
   // Closing snapshot
+  let closeDeficitTotal = 0;
   rows.forEach((row, key) => {
     const s = snapshot(key);
-    row.closeQty = s.q;
-    row.closeValue = s.v;
+    const defQty = deficit.get(key) || 0;
+    const defRate = lastCost.has(key) ? lastCost.get(key) : row.rate;
+    const defVal = round2(defQty * defRate);
+    row.closeQty = roundQty(s.q);
+    row.closeValue = round2(s.v);
+    row.deficitQty = roundQty(defQty);
+    row.deficitValue = defVal;
+    row.netCloseValue = round2(row.closeValue - row.deficitValue);
+    closeDeficitTotal += defVal;
+
     const ls = lots.get(key) || [];
     const first = ls.find(l => !l.base) || ls[0];
     row.oldestLot = first && !first.base ? first.t : null;
-    row.missingRate = ls.some(l => l.qty > EPS && l.cost <= 0);
+    if (ls.some(l => l.qty > EPS && l.cost <= 0)) {
+      row.missingRate = true;
+    }
     row.status = row.closeQty < -EPS ? 'Negative'
       : row.closeQty <= EPS ? 'Out'
         : (row.min > 0 && row.closeQty <= row.min ? 'Low' : 'OK');
@@ -339,16 +401,21 @@ export function computePeriod(data, start, end) {
 
   // Totals
   const t = {
-    openValue: 0, inValue: 0, outValue: 0, closeValue: 0,
+    openValue: round2(openTotal),
+    closeValue: round2(closeTotal),
+    openDeficitValue: round2(openDeficitTotal),
+    closeDeficitValue: round2(closeDeficitTotal),
+    netOpenValue: round2(openTotal - openDeficitTotal),
+    netCloseValue: round2(closeTotal - closeDeficitTotal),
+    deficitVariance: round2(periodDeficitVariance),
     openItems: 0, closeItems: 0, inCount: periodIns.length, outCount: periodOuts.length,
+    inValue: 0, outValue: 0,
     adjustment: 0
   };
   const byCategory = {};
   rowList.forEach(r => {
-    t.openValue += r.openValue;
     t.inValue += r.inValue;
     t.outValue += r.outValue;
-    t.closeValue += r.closeValue;
     if (r.openQty > EPS) t.openItems += 1;
     if (r.closeQty > EPS) t.closeItems += 1;
     const c = byCategory[r.category] || (byCategory[r.category] = { inValue: 0, outValue: 0, closeValue: 0, count: 0 });
@@ -357,9 +424,17 @@ export function computePeriod(data, start, end) {
     c.closeValue += r.closeValue;
     c.count += 1;
   });
-  t.openValue = openTotal; // authoritative (includes SKUs not in item list)
-  t.closeValue = closeTotal;
-  t.adjustment = round2(t.closeValue - (t.openValue + t.inValue - t.outValue));
+  t.inValue = round2(t.inValue);
+  t.outValue = round2(t.outValue);
+
+  // Accounting reconciliation identity:
+  // If no deficits: closeValue - (openValue + inValue - outValue)
+  // If deficits: netCloseValue - (netOpenValue + inValue - outValue - deficitVariance)
+  if (t.openDeficitValue <= EPS && t.closeDeficitValue <= EPS && Math.abs(t.deficitVariance) <= EPS) {
+    t.adjustment = round2(t.closeValue - (t.openValue + t.inValue - t.outValue));
+  } else {
+    t.adjustment = round2(t.netCloseValue - (t.netOpenValue + t.inValue - t.outValue - t.deficitVariance));
+  }
 
   // Day by day
   const days = [];
@@ -386,7 +461,7 @@ export function computePeriod(data, start, end) {
     days,
     ins: periodIns.sort((a, b) => b.entryDate - a.entryDate),
     outs: periodOuts.sort((a, b) => b.entryDate - a.entryDate),
-    balanced: Math.abs(t.adjustment) < 1
+    balanced: Math.abs(t.adjustment) < 0.05
   };
 }
 
@@ -401,7 +476,7 @@ export function getItemLots(data, sku) {
 
   const it = items.find(i => (i.sku || i.id) === sku);
   const name = it ? it.name : sku;
-  const unit = it ? it.unit : 'pcs';
+  const unit = normalizeUnit(it ? it.unit : 'pcs');
   const defaultCost = safeNum(it?.cost, 0);
 
   const itemIns = ins.filter(e => (e.sku || e.itemId) === sku);
@@ -430,13 +505,14 @@ export function getItemLots(data, sku) {
   let sumIn = 0, sumOut = 0;
   events.forEach(ev => {
     if (ev.e?.id === '__preview__') return;
-    const q = safeNum(ev.e.qty, 0);
-    if (ev.type === 'IN') sumIn += q;
-    else sumOut += q;
+    const q = roundQty(ev.e.qty);
+    if (ev.type === 'IN') sumIn = roundQty(sumIn + q);
+    else sumOut = roundQty(sumOut + q);
   });
 
+  let ledgerVariance = 0;
   if (it && it.storedQty !== undefined) {
-    const base = safeNum(it.storedQty, 0) - (sumIn - sumOut);
+    const base = roundQty(safeNum(it.storedQty, 0) - (sumIn - sumOut));
     if (base > 0.001) {
       lots.push({
         id: 'opening_base',
@@ -447,6 +523,8 @@ export function getItemLots(data, sku) {
         base: true,
         supplier: 'Initial Balance'
       });
+    } else if (base < -0.001) {
+      ledgerVariance = base;
     }
   }
 
@@ -454,15 +532,18 @@ export function getItemLots(data, sku) {
 
   for (const ev of events) {
     if (ev.e?.id === '__preview__') continue;
-    const qty = safeNum(ev.e.qty, 0);
+    const qty = roundQty(ev.e.qty);
     if (ev.type === 'IN') {
       const cost = safeNum(ev.e.costPrice, lastRate);
       lastRate = cost;
       let remaining = qty;
+      let defSettled = 0;
+      let defVariance = 0;
       if (deficit > EPS) {
-        const cover = Math.min(deficit, qty);
-        deficit -= cover;
-        remaining -= cover;
+        defSettled = Math.min(deficit, remaining);
+        defVariance = round2(defSettled * (cost - lastRate));
+        deficit = roundQty(deficit - defSettled);
+        remaining = roundQty(remaining - defSettled);
       }
       if (remaining > EPS) {
         lots.push({
@@ -481,9 +562,11 @@ export function getItemLots(data, sku) {
         date: ev.t,
         qty,
         rate: cost,
-        amount: qty * cost,
+        amount: round2(qty * cost),
         party: ev.e.supplier || '',
-        notes: ev.e.notes || ''
+        notes: ev.e.notes || '',
+        deficitCoveredQty: defSettled,
+        missingRate: cost <= 0
       });
     } else {
       let remaining = qty;
@@ -493,23 +576,24 @@ export function getItemLots(data, sku) {
         const lot = lots[0];
         const take = Math.min(lot.qty, remaining);
         consumed += take * lot.cost;
-        lot.qty -= take;
-        remaining -= take;
-        consumedBatches.push({ dateStr: lot.dateStr, cost: lot.cost, qty: take, amount: take * lot.cost });
+        lot.qty = roundQty(lot.qty - take);
+        remaining = roundQty(remaining - take);
+        consumedBatches.push({ dateStr: lot.dateStr, cost: lot.cost, qty: take, amount: round2(take * lot.cost) });
         if (lot.qty <= EPS) lots.shift();
       }
       let usageCost = consumed;
       if (remaining > EPS) {
         usageCost += remaining * lastRate;
-        deficit += remaining;
+        deficit = roundQty(deficit + remaining);
+        consumedBatches.push({ dateStr: 'Deficit (Estimated)', cost: lastRate, qty: remaining, amount: round2(remaining * lastRate), isDeficit: true });
       }
       timeline.push({
         id: ev.e.id,
         type: 'OUT',
         date: ev.t,
         qty,
-        rate: qty > 0 ? usageCost / qty : lastRate,
-        amount: usageCost,
+        rate: qty > 0 ? round2(usageCost / qty) : lastRate,
+        amount: round2(usageCost),
         party: ev.e.usedBy || 'Kitchen Prep',
         notes: ev.e.notes || '',
         consumedBatches
@@ -522,18 +606,25 @@ export function getItemLots(data, sku) {
     total: round2(l.qty * l.cost)
   }));
 
-  const totalQty = activeLots.reduce((s, l) => s + l.qty, 0) - deficit;
-  const totalValue = activeLots.reduce((s, l) => s + l.total, 0);
+  const totalQty = roundQty(activeLots.reduce((s, l) => s + l.qty, 0) - deficit);
+  const totalValue = round2(activeLots.reduce((s, l) => s + l.total, 0));
+  const deficitValue = round2(deficit * lastRate);
 
   return {
     sku,
     name,
     unit,
     totalQty,
-    totalValue: round2(totalValue),
+    totalValue,
+    deficit,
+    deficitQty: deficit,
+    deficitValue,
+    netTotalValue: round2(totalValue - deficitValue),
     avgRate: totalQty > 0 ? round2(totalValue / totalQty) : lastRate,
     activeLots,
-    deficit,
+    ledgerVariance,
+    hasDiscrepancy: ledgerVariance < -0.001,
+    missingRate: activeLots.some(l => l.cost <= 0),
     timeline: timeline.reverse()
   };
 }

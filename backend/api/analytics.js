@@ -1,12 +1,16 @@
 import { supabase } from "./lib/supabase.js";
+import { requireRole } from "./lib/auth-middleware.js";
 
 export default async function handler(req, res) {
-  // CORS is handled globally by server.js — no duplication needed here
   if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
   try {
+    // Analytics is strictly restricted to owners and managers
+    const auth = await requireRole(req, res, ["owner", "manager", "admin"]);
+    if (!auth) return; // Response sent by requireRole
+
     // 1. Fetch Orders for analytics
     const { data: allOrders, error: ordErr } = await supabase
       .from("orders")

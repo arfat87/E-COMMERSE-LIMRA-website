@@ -73,10 +73,13 @@ class PrintQueueManager {
       orderNumber: String(jobData.orderNumber || '—'),
       type: jobData.type || 'BILL', // 'BILL', 'KOT', or 'KOT_AND_BILL'
       paperWidth: jobData.paperWidth || 80,
-      status: 'pending', // 'pending' | 'printing' | 'printed' | 'failed'
+      status: 'pending', // 'pending' | 'printing' | 'spooled' | 'hardware_confirmed' | 'printed' | 'failed' | 'cancelled'
       error: null,
       attempts: 0,
       maxRetries: jobData.maxRetries || 3,
+      isReprint: Boolean(jobData.isReprint),
+      roundNumber: Number(jobData.roundNumber || 1),
+      hardwareConfirmed: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       payload: jobData.payload || null
@@ -98,11 +101,27 @@ class PrintQueueManager {
   }
 
   /**
+   * Cancel a job and mark it cancelled to prevent future retries
+   * @param {string} jobId
+   * @returns {Object|null}
+   */
+  cancelJob(jobId) {
+    const job = this.jobs.find(j => j.id === jobId);
+    if (!job) return null;
+    job.status = 'cancelled';
+    job.error = 'Cancelled by staff';
+    job.updatedAt = new Date().toISOString();
+    this.notify();
+    return job;
+  }
+
+  /**
    * Executes a specific job
    */
   async executeJob(jobId, executor) {
     const job = this.jobs.find(j => j.id === jobId);
     if (!job) return null;
+    if (job.status === 'cancelled') return job;
 
     job.status = 'printing';
     job.attempts += 1;
@@ -112,7 +131,10 @@ class PrintQueueManager {
     try {
       const result = await executor(job);
       if (result !== false && (!result || result.success !== false)) {
-        job.status = 'printed';
+        const isHardwareConfirmed = Boolean(result && result.hardware_confirmed);
+        const isSpooled = Boolean(result && result.spooled);
+        job.hardwareConfirmed = isHardwareConfirmed;
+        job.status = isHardwareConfirmed ? 'hardware_confirmed' : (isSpooled ? 'spooled' : 'printed');
         job.error = null;
         job.updatedAt = new Date().toISOString();
         this.notify();
@@ -167,7 +189,8 @@ class PrintQueueManager {
   clearPrinted() {
     const cutoff = Date.now() - 10 * 60 * 1000;
     this.jobs = this.jobs.filter(j => {
-      if (j.status !== 'printed') return true;
+      const isComplete = j.status === 'printed' || j.status === 'spooled' || j.status === 'hardware_confirmed';
+      if (!isComplete) return true;
       return new Date(j.updatedAt).getTime() > cutoff;
     });
     this.notify();

@@ -39,6 +39,24 @@ export const PaymentService = {
   },
 
   /**
+   * Mark order as refunded.
+   * @param {string} orderId 
+   * @param {string} [notes] 
+   */
+  async markAsRefunded(orderId, notes = null) {
+    return this.updatePaymentStatus(orderId, 'refunded', notes);
+  },
+
+  /**
+   * Mark order as failed.
+   * @param {string} orderId 
+   * @param {string} [notes] 
+   */
+  async markAsFailed(orderId, notes = null) {
+    return this.updatePaymentStatus(orderId, 'failed', notes);
+  },
+
+  /**
    * Retrieves payment audit logs for a specific order.
    * @param {string} orderId - Order UUID
    */

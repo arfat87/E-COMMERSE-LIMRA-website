@@ -123,8 +123,15 @@ function computeDateRange(range, singleDate, startD, endD) {
   return { startIso, endIso, label };
 }
 
+// ── Range Data Cache & Deduplication ─────────────────────────────────────
+const salesReportDataCache = new Map();
+
+export function invalidateSalesReportCache() {
+  salesReportDataCache.clear();
+}
+
 // ── Fetch & Aggregate Sales Data ───────────────────────────────────────────
-export async function loadSalesReportData() {
+export async function loadSalesReportData(force = false) {
   reportState.loading = true;
   reportState.error = null;
   renderLoadingState();
@@ -138,17 +145,67 @@ export async function loadSalesReportData() {
     );
     reportState.periodLabel = label;
 
-    // 1. Fetch Orders from Supabase
-    let query = insforge.database
-      .from('orders')
-      .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_method, payment_status, order_type, table_number, created_at, notes')
-      .neq('status', 'cancelled')
-      .gte('created_at', startIso)
-      .lte('created_at', endIso)
-      .order('created_at', { ascending: false });
+    const cacheKey = `${startIso}_${endIso}`;
+    const now = Date.now();
+    const todayEndIso = `${getISTDateString(new Date())}T23:59:59.999+05:30`;
+    const isPastPeriod = new Date(endIso) < new Date(todayEndIso);
+    const ttl = isPastPeriod ? 10 * 60 * 1000 : 45 * 1000;
 
-    const { data: rawOrders, error: ordErr } = await query;
-    if (ordErr) throw ordErr;
+    let cachedEntry = salesReportDataCache.get(cacheKey);
+    let rawOrders = null;
+    let allItems = null;
+
+    if (!force && cachedEntry && (now - cachedEntry.timestamp < ttl)) {
+      rawOrders = cachedEntry.rawOrders;
+      allItems = cachedEntry.allItems;
+    } else {
+      // 1. Fetch Orders from Supabase
+      let query = insforge.database
+        .from('orders')
+        .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_method, payment_status, order_type, table_number, created_at, notes')
+        .neq('status', 'cancelled')
+        .gte('created_at', startIso)
+        .lte('created_at', endIso)
+        .order('created_at', { ascending: false });
+
+      const { data: fetchedOrders, error: ordErr } = await query;
+      if (ordErr) throw ordErr;
+
+      rawOrders = fetchedOrders || [];
+
+      // 2. Fetch Order Items in chunks for all non-cancelled orders in this range
+      allItems = [];
+      const eligibleOrders = rawOrders.filter(o => o.status !== 'cancelled' && o.status !== 'hold');
+      if (eligibleOrders.length > 0) {
+        const orderIds = eligibleOrders.map(o => o.id);
+        const CHUNK_SIZE = 150;
+        const chunks = [];
+        for (let i = 0; i < orderIds.length; i += CHUNK_SIZE) {
+          chunks.push(orderIds.slice(i, i + CHUNK_SIZE));
+        }
+
+        const itemResponses = await Promise.all(
+          chunks.map(chunk =>
+            insforge.database
+              .from('order_items')
+              .select('id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at')
+              .in('order_id', chunk)
+          )
+        );
+
+        itemResponses.forEach(res => {
+          if (res.data && Array.isArray(res.data)) {
+            allItems.push(...res.data);
+          }
+        });
+      }
+
+      salesReportDataCache.set(cacheKey, {
+        rawOrders,
+        allItems,
+        timestamp: now
+      });
+    }
 
     let orders = (rawOrders || []).filter(o => o.status !== 'cancelled' && o.status !== 'hold');
 
@@ -166,32 +223,9 @@ export async function loadSalesReportData() {
 
     reportState.orders = orders;
 
-    // 2. Fetch Order Items in chunks
-    let allItems = [];
-    if (orders.length > 0) {
-      const orderIds = orders.map(o => o.id);
-      const CHUNK_SIZE = 150;
-      const chunks = [];
-      for (let i = 0; i < orderIds.length; i += CHUNK_SIZE) {
-        chunks.push(orderIds.slice(i, i + CHUNK_SIZE));
-      }
-
-      const itemResponses = await Promise.all(
-        chunks.map(chunk =>
-          insforge.database
-            .from('order_items')
-            .select('id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at')
-            .in('order_id', chunk)
-        )
-      );
-
-      itemResponses.forEach(res => {
-        if (res.data && Array.isArray(res.data)) {
-          allItems.push(...res.data);
-        }
-      });
-    }
-    reportState.items = allItems;
+    // Filter items matching the channel-filtered orders
+    const channelOrderIds = new Set(orders.map(o => o.id));
+    reportState.items = (allItems || []).filter(item => channelOrderIds.has(item.order_id));
 
     // 3. Compute KPI Metrics
     let totalRevenue = 0;

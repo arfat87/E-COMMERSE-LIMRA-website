@@ -108,10 +108,10 @@ class StockStore {
 
     try {
       const [itemsRes, inRes, outRes, logsRes] = await Promise.all([
-        insforge.database.from('stock_items').select('*').order('sku', { ascending: true }),
-        insforge.database.from('stock_in').select('*').order('created_at', { ascending: false }),
-        insforge.database.from('stock_out').select('*').order('created_at', { ascending: false }),
-        insforge.database.from('stock_logs').select('*').order('created_at', { ascending: false }).limit(100)
+        insforge.database.from('stock_items').select('id, sku, name, category, unit, min_qty, cost_price, sale_price, supplier, is_available, qty, updated_at').order('sku', { ascending: true }),
+        insforge.database.from('stock_in').select('id, date, item_sku, item_name, unit, qty, cost_price, supplier, notes, created_at').order('created_at', { ascending: false }),
+        insforge.database.from('stock_out').select('id, date, item_sku, item_name, unit, qty, used_by, notes, created_at').order('created_at', { ascending: false }),
+        insforge.database.from('stock_logs').select('id, item_sku, action, change_qty, prev_qty, new_qty, reason, created_at').order('created_at', { ascending: false }).limit(100)
       ]);
 
       if (itemsRes.data && itemsRes.data.length > 0) {
@@ -219,6 +219,7 @@ class StockStore {
     // Call RPC or DB insert
     try {
       const { error: rpcErr } = await insforge.rpc('record_stock_in', {
+        p_entry_id: entryId,
         p_item_id: item.id,
         p_qty: q,
         p_cost_price: cost || null,
@@ -287,6 +288,7 @@ class StockStore {
     // Call RPC or DB insert
     try {
       const { error: rpcErr } = await insforge.rpc('record_stock_out', {
+        p_entry_id: entryId,
         p_item_id: item.id,
         p_qty: q,
         p_reason: reason || 'Kitchen Prep',
@@ -317,39 +319,54 @@ class StockStore {
     return entry;
   }
 
-  async deleteEntry(type, entryId) {
-    if (type === 'IN') {
-      const idx = this.ins.findIndex(e => e.id === entryId);
-      if (idx !== -1) {
-        const removed = this.ins.splice(idx, 1)[0];
-        const item = this.items.find(i => i.sku === removed.sku);
-        if (item) {
+  async deleteEntry(type, entryId, reason = 'User manual reversal') {
+    const isEntryIn = type === 'IN';
+    const arr = isEntryIn ? this.ins : this.outs;
+    const idx = arr.findIndex(e => e.id === entryId);
+    let removed = null;
+    let item = null;
+
+    if (idx !== -1) {
+      removed = arr.splice(idx, 1)[0];
+      item = this.items.find(i => i.sku === removed.sku);
+      if (item) {
+        if (isEntryIn) {
           item.storedQty = Math.max(0, safeNum(item.storedQty, 0) - safeNum(removed.qty, 0));
-        }
-        this.saveCache();
-        this.notify();
-        try {
-          await insforge.database.from('stock_in').delete().eq('id', entryId);
-        } catch (e) {
-          console.error('[StockStore] delete stock_in failed:', e);
-        }
-      }
-    } else {
-      const idx = this.outs.findIndex(e => e.id === entryId);
-      if (idx !== -1) {
-        const removed = this.outs.splice(idx, 1)[0];
-        const item = this.items.find(i => i.sku === removed.sku);
-        if (item) {
+        } else {
           item.storedQty = safeNum(item.storedQty, 0) + safeNum(removed.qty, 0);
         }
-        this.saveCache();
-        this.notify();
-        try {
-          await insforge.database.from('stock_out').delete().eq('id', entryId);
-        } catch (e) {
-          console.error('[StockStore] delete stock_out failed:', e);
+      }
+      this.saveCache();
+      this.notify();
+    }
+
+    try {
+      const { error: rpcErr } = await insforge.rpc('reverse_stock_entry', {
+        p_type: type,
+        p_entry_id: entryId,
+        p_reason: reason
+      });
+
+      if (rpcErr) {
+        console.warn('[StockStore] reverse_stock_entry RPC fallback:', rpcErr);
+        const tbl = isEntryIn ? 'stock_in' : 'stock_out';
+        await insforge.database.from(tbl).delete().eq('id', entryId);
+
+        if (item && removed) {
+          await insforge.database.from('stock_items').update({
+            qty: item.storedQty,
+            updated_at: new Date().toISOString()
+          }).eq('id', item.id);
+
+          await insforge.database.from('stock_logs').insert([{
+            action: `${item.name} (${type} REVERSED)`,
+            details: `Manual reversal of entry ${entryId} | Qty: ${removed.qty} ${item.unit} | Reason: ${reason}`,
+            created_at: new Date().toISOString()
+          }]);
         }
       }
+    } catch (e) {
+      console.error(`[StockStore] delete ${type} entry error:`, e);
     }
   }
 

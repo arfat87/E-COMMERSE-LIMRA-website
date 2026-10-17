@@ -164,7 +164,10 @@ function render() {
             <span>Week End</span>
           </div>
           <div class="stk-kpi-val close">${inr(period.totals.closeValue)}</div>
-          <div class="stk-kpi-foot"><strong>${period.totals.closeItems}</strong> items remaining</div>
+          <div class="stk-kpi-foot">
+            <strong>${period.totals.closeItems}</strong> items remaining
+            ${period.totals.closeDeficitQty > 0 ? `<span style="color:#dc2626;font-weight:700;"> (${fmtQty(period.totals.closeDeficitQty)} in deficit)</span>` : ''}
+          </div>
         </div>
 
         <!-- Card 5: Current Live Stock -->
@@ -190,8 +193,15 @@ function render() {
             <span class="stk-eq-chip in">Purchases +${inr(period.totals.inValue)}</span>
             <span class="stk-eq-math-sign">−</span>
             <span class="stk-eq-chip out">Usage −${inr(period.totals.outValue)}</span>
+            ${period.totals.deficitVariance ? `
+              <span class="stk-eq-math-sign">${period.totals.deficitVariance > 0 ? '−' : '+'}</span>
+              <span class="stk-eq-chip out" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;" title="Variance between deficit estimate and actual purchase cost">Price Var ${inr(Math.abs(period.totals.deficitVariance))}</span>
+            ` : ''}
             <span class="stk-eq-math-sign">=</span>
             <span class="stk-eq-chip close">Closing ${inr(period.totals.closeValue)}</span>
+            ${period.totals.closeDeficitValue > 0 ? `
+              <span class="stk-eq-chip out" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;" title="Unsettled negative stock liability">Deficit Liab −${inr(period.totals.closeDeficitValue)}</span>
+            ` : ''}
           </div>
         </div>
         <div class="stk-formula-date-tag">
@@ -402,7 +412,11 @@ function renderWeeklyTab(period) {
                   <td>
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:0.4rem;">
                       <div>
-                        <div class="stk-item-name">${r.name}</div>
+                        <div class="stk-item-name">
+                          ${r.name}
+                          ${r.hasDiscrepancy ? `<span class="stk-pill warn" style="font-size:0.65rem;padding:0.1rem 0.35rem;margin-left:4px;" title="Physical stock differs from movement ledger">⚠️ Discrepancy</span>` : ''}
+                          ${r.missingRate ? `<span class="stk-pill warn" style="font-size:0.65rem;padding:0.1rem 0.35rem;margin-left:4px;background:#fef3c7;color:#92400e;" title="Zero purchase rate on record">⚠️ Missing Rate</span>` : ''}
+                        </div>
                         <div class="stk-item-sku">${r.sku}</div>
                       </div>
                       <button type="button" class="stk-btn-view-batch" data-view-batch="${r.sku}" title="View FIFO Batches &amp; History">📦 Batches</button>
@@ -425,8 +439,14 @@ function renderWeeklyTab(period) {
                   <td class="num font-mono stk-cell-out-val">${r.outValue > 0 ? inr(r.outValue) : '—'}</td>
 
                   <!-- Closing Balance -->
-                  <td class="num font-mono stk-cell-close-qty">${fmtQty(r.closeQty)}</td>
-                  <td class="num font-mono stk-cell-close-val">${inr(r.closeValue)}</td>
+                  <td class="num font-mono stk-cell-close-qty">
+                    ${fmtQty(r.closeQty)}
+                    ${r.closeDeficitQty > 0 ? `<div style="font-size:0.7rem;color:#dc2626;font-weight:700;">Deficit: -${fmtQty(r.closeDeficitQty)}</div>` : ''}
+                  </td>
+                  <td class="num font-mono stk-cell-close-val">
+                    ${inr(r.closeValue)}
+                    ${r.closeDeficitValue > 0 ? `<div style="font-size:0.7rem;color:#dc2626;font-weight:700;">-${inr(r.closeDeficitValue)}</div>` : ''}
+                  </td>
 
                   <!-- Status -->
                   <td style="text-align:center;">
@@ -1188,6 +1208,26 @@ function openItemBatchModal(sku) {
               Jo batch pehle khareeda gaya tha (oldest purchase), kitchen use (OUT) ke waqt sabse pehle wahi batch consume hoga uske purchase rate par. Naya batch purane batch ke khatam hone ke baad consume hota hai.
             </div>
           </div>
+
+          ${info.deficitQty > 0 ? `
+            <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:0.75rem 1rem;font-size:0.82rem;color:#991b1b;display:flex;align-items:flex-start;gap:0.6rem;">
+              <span style="font-size:1.2rem;line-height:1;">⚠️</span>
+              <div>
+                <strong>Active Inventory Deficit (Negative Balance):</strong>
+                This item has an unsettled deficit of <strong>${fmtQty(info.deficitQty)} ${info.unit}</strong> (estimated liability ₹ ${info.deficitValue.toFixed(2)}). An incoming stock entry will settle this liability and reconcile any price variance.
+              </div>
+            </div>
+          ` : ''}
+
+          ${info.hasDiscrepancy ? `
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:0.75rem 1rem;font-size:0.82rem;color:#92400e;display:flex;align-items:flex-start;gap:0.6rem;">
+              <span style="font-size:1.2rem;line-height:1;">⚠️</span>
+              <div>
+                <strong>Physical Stock vs Ledger Discrepancy:</strong>
+                Item master stock (${fmtQty(itm?.storedQty || 0)} ${info.unit}) has a variance of ${fmtQty(Math.abs(info.ledgerVariance))} ${info.unit} against the movement ledger (${fmtQty((itm?.storedQty || 0) + (info.ledgerVariance || 0))} ${info.unit}).
+              </div>
+            </div>
+          ` : ''}
 
           <!-- Section 1: Active Batches Remaining On Hand -->
           <div>

@@ -213,9 +213,69 @@ ipcMain.handle('get-printers', async () => {
 });
 
 ipcMain.handle('print-receipt', async (event, options = {}) => {
-  if (!mainWindow) return { success: false, error: 'Window not active' };
+  const { html, printerName, silent = true, paperWidth = 80 } = options;
 
-  const { printerName, silent = true } = options;
+  if (html) {
+    return new Promise((resolve) => {
+      let resolved = false;
+      const widthPx = String(paperWidth) === '58' ? 220 : 310;
+      const printWin = new BrowserWindow({
+        show: false,
+        width: widthPx,
+        height: 600,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true
+        }
+      });
+
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          try { printWin.close(); } catch (e) {}
+          resolve({ success: false, error: 'Thermal print timed out after 10 seconds' });
+        }
+      }, 10000);
+
+      printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+      printWin.webContents.on('did-finish-load', () => {
+        printWin.webContents.print(
+          {
+            silent: Boolean(silent),
+            printBackground: true,
+            deviceName: printerName || '',
+            margins: { marginType: 'none' }
+          },
+          (success, failureReason) => {
+            clearTimeout(timer);
+            if (!resolved) {
+              resolved = true;
+              try { printWin.close(); } catch (e) {}
+              if (!success) {
+                console.error('[Limra Desktop Print] Failed:', failureReason);
+                resolve({ success: false, error: failureReason || 'Printer rejected print job' });
+              } else {
+                console.log('[Limra Desktop Print] Printed successfully via hidden thermal window');
+                resolve({ success: true, hardware_confirmed: true });
+              }
+            }
+          }
+        );
+      });
+
+      printWin.webContents.on('did-fail-load', (e, code, desc) => {
+        clearTimeout(timer);
+        if (!resolved) {
+          resolved = true;
+          try { printWin.close(); } catch (err) {}
+          resolve({ success: false, error: desc || 'Failed to load receipt HTML in printer window' });
+        }
+      });
+    });
+  }
+
+  if (!mainWindow) return { success: false, error: 'Window not active' };
 
   return new Promise((resolve) => {
     mainWindow.webContents.print(
@@ -231,7 +291,7 @@ ipcMain.handle('print-receipt', async (event, options = {}) => {
           resolve({ success: false, error: failureReason });
         } else {
           console.log('[Limra Desktop Print] Printed successfully');
-          resolve({ success: true });
+          resolve({ success: true, hardware_confirmed: true });
         }
       }
     );

@@ -19,6 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js" defer></script>
   <link rel="stylesheet" href="/src/style.css" />
   <link rel="stylesheet" href="/src/admin.css" />
+  <link rel="manifest" href="/manifest.json" />
   <link rel="icon" href="/images/logo.png" type="image/png" />
   <link rel="apple-touch-icon" href="/images/logo.png" />
   <style>
@@ -5117,6 +5118,14 @@
   // Also reinitialize after any dynamic panel switches
   const _origCreateIcons = () => { if (window.lucide) lucide.createIcons(); };
   document.addEventListener('adminPanelChanged', _origCreateIcons);
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.warn('[PWA Admin] Service Worker registration failed:', err);
+      });
+    });
+  }
 </script>
 </body>
 </html>

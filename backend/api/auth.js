@@ -214,12 +214,23 @@ export default async function handler(req, res) {
         deliveryResult = await sendWhatsAppOtp(cleanPhone, newOtp);
       }
 
+      const isProduction = process.env.NODE_ENV === "production";
+
+      // Prevent demo simulated OTP in production
+      if (isProduction && deliveryResult.mode === "demo") {
+        return res.status(503).json({
+          success: false,
+          message: "SMS delivery service is unconfigured. Production gateway credentials required."
+        });
+      }
+
       const channelLabel = channel === "sms" ? "SMS" : "WhatsApp";
       return res.status(200).json({
         success: true,
         channel: channel || "whatsapp",
         mode: deliveryResult.mode,
-        otp: (deliveryResult.mode === "demo" || deliveryResult.mode === "whatsapp") ? newOtp : undefined,
+        // Strictly prevent leaking OTP in JSON payload in production mode
+        otp: (!isProduction && deliveryResult.mode === "demo") ? newOtp : undefined,
         waLink: deliveryResult.waLink,
         message: deliveryResult.mode === "whatsapp_cloud_api"
           ? `WhatsApp OTP sent to +91 ${cleanPhone}`

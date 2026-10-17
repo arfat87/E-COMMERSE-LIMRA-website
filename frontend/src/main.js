@@ -1,5 +1,6 @@
 import './style.css';
-import { insforge, saveOrder, saveBooking, getCustomerBookings, getCustomerOrders, getMenuOverrides, getCoupons, getCombos, getCustomDishes } from './lib/insforge.js';
+import { insforge, saveOrder, saveBooking, getCustomerBookings, getCustomerOrders, getMenuOverrides, getCoupons, getCombos, getCustomDishes, getDeliveryAreas, offlineSync } from './lib/insforge.js';
+import { calculateOrderBilling } from './lib/billing-engine.js';
 import { menuItems, categoryImages, categoryLabels, categoryEmojis, categoryTabOrder } from './data/menu.js';
 import { sendEmailNotification, generateOrderPlacedHtml } from './lib/email-service.js';
 import { NotificationService } from './lib/notifications.js';
@@ -217,22 +218,29 @@ function updateProfileDeliveryFeeDisplay(area) {
 
 let appliedCoupon = null; // holds { code, discount_pct, min_bill }
 
+function getCartBillingDetails() {
+  const delivery = getDeliveryCharge();
+  const formattedItems = cart.map(item => ({
+    name: item.name,
+    price: item.price,
+    qty: item.qty,
+    gst_applicable: item.gst_applicable !== false
+  }));
+  return calculateOrderBilling({
+    items: formattedItems,
+    coupon: appliedCoupon,
+    deliveryFee: delivery,
+    cgstRate: 2.5,
+    sgstRate: 2.5
+  });
+}
+
 function getCouponDiscountAmount() {
-  if (!appliedCoupon) return 0;
-  const subtotal = getCartSubtotal();
-  if (subtotal < appliedCoupon.min_bill) return 0;
-  return Math.round(subtotal * (appliedCoupon.discount_pct / 100));
+  return getCartBillingDetails().discountAmt;
 }
 
 function getTaxesAmount() {
-  const subtotal = getCartSubtotal();
-  const taxableSubtotal = cart.reduce((sum, item) => {
-    if (item.gst_applicable === false) return sum;
-    return sum + (item.price * item.qty);
-  }, 0);
-  const discount = getCouponDiscountAmount();
-  const taxableDiscount = subtotal > 0 ? Math.round(taxableSubtotal * (discount / subtotal)) : 0;
-  return Math.round(Math.max(0, taxableSubtotal - taxableDiscount) * 0.05); // 5% GST on taxable discounted subtotal
+  return getCartBillingDetails().totalGst;
 }
 
 function getSelectedPaymentMethod() {
@@ -263,15 +271,11 @@ function saveCart() {
 }
 
 function getCartSubtotal() {
-  return cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+  return getCartBillingDetails().subtotal;
 }
 
 function getCartTotal() {
-  const subtotal = getCartSubtotal();
-  const discount = getCouponDiscountAmount();
-  const delivery = getDeliveryCharge();
-  const taxes = getTaxesAmount();
-  return Math.max(0, subtotal - discount) + delivery + taxes;
+  return getCartBillingDetails().grandTotal;
 }
 
 // Micro-interactions & spring animations
@@ -2038,14 +2042,9 @@ let databaseDeliveryAreas = [];
 
 async function loadDeliveryAreas() {
   try {
-    const { data, error } = await insforge.database.from('delivery_areas').select('*').order('name', { ascending: true });
-    if (!error && data && data.length > 0) {
-      databaseDeliveryAreas = data.map(item => ({
-        ...item,
-        id: String(item.id),
-        charge: Number(item.delivery_fee ?? item.charge ?? 0),
-        delivery_fee: Number(item.delivery_fee ?? item.charge ?? 0)
-      }));
+    const data = await getDeliveryAreas();
+    if (data && data.length > 0) {
+      databaseDeliveryAreas = data;
       
       // Update AREA_DELIVERY_CHARGES dynamically
       data.forEach(item => {
@@ -3692,9 +3691,18 @@ document.addEventListener('DOMContentLoaded', () => {
             console.warn('[Checkout] Failed to increment coupon usage count:', couponErr);
           }
         }
-        const orderLabel = order?.order_number ? `Order #${order.order_number}` : 'Your order';
-        statusEl.textContent = `${orderLabel} placed! We will confirm soon.`;
-        statusEl.style.color = 'var(--color-accent)';
+        const isPendingOffline = !!order?.isLocalPending;
+        const orderLabel = isPendingOffline
+          ? 'Offline Order Queued'
+          : (order?.order_number ? `Order #${order.order_number}` : 'Your order');
+
+        if (isPendingOffline) {
+          statusEl.textContent = `Order Queued Offline (Sync Pending). We will confirm when connection returns.`;
+          statusEl.style.color = '#f59e0b';
+        } else {
+          statusEl.textContent = `${orderLabel} placed! We will confirm soon.`;
+          statusEl.style.color = 'var(--color-accent)';
+        }
         statusEl.classList.remove('hidden');
 
         // Save customer details to localStorage for future orders
@@ -3711,22 +3719,24 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('limra-customer-details', JSON.stringify(savedDetails));
         initSavedAddressLoading(); // Refresh loading state
         
-        // Activate notifications listening immediately for checkout phone
-        startNotificationListening();
+        if (!isPendingOffline) {
+          // Activate notifications listening immediately for checkout phone
+          startNotificationListening();
 
-        // Send Automatic HTML Email Receipt to Customer
-        if (email) {
-          try {
-            const orderItemsMap = cartSnapshot.map(item => ({
-              item_name: item.name,
-              quantity: item.qty,
-              unit_price: item.price,
-              line_total: item.price * item.qty
-            }));
-            const emailHtml = generateOrderPlacedHtml(order, orderItemsMap);
-            await sendEmailNotification(email, `🛒 Order #${order.order_number} Received - LIMRA Restaurant`, emailHtml);
-          } catch (emailErr) {
-            console.warn('[Checkout] Background automatic email notification failed:', emailErr);
+          // Send Automatic HTML Email Receipt to Customer
+          if (email) {
+            try {
+              const orderItemsMap = cartSnapshot.map(item => ({
+                item_name: item.name,
+                quantity: item.qty,
+                unit_price: item.price,
+                line_total: item.price * item.qty
+              }));
+              const emailHtml = generateOrderPlacedHtml(order, orderItemsMap);
+              await sendEmailNotification(email, `🛒 Order #${order.order_number} Received - LIMRA Restaurant`, emailHtml);
+            } catch (emailErr) {
+              console.warn('[Checkout] Background automatic email notification failed:', emailErr);
+            }
           }
         }
 
@@ -3777,25 +3787,35 @@ document.addEventListener('DOMContentLoaded', () => {
         const emailUrl = `mailto:limrarestaurant99@gmail.com?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
 
         // Show Success Modal
-        showSuccessModal({
-          title: `${orderLabel} Placed Successfully!`,
-          message: `Your order has been successfully recorded in our system. You can get an email receipt or view your order status below.`,
-          emailUrl
-        });
+        if (isPendingOffline) {
+          showSuccessModal({
+            title: `Order Queued (Offline)`,
+            message: `You are currently offline. Your order is safely saved on this device and will automatically synchronize with the restaurant as soon as internet connection is restored.`,
+            emailUrl: null
+          });
+        } else {
+          showSuccessModal({
+            title: `${orderLabel} Placed Successfully!`,
+            message: `Your order has been successfully recorded in our system. You can get an email receipt or view your order status below.`,
+            emailUrl
+          });
+        }
 
-        // Trigger active tracking view
-        subscribeToOrderUpdates(order.id, order.order_number, {
-          ...order,
-          customer_name: name,
-          customer_phone: phone,
-          items: cartSnapshot.map(item => ({ item_name: item.name, quantity: item.qty, line_total: item.price * item.qty, unit_price: item.price })),
-          delivery_address: address,
-          notes: updatedCombinedNotes,
-          payment_status: finalPaymentStatus,
-          payment_method: finalPaymentMethod,
-          total_amount: getCartTotal(),
-          created_at: new Date().toISOString()
-        });
+        // Trigger active tracking view only for confirmed online orders
+        if (!isPendingOffline && order?.id) {
+          subscribeToOrderUpdates(order.id, order.order_number, {
+            ...order,
+            customer_name: name,
+            customer_phone: phone,
+            items: cartSnapshot.map(item => ({ item_name: item.name, quantity: item.qty, line_total: item.price * item.qty, unit_price: item.price })),
+            delivery_address: address,
+            notes: updatedCombinedNotes,
+            payment_status: finalPaymentStatus,
+            payment_method: finalPaymentMethod,
+            total_amount: getCartTotal(),
+            created_at: new Date().toISOString()
+          });
+        }
 
         clearCart();
         document.getElementById('order-customer-name').value = '';
@@ -3907,6 +3927,8 @@ document.addEventListener('DOMContentLoaded', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              items: foodItems,
+              customerPhone: phone,
               amount: amountInPaise,
               currency: 'INR',
               receipt: 'rec_' + Date.now().toString().substring(5)
@@ -4647,6 +4669,11 @@ async function initAuthPanel() {
     await insforge.auth.signOut();
     currentUser = null;
     userProfile = null;
+    
+    // Purge sensitive user cache from localStorage
+    try {
+      offlineSync.clearSensitiveUserData();
+    } catch (e) {}
     
     // Clear notifications subscriptions and state
     if (realtimeSubscribedPhone) {

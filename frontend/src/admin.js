@@ -1,7 +1,7 @@
 import './style.css';
 import './admin.css';
 import { Chart, registerables } from 'chart.js';
-import { insforge, getMenuOverrides, saveMenuOverride, getCoupons, saveCoupon, deleteCoupon, getCombos, saveCombo, deleteCombo, getCustomDishes, saveCustomDish, deleteCustomDish } from './lib/insforge.js';
+import { insforge, getMenuOverrides, saveMenuOverride, getCoupons, saveCoupon, deleteCoupon, getCombos, saveCombo, deleteCombo, getCustomDishes, saveCustomDish, deleteCustomDish, getDeliveryAreas, invalidateRefCache, offlineSync } from './lib/insforge.js';
 import { PaymentService } from './lib/payments.js';
 import { menuItems, categoryImages, categoryLabels, categoryEmojis, categoryTabOrder } from './data/menu.js';
 import { getAdminLoginUrl } from './lib/admin-routes.js';
@@ -9,6 +9,7 @@ import { sendEmailNotification, generateOrderConfirmedHtml, generateOrderCancell
 import QRCode from 'qrcode';
 import { printQueue } from './lib/print-queue.js';
 import { buildEscPosBill, buildEscPosKOT, COMMANDS as ESC_COMMANDS } from './lib/escpos.js';
+import { calculateOrderBilling, parseNotesBillingMetadata, isValidPaymentTransition, isValidFulfillmentTransition, isValidTicketTransition } from './lib/billing-engine.js';
 import { initStockSummarySection } from './admin-stock.js';
 import { initSalesReportHub, loadSalesReportData } from './sales-report/sales-report.js';
 
@@ -596,12 +597,19 @@ function renderNotifications() {
   
   list.innerHTML = notifs.map(n => {
     const isOrder = n.type === 'order' || n.type === 'order_status';
-    const icon = isOrder ? '🍽️' : (n.type === 'booking' ? '📅' : '⚡');
+    const isWaiter = n.type === 'call_waiter';
+    const isBill = n.type === 'request_bill';
+    const icon = isOrder ? '🍽️' : (isWaiter ? '🔔' : (isBill ? '🧾' : (n.type === 'booking' ? '📅' : '⚡')));
     const timeStr = n.created_at ? new Date(n.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—';
     const isUnread = !n.is_read;
 
-    // Look up linked order status if applicable
+    // Look up linked order status or service badge if applicable
     let statusChip = '';
+    if (isWaiter) {
+      statusChip = '<span style="font-size:0.68rem;padding:1px 6px;border-radius:999px;background:#ecfdf5;color:#047857;font-weight:700;">🔔 Waiter</span>';
+    } else if (isBill) {
+      statusChip = '<span style="font-size:0.68rem;padding:1px 6px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-weight:700;">🧾 Bill</span>';
+    }
     const targetId = n.item_id || n.order_id;
     if (targetId && isOrder) {
       const ord = orders.find(o => String(o.id) === String(targetId));
@@ -1246,41 +1254,47 @@ function computeOrderTaxDetails(order, optionalItemsList) {
   const items = consolidateOrderItems(rawItems.filter(isFoodDishItem));
   
   const parsed = parseNotesMetadata(order.notes, order);
-  let subtotal = items.reduce((sum, i) => sum + Number(i.line_total || (i.price * i.qty) || ((i.unit_price || 0) * (i.quantity || 0)) || 0), 0);
-  
-  const discountPct = parsed.discountPct || 0;
-  const discountAmt = parsed.discountAmt || (subtotal * (discountPct / 100));
-  
-  const taxableSubtotal = items.reduce((sum, i) => {
-    if (i.gst_applicable === false || (typeof i.notes === 'string' && i.notes.includes('[NO_GST]'))) return sum;
-    return sum + Number(i.line_total || (i.price * i.qty) || ((i.unit_price || 0) * (i.quantity || 0)) || 0);
-  }, 0);
-  const taxableDiscountAmt = subtotal > 0 ? (taxableSubtotal * (discountAmt / subtotal)) : 0;
-  let taxableValue = Math.max(0, taxableSubtotal - taxableDiscountAmt);
-  
-  const cgstRate = parsed.cgstRate ?? (s.cgstRate ?? 2.5);
-  const sgstRate = parsed.sgstRate ?? (s.sgstRate ?? 2.5);
-  const totalGstRate = cgstRate + sgstRate;
-  
-  const deliveryFee = parsed.deliveryFee || (parsed.type === 'delivery' ? (parseFloat(parsed.deliveryFee) || 10) : 0);
-  
+  const billingMeta = parseNotesBillingMetadata(order.notes);
+
+  const cgstRate = billingMeta.cgstRate ?? parsed.cgstRate ?? (s.cgstRate ?? 2.5);
+  const sgstRate = billingMeta.sgstRate ?? parsed.sgstRate ?? (s.sgstRate ?? 2.5);
+  const isInterstate = billingMeta.isInterstate || false;
+  const deliveryFee = billingMeta.deliveryFee || (parsed.type === 'delivery' ? (parseFloat(parsed.deliveryFee) || 10) : 0);
+  const discountPct = billingMeta.discountPct || parsed.discountPct || 0;
+  const discountAmt = billingMeta.discountAmt || parsed.discountAmt || 0;
+
+  const billing = calculateOrderBilling({
+    items,
+    deliveryFee,
+    discountPct,
+    discountAmt,
+    cgstRate,
+    sgstRate,
+    isInterstate
+  });
+
+  let subtotal = billing.subtotal;
+  let taxableValue = billing.taxableValue;
+  let cgstAmt = billing.cgstAmt;
+  let sgstAmt = billing.sgstAmt;
+  let totalGst = billing.totalGst;
   const orderTot = getEffectiveOrderTotal(order);
 
   // If items subtotal is 0 but order has total_amount, back-calculate taxableValue
   if (taxableValue <= 0 && orderTot > 0) {
+    const totalGstRate = billing.totalGstRate;
     taxableValue = Math.max(0, (orderTot - deliveryFee) / (1 + totalGstRate / 100));
     subtotal = taxableValue;
+    cgstAmt = Math.round((taxableValue * (cgstRate / 100)) * 100) / 100;
+    sgstAmt = Math.round((taxableValue * (sgstRate / 100)) * 100) / 100;
+    totalGst = Math.round((cgstAmt + sgstAmt) * 100) / 100;
   }
 
-  let cgstAmt = Math.round((taxableValue * (cgstRate / 100)) * 100) / 100;
-  let sgstAmt = Math.round((taxableValue * (sgstRate / 100)) * 100) / 100;
-  let totalGst = Math.round((cgstAmt + sgstAmt) * 100) / 100;
-  
-  const calculatedGrand = Math.round((taxableValue + totalGst + deliveryFee) * 100) / 100;
-  let grandTotal = orderTot > 0 ? orderTot : calculatedGrand;
+  let grandTotal = orderTot > 0 ? orderTot : billing.grandTotal;
 
   // Harmonize taxableValue and GST if grandTotal has discrepancy > ₹1
   if (grandTotal > 0 && Math.abs(taxableValue + totalGst + deliveryFee - grandTotal) > 1) {
+    const totalGstRate = billing.totalGstRate;
     taxableValue = Math.round((Math.max(0, (grandTotal - deliveryFee) / (1 + totalGstRate / 100))) * 100) / 100;
     totalGst = Math.round((grandTotal - deliveryFee - taxableValue) * 100) / 100;
     cgstAmt = Math.round((totalGst / 2) * 100) / 100;
@@ -1291,14 +1305,14 @@ function computeOrderTaxDetails(order, optionalItemsList) {
     items,
     itemCount: items.reduce((sum, i) => sum + Number(i.quantity || i.qty || 1), 0),
     subtotal,
-    discountPct,
-    discountAmt,
+    discountPct: billing.discountPct,
+    discountAmt: billing.discountAmt,
     taxableValue,
-    cgstRate,
+    cgstRate: billing.cgstRate,
     cgstAmt,
-    sgstRate,
+    sgstRate: billing.sgstRate,
     sgstAmt,
-    totalGstRate,
+    totalGstRate: billing.totalGstRate,
     totalGst,
     deliveryFee,
     grandTotal
@@ -1409,23 +1423,17 @@ async function loadStaticConfigData(force = false) {
   }
   try {
     const [placesRes, combosRes, customDishesRes, overridesRes] = await Promise.all([
-      insforge.database.from('delivery_areas').select('*').order('name', { ascending: true }),
-      getCombos().catch(() => []),
-      getCustomDishes().catch(() => []),
-      getMenuOverrides().catch(() => [])
+      getDeliveryAreas(force).catch(() => []),
+      getCombos(force).catch(() => []),
+      getCustomDishes(force).catch(() => []),
+      getMenuOverrides(force).catch(() => [])
     ]);
 
     if (Array.isArray(combosRes)) adminCombos = combosRes;
     if (Array.isArray(customDishesRes)) customCreatedFoods = customDishesRes;
     if (Array.isArray(overridesRes)) activeMenuOverrides = overridesRes;
-    if (placesRes && Array.isArray(placesRes.data)) {
-      adminPlaces = placesRes.data.map(p => ({
-        ...p,
-        id: String(p.id),
-        name: p.name || '',
-        charge: Number(p.delivery_fee ?? p.charge ?? 0),
-        delivery_fee: Number(p.delivery_fee ?? p.charge ?? 0)
-      }));
+    if (Array.isArray(placesRes) && placesRes.length > 0) {
+      adminPlaces = placesRes;
     }
     lastStaticConfigTimestamp = now;
   } catch (err) {
@@ -1792,10 +1800,10 @@ async function loadData(isManual = false) {
 
     const fetchStartTime = new Date(Date.now() - 10000).toISOString();
 
-    // Query recent records scoped with limit to eliminate massive egress and 8+ second delays
+    // Query recent records scoped with selective columns to eliminate massive egress and delay
     const [ordersRes, itemsRes, bookingsRes, notifsRes] = await Promise.all([
-      insforge.database.from('orders').select('*').order('created_at', { ascending: false }).limit(300),
-      insforge.database.from('order_items').select('*').order('created_at', { ascending: false }).limit(1000),
+      insforge.database.from('orders').select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, idempotency_key, created_at, updated_at').order('created_at', { ascending: false }).limit(300),
+      insforge.database.from('order_items').select('id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at').order('created_at', { ascending: false }).limit(1000),
       insforge.database.from('bookings').select('*').order('created_at', { ascending: false }).limit(100),
       insforge.database.from('notifications').select('*').order('created_at', { ascending: false }).limit(35),
       loadStaticConfigData(isManual)
@@ -1826,14 +1834,14 @@ async function loadData(isManual = false) {
     return;
   }
 
-  // B. ULTRA-LIGHTWEIGHT INCREMENTAL DELTA SYNC (Runs every 10s background interval)
+  // B. ULTRA-LIGHTWEIGHT INCREMENTAL DELTA SYNC (Runs on smart polling heartbeat)
   const syncSince = lastSyncTimestamp;
   const nextSyncTime = new Date(Date.now() - 10000).toISOString();
 
   const [deltaOrdersRes, deltaBookingsRes, notifsRes] = await Promise.all([
     insforge.database
       .from('orders')
-      .select('*')
+      .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, idempotency_key, created_at, updated_at')
       .or(`updated_at.gte.${syncSince},created_at.gte.${syncSince}`)
       .order('created_at', { ascending: false }),
     insforge.database
@@ -1863,7 +1871,7 @@ async function loadData(isManual = false) {
     const changedOrderIds = deltaOrders.map(o => o.id);
     const { data: fetchedDeltaItems, error: itemsErr } = await insforge.database
       .from('order_items')
-      .select('*')
+      .select('id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at')
       .in('order_id', changedOrderIds);
     if (!itemsErr && Array.isArray(fetchedDeltaItems)) {
       deltaItems = fetchedDeltaItems;
@@ -2904,7 +2912,101 @@ function renderOrdersReportCharts(activeOrders) {
   }
 }
 
-function renderOrdersReport() {
+let isFetchingHistoricalOrders = false;
+const historicalLoadedRanges = new Set();
+
+async function ensureHistoricalOrdersForReport() {
+  if (isFetchingHistoricalOrders) return;
+
+  const now = new Date();
+  let startIso = null;
+  let endIso = null;
+  let rangeKey = '';
+
+  if (ordersReportDateFilter === 'week') {
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+    startIso = weekStart.toISOString();
+    endIso = now.toISOString();
+    rangeKey = `week_${getLocalDateString(weekStart)}`;
+  } else if (ordersReportDateFilter === 'month') {
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    startIso = monthStart.toISOString();
+    endIso = now.toISOString();
+    rangeKey = `month_${now.getFullYear()}_${now.getMonth() + 1}`;
+  } else if (ordersReportDateFilter === 'all') {
+    rangeKey = 'all_orders';
+  } else if (ordersReportDateFilter === 'custom' && ordersReportCustomStart) {
+    const cStart = new Date(ordersReportCustomStart + 'T00:00:00');
+    const cEnd = ordersReportCustomEnd ? new Date(ordersReportCustomEnd + 'T23:59:59.999') : new Date(ordersReportCustomStart + 'T23:59:59.999');
+    startIso = cStart.toISOString();
+    endIso = cEnd.toISOString();
+    rangeKey = `custom_${ordersReportCustomStart}_${ordersReportCustomEnd || ordersReportCustomStart}`;
+  }
+
+  // If 'today' or 'yesterday', our recent loaded orders in memory are sufficient
+  if (!rangeKey || historicalLoadedRanges.has(rangeKey)) return;
+
+  // Check if current memory orders already stretch back far enough to cover startIso
+  if (orders.length > 0 && startIso) {
+    const oldestOrderDate = new Date(orders[orders.length - 1].created_at || Date.now());
+    if (oldestOrderDate <= new Date(startIso)) {
+      historicalLoadedRanges.add(rangeKey);
+      return;
+    }
+  }
+
+  isFetchingHistoricalOrders = true;
+  try {
+    let q = insforge.database
+      .from('orders')
+      .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, idempotency_key, created_at, updated_at')
+      .neq('status', 'cancelled')
+      .order('created_at', { ascending: false });
+
+    if (startIso) q = q.gte('created_at', startIso);
+    if (endIso) q = q.lte('created_at', endIso);
+
+    const { data: histOrders, error } = await q;
+    if (!error && Array.isArray(histOrders) && histOrders.length > 0) {
+      // Merge into orders array deduplicating by ID
+      const orderMap = new Map();
+      orders.forEach(o => orderMap.set(String(o.id), o));
+      histOrders.forEach(o => orderMap.set(String(o.id), o));
+      orders = Array.from(orderMap.values()).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+      // Fetch items for any orders missing from orderItems
+      const knownItemOrderIds = new Set(orderItems.map(i => String(i.order_id)));
+      const missingOrderIds = histOrders.map(o => String(o.id)).filter(id => !knownItemOrderIds.has(id));
+
+      if (missingOrderIds.length > 0) {
+        const CHUNK_SIZE = 150;
+        for (let i = 0; i < missingOrderIds.length; i += CHUNK_SIZE) {
+          const chunk = missingOrderIds.slice(i, i + CHUNK_SIZE);
+          const { data: chunkItems, error: itemErr } = await insforge.database
+            .from('order_items')
+            .select('id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at')
+            .in('order_id', chunk);
+          if (!itemErr && Array.isArray(chunkItems) && chunkItems.length > 0) {
+            orderItems = orderItems.concat(chunkItems);
+          }
+        }
+      }
+
+      historicalLoadedRanges.add(rangeKey);
+    }
+  } catch (err) {
+    console.warn('[AdminReport] Warning fetching historical orders:', err);
+  } finally {
+    isFetchingHistoricalOrders = false;
+  }
+}
+
+async function renderOrdersReport() {
+  if (ordersReportDateFilter === 'week' || ordersReportDateFilter === 'month' || ordersReportDateFilter === 'all' || ordersReportDateFilter === 'custom') {
+    await ensureHistoricalOrdersForReport();
+  }
   const {
     list,
     activeOrders,
@@ -3024,7 +3126,8 @@ function renderAnalytics() {
   renderOrdersReport();
 }
 
-function exportOrdersReportCSV() {
+async function exportOrdersReportCSV() {
+  await ensureHistoricalOrdersForReport();
   const { list } = computeOrdersReportData();
   if (!list.length) {
     showAdminToast('No orders data to export.', 'error');
@@ -4050,6 +4153,21 @@ function exportOrdersListCSV() {
 
 async function updateOrderStatus(orderId, newStatus) {
   const existingOrder = orders.find(o => o.id === orderId);
+  if (existingOrder) {
+    if (existingOrder.ticket_status === 'CLOSED' && newStatus !== 'delivered') {
+      showAdminToast('Closed orders cannot be transitioned to another status.', 'error');
+      return false;
+    }
+    if (existingOrder.ticket_status === 'CANCELLED' && newStatus !== 'cancelled') {
+      showAdminToast('Cancelled orders cannot be reactivated.', 'error');
+      return false;
+    }
+    if (!isValidFulfillmentTransition(existingOrder.status, newStatus)) {
+      showAdminToast(`Cannot transition order fulfillment from '${existingOrder.status}' to '${newStatus}'.`, 'error');
+      return false;
+    }
+  }
+
   const updates = { status: newStatus };
   if (newStatus === 'cancelled') {
     updates.ticket_status = 'CANCELLED';
@@ -4181,10 +4299,15 @@ async function updateOrderStatus(orderId, newStatus) {
 
 async function updateOrderPaymentStatus(orderId, newStatus) {
   try {
+    const order = orders.find(o => o.id === orderId);
+    if (order && !isValidPaymentTransition(order.payment_status, newStatus)) {
+      showAdminToast(`Invalid payment transition: cannot change payment from '${order.payment_status}' to '${newStatus}'.`, 'error');
+      return false;
+    }
+
     const result = await PaymentService.updatePaymentStatus(orderId, newStatus);
     showAdminToast('Payment status updated successfully.', 'success');
 
-    const order = orders.find(o => o.id === orderId);
     if (order) {
       order.payment_status = newStatus;
       if (newStatus === 'paid') {
@@ -5292,11 +5415,17 @@ async function createFinalBillForTableSession(tableNum) {
 
   // 1. Consolidate all items across all KOTs in this session
   const consolidatedItems = session.consolidatedItems;
-  const subtotal = consolidatedItems.reduce((s, i) => s + (i.price * i.qty), 0);
   const s = getBillSettings();
-  const cgst = subtotal * (s.cgstRate / 100);
-  const sgst = subtotal * (s.sgstRate / 100);
-  let grandTotal = subtotal + cgst + sgst;
+  const billing = calculateOrderBilling({
+    items: consolidatedItems,
+    deliveryFee: 0,
+    cgstRate: s.cgstRate ?? 2.5,
+    sgstRate: s.sgstRate ?? 2.5
+  });
+  const subtotal = billing.subtotal;
+  const cgst = billing.cgstAmt;
+  const sgst = billing.sgstAmt;
+  let grandTotal = billing.grandTotal;
   if (grandTotal <= 0 && Number(session.totalAmount || 0) > 0) {
     grandTotal = Number(session.totalAmount);
   } else if (grandTotal <= 0 && Number(primaryOrder.total_amount || 0) > 0) {
@@ -5311,16 +5440,85 @@ async function createFinalBillForTableSession(tableNum) {
     status: 'delivered',
     payment_status: 'paid',
     ticket_status: 'CLOSED',
-    notes: `[TABLE: ${tableNum}] [FINAL_BILL] [KOTS: ${kotNumbersText}] [CGST: ${s.cgstRate}%] [SGST: ${s.sgstRate}%] [PAYMENT: cash]`
+    notes: `[TABLE: ${tableNum}] [FINAL_BILL] [KOTS: ${kotNumbersText}] [CGST: ${billing.cgstRate}%] [SGST: ${billing.sgstRate}%] [PAYMENT: cash]`
   };
 
-  // 2. Print Final Consolidated Bill with Tax & UPI QR
-  await printOrderReceiptWithTax(finalBillOrder, consolidatedItems);
+  // 2. Concurrency Check: Check if table session was already closed
+  if (primaryOrder.ticket_status === 'CLOSED' && primaryOrder.payment_status === 'paid') {
+    showAdminToast(`Table ${tableNum} was already billed and closed by another cashier.`, 'error');
+    await loadOrders();
+    return;
+  }
 
-  // 3. Update local state immediately (Local-First: instant UI update)
   const siblingOrders = session.orders.slice(1);
   const siblingOrderIds = siblingOrders.map(o => o.id);
+  const settleIdempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `settle-table-${tableNum}-${Date.now()}`;
 
+  // 3. Atomically commit database update first (Prevents double billing / double checkout)
+  let cloudSettled = false;
+  try {
+    if (siblingOrderIds.length > 0) {
+      await insforge.database
+        .from('order_items')
+        .update({ order_id: primaryOrder.id })
+        .in('order_id', siblingOrderIds);
+    }
+
+    let pUpd = await insforge.database
+      .from('orders')
+      .update({
+        total_amount: grandTotal,
+        status: 'delivered',
+        payment_status: 'paid',
+        ticket_status: 'CLOSED',
+        notes: finalBillOrder.notes,
+        idempotency_key: settleIdempotencyKey,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', primaryOrder.id)
+      .neq('ticket_status', 'CLOSED')
+      .select();
+
+    if (pUpd.error && (pUpd.error.message || '').includes('ticket_status')) {
+      await insforge.database
+        .from('orders')
+        .update({
+          total_amount: grandTotal,
+          status: 'delivered',
+          payment_status: 'paid',
+          notes: finalBillOrder.notes,
+          idempotency_key: settleIdempotencyKey,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', primaryOrder.id);
+      cloudSettled = true;
+    } else if (pUpd.data && pUpd.data.length > 0) {
+      cloudSettled = true;
+    } else if (!pUpd.error) {
+      showAdminToast(`Table ${tableNum} was already closed by another cashier.`, 'error');
+      await loadOrders();
+      return;
+    }
+
+    for (const ord of siblingOrders) {
+      let sUpd = await insforge.database
+        .from('orders')
+        .update({ status: 'delivered', payment_status: 'paid', ticket_status: 'CLOSED' })
+        .eq('id', ord.id);
+      if (sUpd.error && (sUpd.error.message || '').includes('ticket_status')) {
+        await insforge.database
+          .from('orders')
+          .update({ status: 'delivered', payment_status: 'paid' })
+          .eq('id', ord.id);
+      }
+    }
+  } catch (cloudErr) {
+    console.warn('[Table Session Settle] Cloud update warning (saved locally):', cloudErr);
+  }
+
+  // 4. Update local in-memory state
   const localPrimary = orders.find(x => x.id === primaryOrder.id) || primaryOrder;
   localPrimary.total_amount = grandTotal;
   localPrimary.status = 'delivered';
@@ -5345,54 +5543,17 @@ async function createFinalBillForTableSession(tableNum) {
 
   session.orders.forEach(o => markOrderNotificationsRead(o.id));
 
-  // 4. Safely sync to cloud DB in background
+  // 5. EXTERNAL SIDE EFFECT 1: Print Final Consolidated Bill with Tax & UPI QR (Decoupled)
   try {
-    if (siblingOrderIds.length > 0) {
-      await insforge.database
-        .from('order_items')
-        .update({ order_id: primaryOrder.id })
-        .in('order_id', siblingOrderIds);
-    }
-
-    let pUpd = await insforge.database
-      .from('orders')
-      .update({
-        total_amount: grandTotal,
-        status: 'delivered',
-        payment_status: 'paid',
-        ticket_status: 'CLOSED',
-        notes: finalBillOrder.notes
-      })
-      .eq('id', primaryOrder.id);
-    if (pUpd.error && (pUpd.error.message || '').includes('ticket_status')) {
-      await insforge.database
-        .from('orders')
-        .update({
-          total_amount: grandTotal,
-          status: 'delivered',
-          payment_status: 'paid',
-          notes: finalBillOrder.notes
-        })
-        .eq('id', primaryOrder.id);
-    }
-
-    for (const ord of siblingOrders) {
-      let sUpd = await insforge.database
-        .from('orders')
-        .update({ status: 'delivered', payment_status: 'paid', ticket_status: 'CLOSED' })
-        .eq('id', ord.id);
-      if (sUpd.error && (sUpd.error.message || '').includes('ticket_status')) {
-        await insforge.database
-          .from('orders')
-          .update({ status: 'delivered', payment_status: 'paid' })
-          .eq('id', ord.id);
-      }
-    }
-  } catch (cloudErr) {
-    console.warn('[Table Session Settle] Cloud update warning (saved locally):', cloudErr);
+    await printOrderReceiptWithTax(finalBillOrder, consolidatedItems);
+  } catch (printErr) {
+    console.error('[Table Bill Print Error]:', printErr);
+    showAdminToast(`Table ${tableNum} session closed in DB, but printing failed: ${printErr.message}. Use Reprint button.`, 'warning');
   }
 
   showAdminToast(`Table ${tableNum} Final Bill generated & session closed! ✅`, 'success');
+
+  // 6. EXTERNAL SIDE EFFECT 2: Google Sheets auto-sync (Decoupled)
   if (isGoogleSheetAutoSyncEnabled()) {
     syncOrderToGoogleSheet(localPrimary || finalBillOrder).catch(e => console.warn('[Google Sheet] Table bill auto-sync error:', e));
   }
@@ -5607,7 +5768,7 @@ function renderHoldOrdersPanel() {
       const session = tableSessions.find(s => s.tableNumber === tableNum);
       if (!session) return;
       const primaryOrder = session.orders[0];
-      await printKOT(primaryOrder, session.consolidatedItems);
+      await printKOT(primaryOrder, session.consolidatedItems, { isReprint: true });
     });
   });
 
@@ -5680,7 +5841,7 @@ function renderHoldOrdersPanel() {
       const order = orders.find(o => o.id === btn.dataset.orderId);
       if (!order) return;
       const items = getItemsForOrder(order.id);
-      await printKOT(order, items);
+      await printKOT(order, items, { isReprint: true });
     });
   });
 
@@ -5689,49 +5850,124 @@ function renderHoldOrdersPanel() {
       const orderId = btn.dataset.orderId;
       const order = orders.find(o => String(o.id) === String(orderId));
       if (!order) return;
-      if (!confirm(`Print KOT + Final Bill for Order #${order.order_number} and mark as completed / closed?`)) return;
-      const items = getItemsForOrder(order.id);
-      await printCombinedKOTAndBill(order, items);
+      if (!confirm(`Settle Order #${order.order_number} and print final customer bill?`)) return;
 
-      // 1. Immediately update local state in-memory
-      order.status = 'delivered';
-      order.payment_status = 'paid';
-      order.ticket_status = 'CLOSED';
-      order.updated_at = new Date().toISOString();
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
 
-      // 2. Attempt cloud DB update safely
       try {
-        let { error } = await insforge.database.from('orders').update({
-          status: 'delivered',
-          payment_status: 'paid',
-          ticket_status: 'CLOSED',
-          updated_at: order.updated_at
-        }).eq('id', orderId);
-        if (error && (error.message || '').includes('ticket_status')) {
-          const retry = await insforge.database.from('orders').update({
-            status: 'delivered',
-            payment_status: 'paid',
-            updated_at: order.updated_at
-          }).eq('id', orderId);
-          error = retry.error;
-        }
-        if (error) console.warn('[Hold Settle] Cloud update warning (saved locally):', error);
-      } catch (err) {
-        console.warn('[Hold Settle] Offline settle update:', err);
-      }
+        const settleIdempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `settle-${orderId}-${Date.now()}`;
 
-      await markOrderNotificationsRead(orderId);
-      showAdminToast(`Order #${order.order_number} billed, settled & closed! ✅`, 'success');
-      if (isGoogleSheetAutoSyncEnabled()) {
-        syncOrderToGoogleSheet(order).catch(e => console.warn('[Google Sheet] Hold bill auto-sync error:', e));
+        // 1. ATOMIC SETTLEMENT IN DATABASE FIRST
+        let cloudSettled = false;
+        let settlementConflict = false;
+
+        try {
+          const res = await fetch('/api/orders', {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-idempotency-key': settleIdempotencyKey
+            },
+            body: JSON.stringify({
+              id: orderId,
+              status: 'delivered',
+              payment_status: 'paid',
+              ticket_status: 'CLOSED',
+              idempotency_key: settleIdempotencyKey
+            })
+          });
+
+          if (res.status === 409) {
+            settlementConflict = true;
+            const conflictData = await res.json().catch(() => ({}));
+            showAdminToast(conflictData.error || `Order #${order.order_number} was already settled by another cashier.`, 'error');
+            await loadOrders();
+            return;
+          }
+
+          if (res.ok) {
+            cloudSettled = true;
+          }
+        } catch (fetchErr) {
+          console.warn('[Hold Settle API fallback to direct client]:', fetchErr);
+        }
+
+        if (!cloudSettled && !settlementConflict) {
+          try {
+            const { data: updatedRows, error: updErr } = await insforge.database
+              .from('orders')
+              .update({
+                status: 'delivered',
+                payment_status: 'paid',
+                ticket_status: 'CLOSED',
+                idempotency_key: settleIdempotencyKey,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', orderId)
+              .neq('ticket_status', 'CLOSED')
+              .select();
+
+            if (updErr && (updErr.message || '').includes('ticket_status')) {
+              await insforge.database.from('orders').update({
+                status: 'delivered',
+                payment_status: 'paid',
+                idempotency_key: settleIdempotencyKey,
+                updated_at: new Date().toISOString()
+              }).eq('id', orderId);
+              cloudSettled = true;
+            } else if (updatedRows && updatedRows.length > 0) {
+              cloudSettled = true;
+            } else if (!updErr) {
+              showAdminToast(`Order #${order.order_number} was already closed by another cashier.`, 'error');
+              await loadOrders();
+              return;
+            }
+          } catch (offlineErr) {
+            console.warn('[Hold Settle Offline]:', offlineErr);
+          }
+        }
+
+        // 2. Database committed! Now update local in-memory state
+        order.status = 'delivered';
+        order.payment_status = 'paid';
+        order.ticket_status = 'CLOSED';
+        order.updated_at = new Date().toISOString();
+
+        // 3. EXTERNAL SIDE EFFECT 1: Print final customer bill (Decoupled from DB commit)
+        // Table/hold KOT was already dispatched when order was placed. Final settlement prints customer bill only.
+        const items = getItemsForOrder(order.id);
+        try {
+          await printOrderReceiptWithTax(order, items);
+        } catch (printErr) {
+          console.error('[Hold Settle] Print failed:', printErr);
+          showAdminToast(`Bill settled in database, but printing encountered an issue: ${printErr.message}. Use Reprint button if needed.`, 'warning');
+        }
+
+        // 4. Notifications & UI Refresh
+        await markOrderNotificationsRead(orderId);
+        showAdminToast(`Order #${order.order_number} billed, settled & closed! ✅`, 'success');
+
+        // 5. EXTERNAL SIDE EFFECT 2: Google Sheets Sync (Decoupled from DB commit)
+        if (isGoogleSheetAutoSyncEnabled()) {
+          syncOrderToGoogleSheet(order).catch(e => {
+            console.warn('[Google Sheet] Hold bill auto-sync error:', e);
+          });
+        }
+
+        renderOverview();
+        renderHoldOrdersPanel();
+        renderClosedOrdersPanel();
+        renderBillingQuickCards();
+        renderBillingTotalBills();
+        renderTablesPanel();
+        renderKitchenPanel();
+      } finally {
+        btn.disabled = false;
+        btn.style.opacity = '1';
       }
-      renderOverview();
-      renderHoldOrdersPanel();
-      renderClosedOrdersPanel();
-      renderBillingQuickCards();
-      renderBillingTotalBills();
-      renderTablesPanel();
-      renderKitchenPanel();
     });
   });
 
@@ -6213,7 +6449,7 @@ function renderKitchenPanel() {
       const order = orders.find(o => String(o.id) === String(btn.dataset.id));
       if (!order) return;
       const items = getItemsForOrder(order.id);
-      await printKOT(order, items);
+      await printKOT(order, items, { isReprint: true });
     });
   });
 }
@@ -7961,7 +8197,7 @@ function renderClosedOrdersPanel() {
     btn.addEventListener('click', async () => {
       const order = orders.find(o => String(o.id) === String(btn.dataset.id));
       if (!order) return;
-      await printOrderReceiptWithTax(order);
+      await printOrderReceiptWithTax(order, null, { isReprint: true });
     });
   });
 
@@ -7970,7 +8206,7 @@ function renderClosedOrdersPanel() {
       const order = orders.find(o => String(o.id) === String(btn.dataset.id));
       if (!order) return;
       const items = getItemsForOrder(order.id);
-      await printKOT(order, items);
+      await printKOT(order, items, { isReprint: true });
     });
   });
 
@@ -9038,31 +9274,6 @@ async function initAuth() {
   cleanAuthParams();
 
   if (!authUser) {
-    // On localhost / Electron desktop, authenticate admin session automatically
-    if (isLocalDev && !isStrict) {
-      console.log('⚡ Local/Desktop POS detected: authenticating admin session');
-      try {
-        const { data: signInRes } = await insforge.auth.signInWithPassword({
-          email: 'admin@limra.com',
-          password: 'LimraAdmin@2026'
-        });
-        if (signInRes?.user) {
-          currentUser = signInRes.user;
-          await handleAuthenticated();
-          return;
-        }
-      } catch (authErr) {
-        console.warn('Auto admin sign-in notice (falling back to offline dev session):', authErr);
-      }
-
-      currentUser = {
-        id: '78ec89da-1a02-4183-b5fd-3f9f30cb7df6',
-        email: 'admin@limra.com',
-        user_metadata: { full_name: 'Limra POS Admin' }
-      };
-      await handleAuthenticated();
-      return;
-    }
     redirectToLogin();
     return;
   }
@@ -9089,17 +9300,47 @@ async function handleAuthenticated() {
   await refreshDashboard();
 }
 
+let adminRealtimeSubscription = null;
+let adminPollingTimer = null;
+
+function cleanupAdminRealtime() {
+  if (adminRealtimeSubscription) {
+    try {
+      const client = (typeof insforge !== 'undefined' && insforge.removeChannel) ? insforge : (typeof supabase !== 'undefined' ? supabase : null);
+      if (client && typeof client.removeChannel === 'function') {
+        client.removeChannel(adminRealtimeSubscription);
+      }
+    } catch (e) {}
+    adminRealtimeSubscription = null;
+  }
+  if (adminPollingTimer) {
+    clearTimeout(adminPollingTimer);
+    adminPollingTimer = null;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    cleanupAdminRealtime();
+  });
+}
+
 function initDashboardAuth() {
-  $('logout-btn').addEventListener('click', async () => {
+  const doLogout = async () => {
+    cleanupAdminRealtime();
     try { localStorage.removeItem('limra_dev_admin'); } catch (e) {}
+    try { localStorage.removeItem('limra_cached_orders'); } catch (e) {}
+    try { localStorage.removeItem('limra_cached_order_items'); } catch (e) {}
+    try { offlineSync.clearSensitiveUserData(); } catch (e) {}
+    if (insforge.realtime && typeof insforge.realtime.teardownAll === 'function') {
+      await insforge.realtime.teardownAll();
+    }
     await insforge.auth.signOut();
     redirectToLogin();
-  });
-  $('unauth-logout-btn').addEventListener('click', async () => {
-    try { localStorage.removeItem('limra_dev_admin'); } catch (e) {}
-    await insforge.auth.signOut();
-    redirectToLogin();
-  });
+  };
+
+  $('logout-btn')?.addEventListener('click', doLogout);
+  $('unauth-logout-btn')?.addEventListener('click', doLogout);
 }
 
 function initDashboardUI() {
@@ -9330,9 +9571,6 @@ function initDashboardUI() {
   // ════════════════════════════════════════════════════════
   // 📡 REALTIME WEBSOCKET LISTENER & ADAPTIVE POLLING
   // Replaces aggressive 10s polling to drop Log Ingestion by >80%
-  // ════════════════════════════════════════════════════════
-  let adminRealtimeSubscription = null;
-  let adminPollingTimer = null;
   let lastUserActivityTime = Date.now();
   const NORMAL_POLL_INTERVAL = 35000; // 35 seconds (safety heartbeat)
   const IDLE_POLL_INTERVAL = 90000;   // 90 seconds when terminal is idle (> 5 min)
@@ -9364,6 +9602,10 @@ function initDashboardUI() {
         })
         .subscribe((status) => {
           console.log('[Realtime] Admin live event stream status:', status);
+          if (status === 'SUBSCRIBED') {
+            // Reconcile committed database state upon initial connect or reconnect
+            refreshDashboard(false);
+          }
         });
     } catch (err) {
       console.warn('[Realtime] Setup error, relying on adaptive heartbeat:', err);
@@ -13269,31 +13511,29 @@ function getBillSettings() {
 
 function getPosCartTotals() {
   const s = getBillSettings();
-  const subtotal = posCart.reduce((sum, i) => sum + i.price * i.qty, 0);
-  const taxableSubtotal = posCart.reduce((sum, i) => {
-    if (i.gst_applicable === false || (typeof i.notes === 'string' && i.notes.includes('[NO_GST]'))) return sum;
-    return sum + (i.price * i.qty);
-  }, 0);
   const discountPct = parseFloat($('pos-discount-pct')?.value || '0') || 0;
-  const discountAmt = subtotal * (discountPct / 100);
-  const taxableDiscountAmt = subtotal > 0 ? (taxableSubtotal * (discountAmt / subtotal)) : 0;
-  const taxable = Math.max(0, taxableSubtotal - taxableDiscountAmt);
-  const cgst = taxable * (s.cgstRate / 100);
-  const sgst = taxable * (s.sgstRate / 100);
   const deliveryFee = posOrderType === 'delivery' ? (parseFloat($('pos-delivery-fee')?.value || '0') || 0) : 0;
-  const grand = Math.max(0, subtotal - discountAmt) + cgst + sgst + deliveryFee;
+
+  const billing = calculateOrderBilling({
+    items: posCart,
+    deliveryFee,
+    discountPct,
+    cgstRate: s.cgstRate ?? 2.5,
+    sgstRate: s.sgstRate ?? 2.5
+  });
+
   return { 
-    subtotal, 
-    taxableSubtotal,
-    discountPct, 
-    discountAmt, 
-    taxable, 
-    cgst, 
-    sgst, 
-    deliveryFee, 
-    grand, 
-    cgstRate: s.cgstRate, 
-    sgstRate: s.sgstRate 
+    subtotal: billing.subtotal, 
+    taxableSubtotal: billing.taxableSubtotal,
+    discountPct: billing.discountPct, 
+    discountAmt: billing.discountAmt, 
+    taxable: billing.taxableValue, 
+    cgst: billing.cgstAmt, 
+    sgst: billing.sgstAmt, 
+    deliveryFee: billing.deliveryFee, 
+    grand: billing.grandTotal, 
+    cgstRate: billing.cgstRate, 
+    sgstRate: billing.sgstRate 
   };
 }
 
@@ -13761,8 +14001,12 @@ async function buildOrderFromPos(action) {
   };
 }
 
-async function generateKOTHtml(order = {}, items = [], isNewItemsOnly = false) {
+async function generateKOTHtml(order = {}, items = [], options = false) {
   if (!order) order = {};
+  const isNewItemsOnly = Boolean(typeof options === 'boolean' ? options : options?.isNewOnly);
+  const isReprint = Boolean(typeof options === 'object' && options?.isReprint);
+  const roundNumber = Number((typeof options === 'object' && options?.roundNumber) || (isNewItemsOnly ? (order.current_round || 2) : 1));
+
   const p = printerSettings;
   const kotWidth = p.kot_paper_width || 80;
   const wPx = kotWidth === 'A4' ? 595 : Math.round(parseFloat(kotWidth || 80) * 2.835);
@@ -13795,13 +14039,23 @@ async function generateKOTHtml(order = {}, items = [], isNewItemsOnly = false) {
   const feedSpaces = '<br/>'.repeat(Math.max(1, p.kot_bottom_feed ? Math.min(2, p.kot_bottom_feed) : 1));
 
   return `<div style="width:${wPx}px;font-family:monospace,sans-serif;font-size:11px;color:#000;padding:0 ${sideGapPx}px;margin:0 auto;line-height:1.3;">
+    ${isReprint ? `
+      <div style="background:#000;color:#fff;font-size:12px;font-weight:900;text-align:center;padding:3px;margin-bottom:4px;letter-spacing:1px;border-radius:2px;">
+        *** REPRINT - DUPLICATE KOT ***<br/><span style="font-size:10px;font-weight:bold;">DO NOT RE-COOK</span>
+      </div>
+    ` : ''}
     <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:6px;">
       <div style="font-size:14px;font-weight:900;letter-spacing:1px;">** KOT - KITCHEN ORDER **</div>
-      <div style="font-size:10px;font-weight:bold;">${isNewItemsOnly ? '(ADDITIONAL ITEMS)' : 'TVS RP3200 PLUS ESC/POS'}</div>
+      <div style="font-size:10px;font-weight:bold;">${isNewItemsOnly ? `(ROUND #${roundNumber} - NEW ITEMS ONLY)` : 'TVS RP3200 PLUS ESC/POS'}</div>
     </div>
+    ${(isNewItemsOnly || roundNumber > 1) ? `
+      <div style="font-size:11px;font-weight:900;border:1px solid #000;padding:2px 4px;text-align:center;margin:3px 0;background:#eee;">
+        &gt;&gt;&gt; ROUND #${roundNumber} (NEW ITEMS ONLY) &lt;&lt;&lt;
+      </div>
+    ` : ''}
     <div style="font-size:10px;line-height:1.3;margin-bottom:4px;">
       <div style="display:flex;justify-content:space-between;">
-        <span><strong>Order #:</strong> ${formatDailyOrderNumber(order)}</span>
+        <span><strong>Order #:</strong> ${formatDailyOrderNumber(order)}${roundNumber > 1 ? ` (R${roundNumber})` : ''}</span>
         ${p.kot_show_timestamp ? `<span><strong>Time:</strong> ${formattedTime}</span>` : ''}
       </div>
       ${p.kot_show_table && tableInfo ? `<div style="margin-top:2px;font-size:12px;font-weight:900;border:1px solid #000;padding:1px 3px;text-align:center;">🪑 TABLE: ${tableInfo}</div>` : ''}
@@ -13811,16 +14065,20 @@ async function generateKOTHtml(order = {}, items = [], isNewItemsOnly = false) {
     ${sep}
     <div>${itemsHtml}</div>
     ${sep}
-    <div style="text-align:center;font-size:10px;font-weight:bold;margin-top:4px;">— KITCHEN COPY —</div>
+    <div style="text-align:center;font-size:10px;font-weight:bold;margin-top:4px;">${isReprint ? '— REPRINT COPY (DO NOT RE-COOK) —' : '— KITCHEN COPY —'}</div>
     ${feedSpaces}
   </div>`;
 }
 
-async function printKOT(order, itemsList, isNewOnly = false) {
+async function printKOT(order, itemsList, options = false) {
   if (!order) {
     showAdminToast('No order found to print KOT.', 'error');
     return;
   }
+  const kotOpts = typeof options === 'boolean'
+    ? { isNewOnly: options, isReprint: false, roundNumber: options ? 2 : 1 }
+    : { isNewOnly: Boolean(options?.isNewOnly), isReprint: Boolean(options?.isReprint), roundNumber: Number(options?.roundNumber || 1) };
+
   let items = itemsList;
   if (!items || items.length === 0) {
     items = getItemsForOrder(order.id);
@@ -13838,10 +14096,10 @@ async function printKOT(order, itemsList, isNewOnly = false) {
   }
 
   const p = printerSettings;
-  const html = await generateKOTHtml(order, items, isNewOnly);
+  const html = await generateKOTHtml(order, items, kotOpts);
   let escposText = '';
   try {
-    escposText = buildEscPosKOT(order, items, p);
+    escposText = buildEscPosKOT(order, items, p, kotOpts);
   } catch (e) {
     console.warn('[ESC/POS] Error building KOT command stream:', e);
   }
@@ -13852,18 +14110,23 @@ async function printKOT(order, itemsList, isNewOnly = false) {
     orderNumber: formatDailyOrderNumber(order),
     type: 'KOT',
     paperWidth: p.kot_paper_width || 80,
+    isReprint: kotOpts.isReprint,
+    roundNumber: kotOpts.roundNumber,
     payload: { html, escposText, order, items }
   });
 
-  if (job && job.status === 'printed') {
-    showAdminToast(`Printed ✓ KOT #${job.orderNumber}`, 'success');
+  const isSuccess = job && (job.status === 'printed' || job.status === 'hardware_confirmed' || job.status === 'spooled');
+  if (isSuccess) {
+    const reprintTag = kotOpts.isReprint ? ' (Reprint)' : '';
+    showAdminToast(`Printed ✓ KOT #${job.orderNumber}${reprintTag}`, 'success');
   } else {
     showAdminToast(`⚠️ Print failed for KOT #${job?.orderNumber || 'Order'} (Saved to Queue)`, 'error');
   }
 }
 
-async function generateBillWithTaxHtml(order = {}, itemsList = []) {
+async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {}) {
   if (!order) order = {};
+  const isReprint = Boolean(options && options.isReprint);
   const p = printerSettings;
   const fontSizeNum = parseFloat(p.bill_font_size ?? 11.5) || 11.5;
   const fontSizePx = `${fontSizeNum}px`;
@@ -13946,6 +14209,11 @@ async function generateBillWithTaxHtml(order = {}, itemsList = []) {
     <div style="width:${wPx}px;font-family:'Courier New',Courier,monospace,sans-serif;font-size:${fontSizePx};font-weight:${fontWeight};color:#000;padding:0 ${sideGapPx}px;margin:0 auto;line-height:${lineSpacing};-webkit-print-color-adjust:exact;print-color-adjust:exact;">
       <!-- RESTAURANT HEADER -->
       <div style="text-align:center;margin-bottom:3px;color:#000;">
+        ${isReprint ? `
+          <div style="border:2px solid #000;background:#000;color:#fff;font-size:11px;font-weight:900;text-align:center;padding:2px 0;margin-bottom:4px;letter-spacing:1px;border-radius:2px;">
+            *** DUPLICATE / REPRINT INVOICE ***<br/><span style="font-size:9px;font-weight:normal;color:#fff;">(ORIGINAL BILL ALREADY ISSUED)</span>
+          </div>
+        ` : ''}
         ${p.bill_show_logo && p.bill_logo_url ? `
           <div style="margin-bottom:2px;text-align:center;">
             <img src="${p.bill_logo_url}" alt="Logo" style="max-height:38px;max-width:120px;margin:0 auto;display:block;filter:grayscale(100%) contrast(200%);" />
@@ -13961,7 +14229,7 @@ async function generateBillWithTaxHtml(order = {}, itemsList = []) {
         
         <!-- Table / Delivery Invoice Title -->
         <div style="font-size:${subFontSize};font-weight:900;border-top:1.5px solid #000;border-bottom:1.5px solid #000;padding:2px 0;margin-top:3px;letter-spacing:.3px;color:#000;">
-          ${parsedMeta.type === 'delivery' ? 'TAX INVOICE — HOME DELIVERY' : (tableInfo && p.bill_show_table ? `TAX INVOICE — TABLE ${tableInfo}` : 'TAX INVOICE — DINE-IN / PICKUP')}
+          ${isReprint ? 'DUPLICATE TAX INVOICE' : 'TAX INVOICE'} — ${parsedMeta.type === 'delivery' ? 'HOME DELIVERY' : (tableInfo && p.bill_show_table ? `TABLE ${tableInfo}` : 'DINE-IN / PICKUP')}
         </div>
       </div>
 
@@ -14051,11 +14319,12 @@ async function generateBillWithTaxHtml(order = {}, itemsList = []) {
   `;
 }
 
-async function printOrderReceiptWithTax(order, itemsList) {
+async function printOrderReceiptWithTax(order, itemsList, options = {}) {
   if (!order) {
     showAdminToast('No order found to print Bill.', 'error');
     return;
   }
+  const isReprint = Boolean(options && options.isReprint);
   let items = itemsList;
   if (!items || items.length === 0) {
     items = getItemsForOrder(order.id);
@@ -14073,10 +14342,10 @@ async function printOrderReceiptWithTax(order, itemsList) {
   }
 
   const p = printerSettings;
-  const html = await generateBillWithTaxHtml(order, items);
+  const html = await generateBillWithTaxHtml(order, items, options);
   let escposText = '';
   try {
-    escposText = buildEscPosBill(order, items, p);
+    escposText = buildEscPosBill(order, items, p, options);
   } catch (e) {
     console.warn('[ESC/POS] Error building Bill command stream:', e);
   }
@@ -14087,17 +14356,20 @@ async function printOrderReceiptWithTax(order, itemsList) {
     orderNumber: formatDailyOrderNumber(order),
     type: 'BILL',
     paperWidth: p.bill_paper_width || 80,
+    isReprint: isReprint,
     payload: { html, escposText, order, items }
   });
 
-  if (job && job.status === 'printed') {
-    showAdminToast(`Printed ✓ Bill #${job.orderNumber}`, 'success');
+  const isSuccess = job && (job.status === 'printed' || job.status === 'hardware_confirmed' || job.status === 'spooled');
+  if (isSuccess) {
+    const reprintTag = isReprint ? ' (Reprint)' : '';
+    showAdminToast(`Printed ✓ Bill #${job.orderNumber}${reprintTag}`, 'success');
   } else {
     showAdminToast(`⚠️ Print failed for Bill #${job?.orderNumber || 'Order'} (Saved to Queue)`, 'error');
   }
 }
 
-async function printCombinedKOTAndBill(order, itemsList) {
+async function printCombinedKOTAndBill(order, itemsList, options = {}) {
   if (!order) {
     showAdminToast('No order found to print KOT & Bill.', 'error');
     return;
@@ -14119,8 +14391,8 @@ async function printCombinedKOTAndBill(order, itemsList) {
   }
 
   const p = printerSettings;
-  const kotHtml = await generateKOTHtml(order, items, false);
-  const billHtml = await generateBillWithTaxHtml(order, items);
+  const kotHtml = await generateKOTHtml(order, items, options);
+  const billHtml = await generateBillWithTaxHtml(order, items, options);
 
   const combinedHtml = `
     <div class="thermal-receipt-section thermal-kot-section page-break-divider" style="page-break-after:always;break-after:page;padding-bottom:12px;margin-bottom:12px;">
@@ -14136,8 +14408,8 @@ async function printCombinedKOTAndBill(order, itemsList) {
 
   let escposText = '';
   try {
-    const kotEsc = buildEscPosKOT(order, items, p);
-    const billEsc = buildEscPosBill(order, items, p);
+    const kotEsc = buildEscPosKOT(order, items, p, options);
+    const billEsc = buildEscPosBill(order, items, p, options);
     escposText = (kotEsc || '') + (billEsc || '');
   } catch (e) {
     console.warn('[ESC/POS] Error building combined KOT+Bill command stream:', e);
@@ -14149,10 +14421,12 @@ async function printCombinedKOTAndBill(order, itemsList) {
     orderNumber: formatDailyOrderNumber(order),
     type: 'KOT_AND_BILL',
     paperWidth: p.bill_paper_width || 80,
+    isReprint: Boolean(options?.isReprint),
     payload: { html: combinedHtml, escposText, order, items }
   });
 
-  if (job && job.status === 'printed') {
+  const isSuccess = job && (job.status === 'printed' || job.status === 'hardware_confirmed' || job.status === 'spooled');
+  if (isSuccess) {
     showAdminToast(`Printed ✓ KOT + Bill #${job.orderNumber}`, 'success');
   } else {
     showAdminToast(`⚠️ Print failed for #${job?.orderNumber || 'Order'} (Saved to Queue)`, 'error');
@@ -14169,7 +14443,30 @@ async function executePrintJob(job) {
   const paperWidth = job.paperWidth || (isKot ? (p.kot_paper_width || 80) : (p.bill_paper_width || 80));
   const sideGap = isKot ? (p.kot_side_gap ?? 2) : (p.bill_side_gap ?? 2);
 
-  // 1. QZ Tray ESC/POS or Pixel Print
+  // 1. Electron Desktop Native Hardware Printing (Isolated, Silent & Direct)
+  if (typeof window !== 'undefined' && window.electronPOS?.isDesktop && typeof window.electronPOS.printReceipt === 'function') {
+    try {
+      const printerName = isKot ? (p.kot_printer_name || p.active_printer_name) : (p.bill_printer_name || p.active_printer_name);
+      const res = await window.electronPOS.printReceipt({
+        html: job.payload?.html,
+        printerName: printerName || undefined,
+        silent: p.silent_print !== false,
+        paperWidth: paperWidth,
+        sideGap: sideGap
+      });
+      if (res && res.success) {
+        return { success: true, hardware_confirmed: Boolean(res.hardware_confirmed) };
+      }
+      if (res && res.error) {
+        throw new Error(res.error);
+      }
+    } catch (electronErr) {
+      console.warn('[PrintQueue] Electron native print error, failing job for retry:', electronErr);
+      throw electronErr;
+    }
+  }
+
+  // 2. QZ Tray ESC/POS or Pixel Print
   if (p.connection_mode === 'qz_tray' && typeof qz !== 'undefined' && qzConnected && activePrinter) {
     try {
       const config = qz.configs.create(activePrinter);
@@ -14179,7 +14476,7 @@ async function executePrintJob(job) {
           format: 'plain',
           data: job.payload.escposText
         }]);
-        return { success: true };
+        return { success: true, hardware_confirmed: true };
       } else if (job.payload?.html) {
         await qz.print(config, [{
           type: 'pixel',
@@ -14187,20 +14484,20 @@ async function executePrintJob(job) {
           flavor: 'plain',
           data: job.payload.html
         }]);
-        return { success: true };
+        return { success: true, hardware_confirmed: true };
       }
     } catch (qzErr) {
       console.warn('[PrintQueue] QZ Tray print error, falling back to Native Driver:', qzErr);
     }
   }
 
-  // 2. Native Spooler / Driver Print (Default & Fast Fallback)
+  // 3. Browser Spooler / Driver Print (Default Web Fallback)
   if (job.payload?.html) {
     const success = await printViaNativeDriver(job.payload.html, paperWidth, sideGap);
     if (!success) {
       throw new Error('Printer driver spooler failed or user cancelled');
     }
-    return { success: true };
+    return { success: true, spooled: true };
   }
 
   throw new Error('No printable payload provided in print job');
@@ -15090,48 +15387,123 @@ function renderBillingTotalBills() {
       const order = orders.find(o => String(o.id) === String(orderId));
       if (!order) return;
       if (!confirm(`Print KOT + Final Bill for Order #${formatDailyOrderNumber(order)} and mark as completed / closed?`)) return;
-      const items = getItemsForOrder(order.id);
-      await printCombinedKOTAndBill(order, items);
 
-      // 1. Immediately update local state in-memory
-      order.status = 'delivered';
-      order.payment_status = 'paid';
-      order.ticket_status = 'CLOSED';
-      order.updated_at = new Date().toISOString();
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
 
-      // 2. Attempt cloud DB update safely
       try {
-        let { error } = await insforge.database.from('orders').update({
-          status: 'delivered',
-          payment_status: 'paid',
-          ticket_status: 'CLOSED',
-          updated_at: order.updated_at
-        }).eq('id', orderId);
-        if (error && (error.message || '').includes('ticket_status')) {
-          const retry = await insforge.database.from('orders').update({
-            status: 'delivered',
-            payment_status: 'paid',
-            updated_at: order.updated_at
-          }).eq('id', orderId);
-          error = retry.error;
-        }
-        if (error) console.warn('[Billing Settle] Cloud update warning (saved locally):', error);
-      } catch (err) {
-        console.warn('[Billing Settle] Offline settle update:', err);
-      }
+        const settleIdempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `settle-${orderId}-${Date.now()}`;
 
-      await markOrderNotificationsRead(orderId);
-      showAdminToast(`Order #${formatDailyOrderNumber(order)} billed, settled & closed! ✅`, 'success');
-      if (isGoogleSheetAutoSyncEnabled()) {
-        syncOrderToGoogleSheet(order).catch(e => console.warn('[Google Sheet] Billing settle auto-sync error:', e));
+        // 1. ATOMIC SETTLEMENT IN DATABASE FIRST (Prevents two cashiers from settling the same order)
+        let cloudSettled = false;
+        let settlementConflict = false;
+
+        try {
+          const res = await fetch('/api/orders', {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-idempotency-key': settleIdempotencyKey
+            },
+            body: JSON.stringify({
+              id: orderId,
+              status: 'delivered',
+              payment_status: 'paid',
+              ticket_status: 'CLOSED',
+              idempotency_key: settleIdempotencyKey
+            })
+          });
+
+          if (res.status === 409) {
+            settlementConflict = true;
+            const conflictData = await res.json().catch(() => ({}));
+            showAdminToast(conflictData.error || `Order #${formatDailyOrderNumber(order)} was already settled by another cashier.`, 'error');
+            await loadOrders();
+            return;
+          }
+
+          if (res.ok) {
+            cloudSettled = true;
+          }
+        } catch (fetchErr) {
+          console.warn('[Billing Settle API fallback to direct client]:', fetchErr);
+        }
+
+        if (!cloudSettled && !settlementConflict) {
+          try {
+            const { data: updatedRows, error: updErr } = await insforge.database
+              .from('orders')
+              .update({
+                status: 'delivered',
+                payment_status: 'paid',
+                ticket_status: 'CLOSED',
+                idempotency_key: settleIdempotencyKey,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', orderId)
+              .neq('ticket_status', 'CLOSED')
+              .select();
+
+            if (updErr && (updErr.message || '').includes('ticket_status')) {
+              await insforge.database.from('orders').update({
+                status: 'delivered',
+                payment_status: 'paid',
+                idempotency_key: settleIdempotencyKey,
+                updated_at: new Date().toISOString()
+              }).eq('id', orderId);
+              cloudSettled = true;
+            } else if (updatedRows && updatedRows.length > 0) {
+              cloudSettled = true;
+            } else if (!updErr) {
+              showAdminToast(`Order #${formatDailyOrderNumber(order)} was already closed by another cashier.`, 'error');
+              await loadOrders();
+              return;
+            }
+          } catch (offlineErr) {
+            console.warn('[Billing Settle Offline]:', offlineErr);
+          }
+        }
+
+        // 2. Database committed! Now update local in-memory state
+        order.status = 'delivered';
+        order.payment_status = 'paid';
+        order.ticket_status = 'CLOSED';
+        order.updated_at = new Date().toISOString();
+
+        // 3. EXTERNAL SIDE EFFECT 1: Print final customer bill (Decoupled from DB commit)
+        // Settlement produces the final customer tax invoice without duplicating kitchen tickets.
+        const items = getItemsForOrder(order.id);
+        try {
+          await printOrderReceiptWithTax(order, items);
+        } catch (printErr) {
+          console.error('[Billing Settle] Print failed:', printErr);
+          showAdminToast(`Bill settled in database, but printing encountered an issue: ${printErr.message}. Use Reprint button if needed.`, 'warning');
+        }
+
+        // 4. Notifications & UI Refresh
+        await markOrderNotificationsRead(orderId);
+        showAdminToast(`Order #${formatDailyOrderNumber(order)} billed, settled & closed! ✅`, 'success');
+
+        // 5. EXTERNAL SIDE EFFECT 2: Google Sheets Sync (Decoupled from DB commit)
+        if (isGoogleSheetAutoSyncEnabled()) {
+          syncOrderToGoogleSheet(order).catch(e => {
+            console.warn('[Google Sheet] Billing settle auto-sync error:', e);
+          });
+        }
+
+        renderOverview();
+        renderHoldOrdersPanel();
+        renderClosedOrdersPanel();
+        renderBillingQuickCards();
+        renderBillingTotalBills();
+        renderTablesPanel();
+        renderKitchenPanel();
+      } finally {
+        btn.disabled = false;
+        btn.style.opacity = '1';
       }
-      renderOverview();
-      renderHoldOrdersPanel();
-      renderClosedOrdersPanel();
-      renderBillingQuickCards();
-      renderBillingTotalBills();
-      renderTablesPanel();
-      renderKitchenPanel();
     });
   });
 
@@ -15139,7 +15511,7 @@ function renderBillingTotalBills() {
     btn.addEventListener('click', async () => {
       const order = orders.find(o => String(o.id) === String(btn.dataset.id));
       if (!order) return;
-      await printOrderReceiptWithTax(order);
+      await printOrderReceiptWithTax(order, null, { isReprint: true });
     });
   });
 
@@ -15148,7 +15520,7 @@ function renderBillingTotalBills() {
       const order = orders.find(o => String(o.id) === String(btn.dataset.id));
       if (!order) return;
       const items = getItemsForOrder(order.id);
-      await printKOT(order, items);
+      await printKOT(order, items, { isReprint: true });
     });
   });
 }

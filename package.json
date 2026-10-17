@@ -51,6 +51,7 @@
     "cap:sync": "npm run build && npx cap sync",
     "cap:open": "npx cap open android",
     "cap:run": "npx cap run android",
+    "test": "node backend/tests/run-all.mjs",
     "desktop:dev": "npm run build && electron electron/main.cjs",
     "desktop:dist": "npm run build && electron-builder"
   },

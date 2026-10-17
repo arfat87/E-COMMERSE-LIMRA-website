@@ -36,10 +36,15 @@ CREATE TABLE IF NOT EXISTS public.orders (
   txn_ref TEXT UNIQUE,
   ticket_status TEXT NOT NULL DEFAULT 'OPEN'
     CHECK (ticket_status IN ('OPEN', 'HOLD', 'BILLED', 'PAID', 'CLOSED', 'CANCELLED')),
+  idempotency_key TEXT,
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency_key 
+  ON public.orders(idempotency_key) 
+  WHERE idempotency_key IS NOT NULL;
 
 -- 1.2 ORDER ITEMS
 CREATE TABLE IF NOT EXISTS public.order_items (
@@ -313,6 +318,24 @@ CREATE TABLE IF NOT EXISTS public.payment_history (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- 1.17 TRANSACTIONAL SYNC QUEUE (OUTBOX PATTERN FOR SIDE EFFECTS)
+CREATE TABLE IF NOT EXISTS public.sync_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('order_print', 'google_sheet', 'webhook_outbound', 'stock_sync')),
+  entity_id TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  max_retries INTEGER NOT NULL DEFAULT 5,
+  last_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_queue_pending 
+  ON public.sync_queue(status, created_at) 
+  WHERE status = 'pending';
+
 -- 1.17 SECURITY AUDIT LOGS
 CREATE TABLE IF NOT EXISTS public.security_audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -425,6 +448,20 @@ CREATE INDEX IF NOT EXISTS idx_notifications_order_id ON public.notifications(or
 CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON public.notifications(is_read);
 CREATE INDEX IF NOT EXISTS idx_stock_items_name ON public.stock_items(name);
 CREATE INDEX IF NOT EXISTS idx_security_audit_created ON public.security_audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_updated_at ON public.orders(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_status_created_at ON public.orders(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_type_created_at ON public.orders(order_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_table_active ON public.orders(table_number, ticket_status) WHERE table_number IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_order_items_order_created ON public.order_items(order_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bookings_updated_at ON public.bookings(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_in_created_at ON public.stock_in(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_in_sku ON public.stock_in(item_sku);
+CREATE INDEX IF NOT EXISTS idx_stock_out_created_at ON public.stock_out(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_out_sku ON public.stock_out(item_sku);
+CREATE INDEX IF NOT EXISTS idx_stock_items_sku ON public.stock_items(sku);
+CREATE INDEX IF NOT EXISTS idx_coupons_code ON public.coupons(code);
+CREATE INDEX IF NOT EXISTS idx_coupons_active ON public.coupons(active, is_auto_send);
+CREATE INDEX IF NOT EXISTS idx_delivery_areas_name ON public.delivery_areas(name);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 4. TRIGGERS & UTILITY FUNCTIONS
@@ -450,7 +487,7 @@ CREATE TRIGGER bookings_updated_at
   BEFORE UPDATE ON public.bookings
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
--- Check if current authenticated user is an administrator
+-- Check if current authenticated user is an authorized staff/admin
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 DECLARE
@@ -461,13 +498,46 @@ BEGIN
     RETURN FALSE;
   END IF;
   RETURN EXISTS (
-    SELECT 1 FROM public.admin_users WHERE user_id = v_uid OR lower(email) = lower(v_email)
+    SELECT 1 FROM public.admin_users
+    WHERE (user_id = v_uid OR lower(email) = lower(v_email))
+      AND lower(COALESCE(role, 'admin')) IN ('owner', 'manager', 'cashier', 'kitchen', 'admin')
   );
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '';
 
 REVOKE EXECUTE ON FUNCTION public.is_admin() FROM anon, PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+
+-- Role checking helper for granular operations
+CREATE OR REPLACE FUNCTION public.has_role(required_roles text[])
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_email text := auth.jwt()->>'email';
+  v_role text;
+BEGIN
+  IF v_uid IS NULL THEN
+    RETURN FALSE;
+  END IF;
+  SELECT lower(role) INTO v_role
+  FROM public.admin_users
+  WHERE user_id = v_uid OR lower(email) = lower(v_email)
+  LIMIT 1;
+
+  IF v_role IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  IF v_role = 'owner' THEN
+    RETURN TRUE;
+  END IF;
+
+  RETURN v_role = ANY(required_roles);
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '';
+
+REVOKE EXECUTE ON FUNCTION public.has_role(text[]) FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.has_role(text[]) TO authenticated;
 
 -- Centralized Security Event Logger
 CREATE OR REPLACE FUNCTION public.log_security_event(
@@ -558,7 +628,8 @@ CREATE OR REPLACE FUNCTION public.place_order(
   p_order_type text DEFAULT 'delivery',
   p_table_number integer DEFAULT NULL,
   p_table_zone text DEFAULT NULL,
-  p_txn_ref text DEFAULT NULL
+  p_txn_ref text DEFAULT NULL,
+  p_idempotency_key text DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -572,7 +643,32 @@ DECLARE
   v_uid uuid := auth.uid();
   v_clean_phone text := regexp_replace(COALESCE(p_customer_phone, ''), '\D', '', 'g');
   v_verified_payment public.verified_payments%ROWTYPE;
+  v_initial_pay_status text := 'unpaid';
+  v_initial_pay_method text := 'cash';
+  v_clean_key text := NULLIF(trim(COALESCE(p_idempotency_key, '')), '');
 BEGIN
+  -- Idempotency check: Return existing order if identical idempotency_key is replayed
+  IF v_clean_key IS NOT NULL THEN
+    SELECT * INTO v_order
+    FROM public.orders
+    WHERE idempotency_key = v_clean_key;
+
+    IF FOUND THEN
+      RETURN jsonb_build_object(
+        'id', v_order.id,
+        'order_number', v_order.order_number,
+        'customer_name', v_order.customer_name,
+        'customer_phone', v_order.customer_phone,
+        'total_amount', v_order.total_amount,
+        'status', v_order.status,
+        'payment_status', v_order.payment_status,
+        'ticket_status', v_order.ticket_status,
+        'idempotent_replay', true,
+        'created_at', v_order.created_at
+      );
+    END IF;
+  END IF;
+
   IF p_customer_name IS NULL OR trim(p_customer_name) = '' THEN
     RAISE EXCEPTION 'Customer name is required';
   END IF;
@@ -589,14 +685,22 @@ BEGIN
     v_total := v_total + COALESCE((v_item->>'line_total')::numeric, 0);
   END LOOP;
 
-  -- Verify and claim UPI payment if reference is supplied
+  -- Verify payment if reference is supplied (strict validation against verified_payments)
   IF p_txn_ref IS NOT NULL AND trim(p_txn_ref) <> '' THEN
-    SELECT * INTO v_verified_payment FROM public.verified_payments WHERE utr = p_txn_ref;
-    IF NOT FOUND THEN
-      -- Automatically record verified payment cache if valid UTR
-      INSERT INTO public.verified_payments (utr, amount, status, created_at)
-      VALUES (p_txn_ref, v_total, 'success', now())
-      ON CONFLICT (utr) DO NOTHING;
+    SELECT * INTO v_verified_payment
+    FROM public.verified_payments
+    WHERE utr = trim(p_txn_ref)
+      AND status = 'success'
+      AND amount >= v_total
+      AND order_id IS NULL
+    FOR UPDATE;
+
+    IF FOUND THEN
+      v_initial_pay_status := 'paid';
+      v_initial_pay_method := 'online';
+    ELSE
+      v_initial_pay_status := 'unpaid';
+      v_initial_pay_method := 'cash';
     END IF;
   END IF;
 
@@ -604,7 +708,8 @@ BEGIN
   INSERT INTO public.orders (
     customer_name, customer_phone, total_amount, notes, status,
     latitude, longitude, landmark, delivery_notes, location_verified,
-    order_type, table_number, table_zone, user_id, txn_ref, payment_status
+    order_type, table_number, table_zone, user_id, txn_ref, payment_status, payment_method,
+    ticket_status, idempotency_key
   )
   VALUES (
     trim(p_customer_name),
@@ -621,14 +726,17 @@ BEGIN
     p_table_number,
     p_table_zone,
     v_uid,
-    p_txn_ref,
-    CASE WHEN p_txn_ref IS NOT NULL THEN 'paid'::text ELSE 'unpaid'::text END
+    CASE WHEN v_initial_pay_status = 'paid' THEN trim(p_txn_ref) ELSE NULL END,
+    v_initial_pay_status,
+    v_initial_pay_method,
+    'OPEN',
+    v_clean_key
   )
   RETURNING * INTO v_order;
 
-  -- Update payment cache record
-  IF p_txn_ref IS NOT NULL AND trim(p_txn_ref) <> '' THEN
-    UPDATE public.verified_payments SET order_id = v_order.id WHERE utr = p_txn_ref;
+  -- Atomically claim payment
+  IF v_initial_pay_status = 'paid' AND p_txn_ref IS NOT NULL THEN
+    UPDATE public.verified_payments SET order_id = v_order.id WHERE utr = trim(p_txn_ref);
   END IF;
 
   -- Insert order items
@@ -675,14 +783,16 @@ $$;
 GRANT EXECUTE ON FUNCTION public.place_order(text, text, text, jsonb, numeric, numeric, text, text, boolean, text, integer, text, text) TO anon, authenticated;
 
 -- 5.2 PLACE TABLE ROUND RPC
+-- Upgraded with advisory transaction locking, idempotency replay, and strict session isolation.
 CREATE OR REPLACE FUNCTION public.place_table_round(
-  p_table_number   integer,
-  p_table_zone     text    DEFAULT 'indoor',
-  p_customer_name  text    DEFAULT 'Dine-in Guest',
-  p_customer_phone text    DEFAULT '0000000000',
-  p_items          jsonb   DEFAULT '[]'::jsonb,
-  p_notes          text    DEFAULT NULL,
-  p_round_number   integer DEFAULT 1
+  p_table_number    integer,
+  p_table_zone      text    DEFAULT NULL,
+  p_customer_name   text    DEFAULT 'Dine-in Guest',
+  p_customer_phone  text    DEFAULT '0000000000',
+  p_items           jsonb   DEFAULT '[]'::jsonb,
+  p_notes           text    DEFAULT NULL,
+  p_round_number    integer DEFAULT 1,
+  p_idempotency_key text    DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -690,53 +800,99 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_active_ticket  public.orders%ROWTYPE;
-  v_new_order      public.orders%ROWTYPE;
-  v_item           jsonb;
-  v_round_total    numeric := 0;
-  v_round_num      integer := 1;
-  v_dish_count     integer;
-  v_notif_title    text;
-  v_notif_msg      text;
-  v_round_notes    text;
-  v_is_subsequent  boolean := false;
-  v_parent_id      uuid    := NULL;
-  v_order_num      integer;
+  v_active_ticket   public.orders%ROWTYPE;
+  v_new_order       public.orders%ROWTYPE;
+  v_item            jsonb;
+  v_round_total     numeric := 0;
+  v_round_num       integer := 1;
+  v_dish_count      integer;
+  v_notif_title     text;
+  v_notif_msg       text;
+  v_round_notes     text;
+  v_is_subsequent   boolean := false;
+  v_parent_id       uuid    := NULL;
+  v_order_num       integer;
+  v_clean_key       text    := NULLIF(trim(COALESCE(p_idempotency_key, '')), '');
+  v_zone            text;
 BEGIN
-  -- 1. Validate input
-  IF p_table_number IS NULL OR p_table_number < 1 THEN
-    RAISE EXCEPTION 'Invalid table number';
+  -- 1. Input Validation
+  IF p_table_number IS NULL OR p_table_number < 1 OR p_table_number > 19 THEN
+    RAISE EXCEPTION 'Invalid table number: %. Must be between 1 and 19', p_table_number;
   END IF;
-  IF jsonb_array_length(p_items) = 0 THEN
+  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN
     RAISE EXCEPTION 'Order must have at least one item';
   END IF;
 
-  -- 2. Compute total amount
+  -- 2. Idempotency Replay Protection: Check if this specific round was already submitted
+  IF v_clean_key IS NOT NULL THEN
+    SELECT * INTO v_new_order
+    FROM public.orders
+    WHERE idempotency_key = v_clean_key;
+
+    IF FOUND THEN
+      v_round_num := COALESCE(
+        (regexp_match(v_new_order.notes, '\[ROUND:\s*(\d+)\]'))[1]::integer,
+        1
+      );
+      v_parent_id := NULL;
+      IF v_new_order.notes ~ '\[PARENT_ORDER_ID:\s*([0-9a-fA-F-]+)\]' THEN
+        v_parent_id := (regexp_match(v_new_order.notes, '\[PARENT_ORDER_ID:\s*([0-9a-fA-F-]+)\]'))[1]::uuid;
+      END IF;
+
+      RETURN jsonb_build_object(
+        'id',                  v_new_order.id,
+        'order_number',        v_new_order.order_number,
+        'session_id',          COALESCE(v_parent_id, v_new_order.id),
+        'total_amount',        v_new_order.total_amount,
+        'status',              v_new_order.status,
+        'ticket_status',       v_new_order.ticket_status,
+        'round_number',        v_round_num,
+        'parent_order_id',     v_parent_id,
+        'is_subsequent_round', (v_round_num > 1),
+        'idempotent_replay',   true,
+        'table_number',        v_new_order.table_number,
+        'table_zone',          v_new_order.table_zone
+      );
+    END IF;
+  END IF;
+
+  -- 3. Advisory Transaction Lock: Serializes concurrent round submissions for the SAME table
+  -- Guarantees that two concurrent checkouts at the same table do not create split sessions
+  PERFORM pg_advisory_xact_lock(hashtext('limra_table_session_' || p_table_number::text));
+
+  -- 4. Compute round total amount
   FOR v_item IN SELECT value FROM jsonb_array_elements(p_items)
   LOOP
     v_round_total := v_round_total + COALESCE((v_item->>'line_total')::numeric, 0);
   END LOOP;
 
-  -- 3. Query for active unbilled ticket at this table (OPEN or HOLD)
+  -- 5. Determine Table Zone (1-9 = indoor, 10-19 = outdoor)
+  v_zone := COALESCE(NULLIF(trim(p_table_zone), ''), CASE WHEN p_table_number <= 9 THEN 'indoor' ELSE 'outdoor' END);
+
+  -- 6. Query for existing ACTIVE ticket at this table
+  -- STRICT RULE: Closed, Billed, Paid, or Cancelled tickets are NEVER matched or reopened!
   SELECT *
     INTO v_active_ticket
     FROM public.orders
    WHERE order_type = 'table'
      AND table_number = p_table_number
      AND ticket_status IN ('OPEN', 'HOLD')
+     AND status NOT IN ('delivered', 'cancelled')
+     AND payment_status != 'paid'
      AND created_at >= (now() - interval '12 hours')
    ORDER BY created_at ASC
    LIMIT 1
-     FOR UPDATE SKIP LOCKED;
+     FOR UPDATE;
 
-  -- 4. Decision Logic
+  -- 7. Session Decision Logic
   IF FOUND AND v_active_ticket.id IS NOT NULL THEN
-    -- Table has an active ticket -> Attach as next round
+    -- Active session exists: attach as next sequential round
     v_is_subsequent := true;
     v_parent_id     := v_active_ticket.id;
     v_order_num     := v_active_ticket.order_number;
+    v_zone          := COALESCE(v_active_ticket.table_zone, v_zone);
 
-    -- Calculate round number based on existing orders in this active ticket session
+    -- Calculate round number based on existing non-cancelled orders in this session
     SELECT COALESCE(MAX(
       CASE
         WHEN o.notes ~ '\[ROUND:\s*(\d+)\]'
@@ -748,7 +904,9 @@ BEGIN
     FROM public.orders o
     WHERE o.order_type = 'table'
       AND o.table_number = p_table_number
-      AND (o.id = v_active_ticket.id OR o.notes LIKE '%[PARENT_ORDER_ID: ' || v_active_ticket.id || '%');
+      AND (o.id = v_active_ticket.id OR o.notes LIKE '%[PARENT_ORDER_ID: ' || v_active_ticket.id || '%')
+      AND o.ticket_status IN ('OPEN', 'HOLD')
+      AND o.status != 'cancelled';
 
     v_round_notes := '[ROUND: ' || v_round_num
                   || '] [PARENT_ORDER_ID: ' || v_active_ticket.id
@@ -759,11 +917,11 @@ BEGIN
 
     v_dish_count  := jsonb_array_length(p_items);
     v_notif_title := '🍽️ Table ' || p_table_number || ' - Round ' || v_round_num;
-    v_notif_msg   := 'Table ' || p_table_number || ' placed Round ' || v_round_num
-                  || ' (' || v_dish_count || ' item' || CASE WHEN v_dish_count > 1 THEN 's' ELSE '' END || ')';
+    v_notif_msg   := 'Table ' || p_table_number || ' (' || UPPER(v_zone) || ') placed Round ' || v_round_num
+                  || ' (' || v_dish_count || ' item' || CASE WHEN v_dish_count > 1 THEN 's' ELSE '' END || ' · ₹' || v_round_total || ')';
 
   ELSE
-    -- No active ticket (or previous ticket was BILLED/PAID/CLOSED/CANCELLED) -> Brand new ticket
+    -- No active ticket exists (or previous session was closed/cancelled) -> Brand new session!
     v_is_subsequent := false;
     v_parent_id     := NULL;
     v_round_num     := 1;
@@ -777,10 +935,10 @@ BEGIN
     v_dish_count  := jsonb_array_length(p_items);
     v_notif_title := '🍽️ Table ' || p_table_number || ' - New Order';
     v_notif_msg   := 'New Dine-In Order received for ₹' || v_round_total
-                  || ' at Table ' || p_table_number;
+                  || ' at Table ' || p_table_number || ' (' || UPPER(v_zone) || ')';
   END IF;
 
-  -- 5. Insert order record
+  -- 8. Insert Order Header Record
   INSERT INTO public.orders (
     order_number,
     customer_name,
@@ -792,7 +950,8 @@ BEGIN
     status,
     payment_status,
     ticket_status,
-    notes
+    notes,
+    idempotency_key
   )
   VALUES (
     v_order_num,
@@ -800,16 +959,17 @@ BEGIN
     COALESCE(NULLIF(trim(p_customer_phone), ''), CASE WHEN v_active_ticket.customer_phone IS NOT NULL THEN v_active_ticket.customer_phone ELSE '0000000000' END),
     'table',
     p_table_number,
-    COALESCE(NULLIF(trim(p_table_zone), ''), CASE WHEN v_active_ticket.table_zone IS NOT NULL THEN v_active_ticket.table_zone ELSE 'indoor' END),
+    v_zone,
     v_round_total,
     'pending',
     'unpaid',
     'OPEN',
-    v_round_notes
+    v_round_notes,
+    v_clean_key
   )
   RETURNING * INTO v_new_order;
 
-  -- 6. Insert order items
+  -- 9. Insert Order Items
   FOR v_item IN SELECT value FROM jsonb_array_elements(p_items)
   LOOP
     INSERT INTO public.order_items (
@@ -831,7 +991,7 @@ BEGIN
     );
   END LOOP;
 
-  -- 7. Insert staff notification
+  -- 10. Insert Staff Notification (Reflects committed state)
   INSERT INTO public.notifications (
     type,
     title,
@@ -848,27 +1008,212 @@ BEGIN
     v_notif_msg,
     v_notif_msg,
     v_new_order.id,
-    v_new_order.id::text,
+    'order-' || v_new_order.id::text,
     v_new_order.customer_phone,
     false
   );
 
-  -- 8. Return structured response
+  -- 11. Return Structured Session Lifecycle Response
   RETURN jsonb_build_object(
     'id',                  v_new_order.id,
     'order_number',        v_new_order.order_number,
+    'session_id',          COALESCE(v_parent_id, v_new_order.id),
     'total_amount',        v_new_order.total_amount,
     'status',              v_new_order.status,
     'ticket_status',       v_new_order.ticket_status,
     'round_number',        v_round_num,
     'parent_order_id',     v_parent_id,
-    'is_subsequent_round', v_is_subsequent
+    'is_subsequent_round', v_is_subsequent,
+    'idempotent_replay',   false,
+    'table_number',        p_table_number,
+    'table_zone',          v_zone
   );
 END;
 $$;
 
+-- Overload for backward compatibility with 7 arguments
+CREATE OR REPLACE FUNCTION public.place_table_round(
+  p_table_number   integer,
+  p_table_zone     text,
+  p_customer_name  text,
+  p_customer_phone text,
+  p_items          jsonb,
+  p_notes          text,
+  p_round_number   integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  RETURN public.place_table_round(
+    p_table_number, p_table_zone, p_customer_name, p_customer_phone, p_items, p_notes, p_round_number, NULL
+  );
+END;
+$$;
+
+-- Overload for backward compatibility with 6 arguments
+CREATE OR REPLACE FUNCTION public.place_table_round(
+  p_table_number   integer,
+  p_table_zone     text,
+  p_customer_name  text,
+  p_customer_phone text,
+  p_items          jsonb,
+  p_notes          text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  RETURN public.place_table_round(
+    p_table_number, p_table_zone, p_customer_name, p_customer_phone, p_items, p_notes, 1, NULL
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.place_table_round(integer, text, text, text, jsonb, text, integer, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.place_table_round(integer, text, text, text, jsonb, text, integer) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.place_table_round(integer, text, text, text, jsonb, text) TO anon, authenticated;
+
+-- 5.2.1 REQUEST TABLE SERVICE RPC (CALL WAITER & REQUEST BILL)
+CREATE OR REPLACE FUNCTION public.request_table_service(
+  p_table_number  integer,
+  p_service_type  text,
+  p_customer_name text DEFAULT NULL,
+  p_notes         text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_active_ticket  public.orders%ROWTYPE;
+  v_title          text;
+  v_msg            text;
+  v_recent_exists  boolean := false;
+  v_notif          public.notifications%ROWTYPE;
+  v_zone           text;
+BEGIN
+  -- Input Validation
+  IF p_table_number IS NULL OR p_table_number < 1 OR p_table_number > 19 THEN
+    RAISE EXCEPTION 'Invalid table number: %. Must be between 1 and 19', p_table_number;
+  END IF;
+
+  IF p_service_type NOT IN ('call_waiter', 'request_bill') THEN
+    RAISE EXCEPTION 'Invalid service type: %. Must be call_waiter or request_bill', p_service_type;
+  END IF;
+
+  v_zone := CASE WHEN p_table_number <= 9 THEN 'Indoor' ELSE 'Outdoor' END;
+
+  -- Rate-limiting: prevent flooding notifications within 60 seconds
+  SELECT EXISTS (
+    SELECT 1 FROM public.notifications
+    WHERE item_id = 'table-' || p_table_number
+      AND type = p_service_type
+      AND is_read = false
+      AND created_at >= (now() - interval '60 seconds')
+  ) INTO v_recent_exists;
+
+  IF v_recent_exists THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'already_notified', true,
+      'message', CASE 
+        WHEN p_service_type = 'call_waiter' 
+          THEN 'Staff has already been notified for Table ' || p_table_number || '. A waiter is on the way!'
+        ELSE 'Bill request already received for Table ' || p_table_number || '. Cashier is preparing your bill!'
+      END,
+      'table_number', p_table_number,
+      'service_type', p_service_type
+    );
+  END IF;
+
+  -- Query for active table session
+  SELECT *
+    INTO v_active_ticket
+    FROM public.orders
+   WHERE order_type = 'table'
+     AND table_number = p_table_number
+     AND ticket_status IN ('OPEN', 'HOLD')
+     AND status NOT IN ('delivered', 'cancelled')
+     AND payment_status != 'paid'
+     AND created_at >= (now() - interval '12 hours')
+   ORDER BY created_at ASC
+   LIMIT 1;
+
+  -- Construct Notification
+  IF v_active_ticket.id IS NOT NULL THEN
+    IF p_service_type = 'call_waiter' THEN
+      v_title := '🔔 Table ' || p_table_number || ' - Waiter Called';
+      v_msg   := 'Table ' || p_table_number || ' (' || v_zone || ' · Order #' || v_active_ticket.order_number || ') is calling for a waiter.';
+    ELSE
+      v_title := '🧾 Table ' || p_table_number || ' - Bill Requested';
+      v_msg   := 'Table ' || p_table_number || ' (' || v_zone || ' · Order #' || v_active_ticket.order_number || ') has requested the bill (₹' || v_active_ticket.total_amount || ').';
+    END IF;
+  ELSE
+    IF p_service_type = 'call_waiter' THEN
+      v_title := '🔔 Table ' || p_table_number || ' - Waiter Called';
+      v_msg   := 'Guest at Table ' || p_table_number || ' (' || v_zone || ') is requesting a waiter (no active food order).';
+    ELSE
+      v_title := '🧾 Table ' || p_table_number || ' - Bill Requested';
+      v_msg   := 'Guest at Table ' || p_table_number || ' (' || v_zone || ') requested bill, but no active order is open.';
+    END IF;
+  END IF;
+
+  IF p_notes IS NOT NULL AND trim(p_notes) <> '' THEN
+    v_msg := v_msg || ' Note: ' || trim(p_notes);
+  END IF;
+
+  -- Insert Notification into Database
+  INSERT INTO public.notifications (
+    type,
+    title,
+    message,
+    description,
+    order_id,
+    item_id,
+    customer_phone,
+    is_read,
+    created_at
+  )
+  VALUES (
+    p_service_type,
+    v_title,
+    v_msg,
+    v_msg,
+    v_active_ticket.id,
+    'table-' || p_table_number,
+    COALESCE(v_active_ticket.customer_phone, '0000000000'),
+    false,
+    now()
+  )
+  RETURNING * INTO v_notif;
+
+  RETURN jsonb_build_object(
+    'success',            true,
+    'already_notified',   false,
+    'notification_id',    v_notif.id,
+    'table_number',       p_table_number,
+    'table_zone',         v_zone,
+    'service_type',       p_service_type,
+    'has_active_session', (v_active_ticket.id IS NOT NULL),
+    'order_id',           v_active_ticket.id,
+    'order_number',       v_active_ticket.order_number,
+    'session_id',         v_active_ticket.id,
+    'message',            CASE
+      WHEN p_service_type = 'call_waiter'
+        THEN 'Waiter has been called to Table ' || p_table_number || '! 🔔 Staff will assist you shortly.'
+      ELSE 'Bill requested for Table ' || p_table_number || '! 🧾 Cashier will bring your bill.'
+    END
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.request_table_service(integer, text, text, text) TO anon, authenticated;
 
 -- 5.3 PLACE BOOKING RPC
 CREATE OR REPLACE FUNCTION public.place_booking(
@@ -1177,6 +1522,99 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.verify_upi_payment(numeric, text, text) TO anon, authenticated;
 
+-- 5.6.1 UPDATE ORDER PAYMENT STATUS (ADMIN ONLY)
+CREATE OR REPLACE FUNCTION public.update_order_payment_status(
+  p_order_id uuid,
+  p_payment_status text,
+  p_notes text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_order public.orders%ROWTYPE;
+  v_prev_status text;
+  v_changed_by text;
+  v_user_id uuid;
+  v_clean_status text := lower(trim(p_payment_status));
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Unauthorized: Only administrative staff can update payment status';
+  END IF;
+
+  IF v_clean_status NOT IN ('unpaid', 'paid', 'refunded', 'failed') THEN
+    RAISE EXCEPTION 'Invalid payment status: %. Allowed values: unpaid, paid, refunded, failed', p_payment_status;
+  END IF;
+
+  SELECT * INTO v_order
+  FROM public.orders
+  WHERE id = p_order_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Order not found';
+  END IF;
+
+  v_prev_status := v_order.payment_status;
+
+  IF v_prev_status = v_clean_status THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'message', 'Payment status is already ' || v_clean_status,
+      'order_id', p_order_id,
+      'payment_status', v_clean_status,
+      'idempotent', true
+    );
+  END IF;
+
+  -- State Transition Enforcement
+  IF v_prev_status = 'paid' AND v_clean_status = 'unpaid' THEN
+    RAISE EXCEPTION 'Invalid transition: Settled paid orders cannot be reverted to unpaid. Use refund workflow instead.';
+  END IF;
+
+  IF v_prev_status = 'refunded' AND v_clean_status != 'refunded' THEN
+    RAISE EXCEPTION 'Invalid transition: Refunded orders cannot be modified or re-opened.';
+  END IF;
+
+  v_user_id := auth.uid();
+  IF v_user_id IS NOT NULL THEN
+    SELECT email INTO v_changed_by FROM public.admin_users WHERE user_id = v_user_id LIMIT 1;
+    IF v_changed_by IS NULL THEN
+      v_changed_by := 'Admin (' || v_user_id::text || ')';
+    END IF;
+  ELSE
+    v_changed_by := 'system/payment-service';
+  END IF;
+
+  UPDATE public.orders
+  SET payment_status = v_clean_status,
+      updated_at = now()
+  WHERE id = p_order_id;
+
+  INSERT INTO public.payment_history (
+    order_id, user_id, previous_status, new_status, changed_by, notes, created_at, updated_at
+  )
+  VALUES (
+    p_order_id, v_user_id, v_prev_status, v_clean_status, v_changed_by,
+    COALESCE(p_notes, 'Payment status updated from ' || v_prev_status || ' to ' || v_clean_status),
+    now(), now()
+  );
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'order_id', v_order.id,
+    'order_number', v_order.order_number,
+    'payment_status', v_clean_status,
+    'previous_status', v_prev_status
+  );
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.update_order_payment_status(uuid, text, text) FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.update_order_payment_status(uuid, text, text) TO authenticated;
+
 -- 5.7 STOCK MANAGEMENT RPCs
 CREATE OR REPLACE FUNCTION public.record_stock_out(
   p_item_id uuid,
@@ -1280,7 +1718,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.record_stock_out(uuid, numeric, text, text, text, boolean) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.record_stock_out(uuid, numeric, text, text, text, boolean) FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_stock_out(uuid, numeric, text, text, text, boolean) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.record_stock_in(
   p_item_id uuid,
@@ -1367,7 +1806,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.record_stock_in(uuid, numeric, numeric, text, text) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.record_stock_in(uuid, numeric, numeric, text, text) FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_stock_in(uuid, numeric, numeric, text, text) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.get_stock_daily_summary(
   p_date date DEFAULT CURRENT_DATE
@@ -1422,7 +1862,228 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_stock_daily_summary(date) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_stock_daily_summary(date) FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_stock_daily_summary(date) TO authenticated;
+
+-- 5.8 ATOMIC ORDER INVENTORY DEDUCTION RPC
+CREATE OR REPLACE FUNCTION public.deduct_order_inventory_atomic(
+  p_order_id uuid,
+  p_order_number integer,
+  p_items jsonb DEFAULT '[]'::jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_item jsonb;
+  v_qty numeric;
+  v_name text;
+  v_stk public.stock_items%ROWTYPE;
+  v_deducted_count integer := 0;
+  v_already_logged boolean := false;
+BEGIN
+  -- Idempotency Check: Prevent duplicate deductions for the same order
+  SELECT EXISTS (
+    SELECT 1 FROM public.stock_logs
+    WHERE action = 'ORDER_DEDUCT'
+      AND details ILIKE '%Order #' || p_order_number || '%'
+  ) INTO v_already_logged;
+
+  IF v_already_logged THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'already_deducted', true,
+      'message', 'Inventory was already deducted for Order #' || p_order_number
+    );
+  END IF;
+
+  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN
+    RETURN jsonb_build_object('success', true, 'deducted_count', 0);
+  END IF;
+
+  -- Deduct each item atomically with row-level locking
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_items)
+  LOOP
+    v_qty := GREATEST(1, COALESCE((v_item->>'quantity')::numeric, (v_item->>'qty')::numeric, 1));
+    v_name := trim(COALESCE(v_item->>'name', v_item->>'item_name', ''));
+
+    IF v_name <> '' THEN
+      SELECT * INTO v_stk
+      FROM public.stock_items
+      WHERE lower(trim(name)) = lower(v_name)
+      FOR UPDATE;
+
+      IF FOUND THEN
+        UPDATE public.stock_items
+        SET qty = GREATEST(0, (COALESCE(qty, 0) - v_qty)),
+            updated_at = now()
+        WHERE id = v_stk.id;
+
+        INSERT INTO public.stock_logs (
+          id, action, details, created_at
+        )
+        VALUES (
+          gen_random_uuid(),
+          'ORDER_DEDUCT',
+          v_stk.name || ' deducted ' || v_qty || ' ' || COALESCE(v_stk.unit, 'pcs') || ' for Order #' || p_order_number,
+          now()
+        );
+
+        INSERT INTO public.stock_out (
+          id, item_sku, item_name, unit, qty, date, used_by, notes, created_at
+        )
+        VALUES (
+          gen_random_uuid()::text,
+          v_stk.sku,
+          v_stk.name,
+          COALESCE(v_stk.unit, 'pcs'),
+          v_qty,
+          to_char(now(), 'DD-MM-YYYY'),
+          'System Order Settlement',
+          'Auto deduction for Order #' || p_order_number,
+          now()
+        );
+
+        v_deducted_count := v_deducted_count + 1;
+      END IF;
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'already_deducted', false,
+    'deducted_count', v_deducted_count
+  );
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.deduct_order_inventory_atomic(uuid, integer, jsonb) FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.deduct_order_inventory_atomic(uuid, integer, jsonb) TO authenticated;
+
+-- 5.9 ATOMIC POS BILL SETTLEMENT RPC
+CREATE OR REPLACE FUNCTION public.settle_order_atomic(
+  p_order_id uuid,
+  p_payment_method text DEFAULT 'cash',
+  p_notes text DEFAULT NULL,
+  p_idempotency_key text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_order public.orders%ROWTYPE;
+  v_items jsonb;
+  v_cashier_id uuid := auth.uid();
+  v_clean_key text := NULLIF(trim(COALESCE(p_idempotency_key, '')), '');
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'FORBIDDEN: Staff credentials required to settle orders';
+  END IF;
+
+  SELECT * INTO v_order
+  FROM public.orders
+  WHERE id = p_order_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ORDER_NOT_FOUND: Order % does not exist', p_order_id;
+  END IF;
+
+  IF v_order.ticket_status = 'CLOSED' AND v_order.payment_status = 'paid' THEN
+    IF v_clean_key IS NOT NULL AND v_order.idempotency_key = v_clean_key THEN
+      RETURN jsonb_build_object(
+        'success', true,
+        'order_id', v_order.id,
+        'order_number', v_order.order_number,
+        'status', v_order.status,
+        'payment_status', v_order.payment_status,
+        'ticket_status', v_order.ticket_status,
+        'total_amount', v_order.total_amount,
+        'idempotent_replay', true,
+        'message', 'Order already settled'
+      );
+    ELSE
+      RAISE EXCEPTION 'ORDER_ALREADY_SETTLED: Order #% has already been settled and closed by another cashier.', v_order.order_number;
+    END IF;
+  END IF;
+
+  UPDATE public.orders
+  SET status = 'delivered',
+      payment_status = 'paid',
+      ticket_status = 'CLOSED',
+      payment_method = COALESCE(p_payment_method, v_order.payment_method, 'cash'),
+      idempotency_key = COALESCE(v_clean_key, v_order.idempotency_key),
+      updated_at = now()
+  WHERE id = p_order_id
+  RETURNING * INTO v_order;
+
+  INSERT INTO public.payment_history (
+    order_id, previous_status, new_status, change_reason, changed_by, created_at
+  )
+  VALUES (
+    p_order_id,
+    'unpaid',
+    'paid',
+    COALESCE(p_notes, 'POS Final Bill Settlement'),
+    v_cashier_id,
+    now()
+  );
+
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'name', item_name,
+      'quantity', quantity
+    )
+  ) INTO v_items
+  FROM public.order_items
+  WHERE order_id = p_order_id;
+
+  IF v_items IS NOT NULL AND jsonb_array_length(v_items) > 0 THEN
+    PERFORM public.deduct_order_inventory_atomic(p_order_id, v_order.order_number, v_items);
+  END IF;
+
+  INSERT INTO public.sync_queue (
+    entity_type, entity_id, payload, status, created_at, updated_at
+  )
+  VALUES (
+    'google_sheet',
+    v_order.id::text,
+    jsonb_build_object(
+      'order_id', v_order.id,
+      'order_number', v_order.order_number,
+      'total_amount', v_order.total_amount,
+      'order_type', v_order.order_type,
+      'payment_method', v_order.payment_method,
+      'table_number', v_order.table_number,
+      'customer_name', v_order.customer_name,
+      'customer_phone', v_order.customer_phone,
+      'settled_at', now()
+    ),
+    'pending',
+    now(),
+    now()
+  );
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'order_id', v_order.id,
+    'order_number', v_order.order_number,
+    'status', v_order.status,
+    'payment_status', v_order.payment_status,
+    'ticket_status', v_order.ticket_status,
+    'total_amount', v_order.total_amount,
+    'idempotent_replay', false,
+    'message', 'Order settled and closed successfully'
+  );
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.settle_order_atomic(uuid, text, text, text) FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.settle_order_atomic(uuid, text, text, text) TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 6. ROW LEVEL SECURITY (RLS) POLICIES
@@ -1524,11 +2185,19 @@ CREATE POLICY "Admins can manage stock logs" ON public.stock_logs FOR ALL TO aut
 
 -- Customer active orders & bookings access
 DROP POLICY IF EXISTS "Public full access orders" ON public.orders;
-CREATE POLICY "Public can view orders" ON public.orders FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public can view orders" ON public.orders;
+DROP POLICY IF EXISTS "Users can view own orders" ON public.orders;
+CREATE POLICY "Users can view own orders" ON public.orders FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "Admins can manage orders" ON public.orders;
 CREATE POLICY "Admins can manage orders" ON public.orders FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 
 DROP POLICY IF EXISTS "Public full access order_items" ON public.order_items;
-CREATE POLICY "Public can view order items" ON public.order_items FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public can view order items" ON public.order_items;
+DROP POLICY IF EXISTS "Users can view own order items" ON public.order_items;
+CREATE POLICY "Users can view own order items" ON public.order_items FOR SELECT TO authenticated USING (EXISTS (
+  SELECT 1 FROM public.orders o WHERE o.id = order_items.order_id AND o.user_id = auth.uid()
+));
+DROP POLICY IF EXISTS "Admins can manage order items" ON public.order_items;
 CREATE POLICY "Admins can manage order items" ON public.order_items FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 
 DROP POLICY IF EXISTS "Public full access bookings" ON public.bookings;

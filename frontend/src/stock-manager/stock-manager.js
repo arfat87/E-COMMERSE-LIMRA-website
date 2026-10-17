@@ -1,6 +1,6 @@
 import '../style.css';
 import './stock-manager.css';
-import { insforge } from '../lib/insforge.js';
+import { insforge, offlineSync } from '../lib/insforge.js';
 import { INITIAL_STOCK_ITEMS } from './data/initialStockData.js';
 
 // Safe number & currency helpers
@@ -191,6 +191,15 @@ async function fetchDatabaseState() {
   isDatabaseLoading = true;
 
   try {
+    // Flush any locally pending stock mutations to server before refreshing state
+    try {
+      if (offlineSync && typeof offlineSync.syncStockMutations === 'function') {
+        await offlineSync.syncStockMutations();
+      }
+    } catch (flushErr) {
+      console.warn('[StockManager] Pre-refresh stock sync warning:', flushErr);
+    }
+
     const [itemsRes, inRes, outRes, logsRes] = await Promise.all([
       insforge.database.from('stock_items').select('*').order('sku', { ascending: true }),
       insforge.database.from('stock_in').select('*').order('created_at', { ascending: false }),
@@ -2427,6 +2436,25 @@ async function handleInOutSubmit(e) {
     }
   } catch (err) {
     console.error('[StockManager] Database sync error:', err);
+    try {
+      if (offlineSync && typeof offlineSync.enqueueStockMutation === 'function') {
+        offlineSync.enqueueStockMutation(isStockOut ? 'STOCK_OUT' : 'STOCK_IN', {
+          entryId,
+          targetItemId: targetItem?.id,
+          sku,
+          description,
+          qty,
+          unit,
+          reason,
+          costPrice: costPrice || targetItem?.cost || 0,
+          supplier: supplier || targetItem?.supplier || '',
+          notes,
+          date
+        });
+      }
+    } catch (qErr) {
+      console.warn('[StockManager] Failed to enqueue stock mutation:', qErr);
+    }
     showToast('Entry saved locally, background sync pending.', 'info');
   }
 }
@@ -2733,6 +2761,22 @@ async function handleAdjustSubmit(e) {
     }).eq('id', item.id);
   } catch (err) {
     console.error('[StockManager] Adjust sync to DB failed:', err);
+    try {
+      if (offlineSync && typeof offlineSync.enqueueStockMutation === 'function') {
+        offlineSync.enqueueStockMutation('STOCK_ADJUST', {
+          targetItemId: item.id,
+          sku: item.sku,
+          description: item.name,
+          qty,
+          unit: item.unit,
+          direction: action,
+          notes,
+          finalQty: item.qty
+        });
+      }
+    } catch (qErr) {
+      console.warn('[StockManager] Failed to enqueue stock adjust mutation:', qErr);
+    }
   }
 }
 
