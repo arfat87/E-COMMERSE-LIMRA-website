@@ -639,7 +639,7 @@ export default async function handler(req, res) {
       }
 
       // Fetch current order state to enforce state transition validation and concurrency protection
-      let checkQ = supabase.from("orders").select("id, order_number, payment_status, status, ticket_status, idempotency_key, payment_method, notes");
+      let checkQ = supabase.from("orders").select("id, order_number, payment_status, status, ticket_status, payment_method, notes");
       if (id) {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(id);
         if (isUuid) checkQ = checkQ.eq("id", id);
@@ -649,8 +649,8 @@ export default async function handler(req, res) {
       }
       let { data: currentOrders, error: checkErr } = await checkQ.limit(1);
 
-      if (checkErr && (checkErr.message || "").includes("idempotency_key")) {
-        let legacyQ = supabase.from("orders").select("id, order_number, payment_status, status, ticket_status, payment_method, notes");
+      if (checkErr && (checkErr.message || "").includes("ticket_status")) {
+        let legacyQ = supabase.from("orders").select("id, order_number, payment_status, status, payment_method, notes");
         if (id) {
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(id);
           if (isUuid) legacyQ = legacyQ.eq("id", id);

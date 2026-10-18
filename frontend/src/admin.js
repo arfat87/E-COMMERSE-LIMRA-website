@@ -1777,6 +1777,28 @@ async function rejectIncomingOnlineOrder() {
 }
 window.rejectIncomingOnlineOrder = rejectIncomingOnlineOrder;
 
+function persistOrdersCache() {
+  try {
+    if (Array.isArray(orders)) {
+      localStorage.setItem('limra_cached_orders', JSON.stringify(orders.slice(0, 150)));
+    }
+    if (Array.isArray(orderItems)) {
+      localStorage.setItem('limra_cached_order_items', JSON.stringify(orderItems.slice(0, 500)));
+    }
+  } catch (e) {
+    console.warn('[Cache Persist Warn]:', e);
+  }
+}
+window.persistOrdersCache = persistOrdersCache;
+
+async function loadOrders(force = true) {
+  if (typeof refreshDashboard === 'function') {
+    return await refreshDashboard(force);
+  }
+  return await loadData(force);
+}
+window.loadOrders = loadOrders;
+
 async function loadData(isManual = false) {
   const isFirstLoad = !lastSyncTimestamp || isManual || (knownNotificationIds.size === 0 && knownOrderIds.size === 0);
 
@@ -1794,6 +1816,7 @@ async function loadData(isManual = false) {
           renderOrdersTable();
           renderBillingQuickCards();
           renderTablesPanel();
+          renderHoldOrdersPanel();
         }
       }
     } catch (e) {}
@@ -1802,28 +1825,37 @@ async function loadData(isManual = false) {
 
     // Query recent records scoped with selective columns to eliminate massive egress and delay
     const [ordersRes, itemsRes, bookingsRes, notifsRes] = await Promise.all([
-      insforge.database.from('orders').select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, idempotency_key, created_at, updated_at').order('created_at', { ascending: false }).limit(300),
+      insforge.database.from('orders').select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, created_at, updated_at').order('created_at', { ascending: false }).limit(300),
       insforge.database.from('order_items').select('id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at').order('created_at', { ascending: false }).limit(1000),
       insforge.database.from('bookings').select('*').order('created_at', { ascending: false }).limit(100),
       insforge.database.from('notifications').select('*').order('created_at', { ascending: false }).limit(35),
       loadStaticConfigData(isManual)
     ]);
 
-    if (ordersRes && ordersRes.error) throw ordersRes.error;
     if (itemsRes && itemsRes.error) throw itemsRes.error;
     if (bookingsRes && bookingsRes.error) throw bookingsRes.error;
     if (notifsRes && notifsRes.error) throw notifsRes.error;
 
-    orders = (ordersRes && ordersRes.data) || [];
+    if (ordersRes && ordersRes.data) {
+      orders = ordersRes.data;
+    } else if (ordersRes && ordersRes.error) {
+      console.warn('[Orders Baseline Query Warn, falling back to select(*)]:', ordersRes.error);
+      const fallbackOrdersRes = await insforge.database.from('orders').select('*').order('created_at', { ascending: false }).limit(300);
+      if (fallbackOrdersRes && fallbackOrdersRes.data) {
+        orders = fallbackOrdersRes.data;
+      } else {
+        throw ordersRes.error;
+      }
+    } else {
+      orders = [];
+    }
+
     orderItems = (itemsRes && itemsRes.data) || [];
     bookings = (bookingsRes && bookingsRes.data) || [];
     const fetchedNotifs = (notifsRes && notifsRes.data) || [];
 
     // Cache recent orders to localStorage
-    try {
-      localStorage.setItem('limra_cached_orders', JSON.stringify(orders.slice(0, 100)));
-      localStorage.setItem('limra_cached_order_items', JSON.stringify(orderItems.slice(0, 300)));
-    } catch (e) {}
+    persistOrdersCache();
 
     processNotificationsAndAlerts(fetchedNotifs, orders, orders, true);
 
@@ -1841,7 +1873,7 @@ async function loadData(isManual = false) {
   const [deltaOrdersRes, deltaBookingsRes, notifsRes] = await Promise.all([
     insforge.database
       .from('orders')
-      .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, idempotency_key, created_at, updated_at')
+      .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, created_at, updated_at')
       .or(`updated_at.gte.${syncSince},created_at.gte.${syncSince}`)
       .order('created_at', { ascending: false }),
     insforge.database
@@ -1857,11 +1889,26 @@ async function loadData(isManual = false) {
     loadStaticConfigData(false)
   ]);
 
-  if (deltaOrdersRes && deltaOrdersRes.error) throw deltaOrdersRes.error;
   if (deltaBookingsRes && deltaBookingsRes.error) throw deltaBookingsRes.error;
   if (notifsRes && notifsRes.error) throw notifsRes.error;
 
-  const deltaOrders = (deltaOrdersRes && deltaOrdersRes.data) || [];
+  let deltaOrders = [];
+  if (deltaOrdersRes && deltaOrdersRes.data) {
+    deltaOrders = deltaOrdersRes.data;
+  } else if (deltaOrdersRes && deltaOrdersRes.error) {
+    console.warn('[Delta Sync Orders selective query warning, falling back]:', deltaOrdersRes.error);
+    const fbDelta = await insforge.database
+      .from('orders')
+      .select('*')
+      .or(`updated_at.gte.${syncSince},created_at.gte.${syncSince}`)
+      .order('created_at', { ascending: false });
+    if (fbDelta && fbDelta.data) {
+      deltaOrders = fbDelta.data;
+    } else {
+      throw deltaOrdersRes.error;
+    }
+  }
+
   const deltaBookings = (deltaBookingsRes && deltaBookingsRes.data) || [];
   const fetchedNotifs = (notifsRes && notifsRes.data) || [];
 
@@ -1884,12 +1931,14 @@ async function loadData(isManual = false) {
     orders.forEach(o => orderMap.set(String(o.id), o));
     deltaOrders.forEach(o => orderMap.set(String(o.id), o));
     orders = Array.from(orderMap.values()).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    persistOrdersCache();
   }
 
   // Merge delta order_items into memory
   if (deltaOrders.length > 0) {
     const changedIdsSet = new Set(deltaOrders.map(o => String(o.id)));
     orderItems = orderItems.filter(item => !changedIdsSet.has(String(item.order_id))).concat(deltaItems);
+    persistOrdersCache();
   }
 
   // Merge delta bookings into memory
@@ -2961,7 +3010,7 @@ async function ensureHistoricalOrdersForReport() {
   try {
     let q = insforge.database
       .from('orders')
-      .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, idempotency_key, created_at, updated_at')
+      .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, created_at, updated_at')
       .neq('status', 'cancelled')
       .order('created_at', { ascending: false });
 
@@ -3960,6 +4009,7 @@ async function toggleOrderHoldStatus(orderId, targetActionOrStatus) {
       console.warn('[Hold Order] Offline/network hold update:', err);
     }
 
+    persistOrdersCache();
     showAdminToast(`Order #${formatDailyOrderNumber(order)} put on Hold ⏸️`, 'success');
     renderOrdersTable();
     renderHoldOrdersPanel();
@@ -3991,6 +4041,7 @@ async function toggleOrderHoldStatus(orderId, targetActionOrStatus) {
       console.warn('[Release Order] Offline/network release update:', err);
     }
 
+    persistOrdersCache();
     showAdminToast(`Order #${formatDailyOrderNumber(order)} released from Hold ▶️`, 'success');
     renderOrdersTable();
     renderHoldOrdersPanel();
@@ -5446,7 +5497,7 @@ async function createFinalBillForTableSession(tableNum) {
   // 2. Concurrency Check: Check if table session was already closed
   if (primaryOrder.ticket_status === 'CLOSED' && primaryOrder.payment_status === 'paid') {
     showAdminToast(`Table ${tableNum} was already billed and closed by another cashier.`, 'error');
-    await loadOrders();
+    await refreshDashboard(true);
     return;
   }
 
@@ -5474,7 +5525,6 @@ async function createFinalBillForTableSession(tableNum) {
         payment_status: 'paid',
         ticket_status: 'CLOSED',
         notes: finalBillOrder.notes,
-        idempotency_key: settleIdempotencyKey,
         updated_at: new Date().toISOString()
       })
       .eq('id', primaryOrder.id)
@@ -5489,7 +5539,6 @@ async function createFinalBillForTableSession(tableNum) {
           status: 'delivered',
           payment_status: 'paid',
           notes: finalBillOrder.notes,
-          idempotency_key: settleIdempotencyKey,
           updated_at: new Date().toISOString()
         })
         .eq('id', primaryOrder.id);
@@ -5498,7 +5547,7 @@ async function createFinalBillForTableSession(tableNum) {
       cloudSettled = true;
     } else if (!pUpd.error) {
       showAdminToast(`Table ${tableNum} was already closed by another cashier.`, 'error');
-      await loadOrders();
+      await refreshDashboard(true);
       return;
     }
 
@@ -5540,6 +5589,8 @@ async function createFinalBillForTableSession(tableNum) {
       }
     });
   }
+
+  persistOrdersCache();
 
   session.orders.forEach(o => markOrderNotificationsRead(o.id));
 
@@ -5884,7 +5935,7 @@ function renderHoldOrdersPanel() {
             settlementConflict = true;
             const conflictData = await res.json().catch(() => ({}));
             showAdminToast(conflictData.error || `Order #${order.order_number} was already settled by another cashier.`, 'error');
-            await loadOrders();
+            await refreshDashboard(true);
             return;
           }
 
@@ -5903,7 +5954,6 @@ function renderHoldOrdersPanel() {
                 status: 'delivered',
                 payment_status: 'paid',
                 ticket_status: 'CLOSED',
-                idempotency_key: settleIdempotencyKey,
                 updated_at: new Date().toISOString()
               })
               .eq('id', orderId)
@@ -5914,7 +5964,6 @@ function renderHoldOrdersPanel() {
               await insforge.database.from('orders').update({
                 status: 'delivered',
                 payment_status: 'paid',
-                idempotency_key: settleIdempotencyKey,
                 updated_at: new Date().toISOString()
               }).eq('id', orderId);
               cloudSettled = true;
@@ -5922,7 +5971,7 @@ function renderHoldOrdersPanel() {
               cloudSettled = true;
             } else if (!updErr) {
               showAdminToast(`Order #${order.order_number} was already closed by another cashier.`, 'error');
-              await loadOrders();
+              await refreshDashboard(true);
               return;
             }
           } catch (offlineErr) {
@@ -5935,6 +5984,7 @@ function renderHoldOrdersPanel() {
         order.payment_status = 'paid';
         order.ticket_status = 'CLOSED';
         order.updated_at = new Date().toISOString();
+        persistOrdersCache();
 
         // 3. EXTERNAL SIDE EFFECT 1: Print final customer bill (Decoupled from DB commit)
         // Table/hold KOT was already dispatched when order was placed. Final settlement prints customer bill only.
@@ -9179,6 +9229,8 @@ function renderAll() {
   renderOrderDetailPicker();
   renderHoldOrdersPanel();
   renderClosedOrdersPanel();
+  renderBillingQuickCards();
+  renderBillingTotalBills();
   renderCustomers();
   renderCustomerAnalysis();
   renderBookingCalendar();
@@ -13971,6 +14023,8 @@ async function buildOrderFromPos(action) {
     orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
   }
 
+  persistOrdersCache();
+
   // Refresh UI
   renderBillingQuickCards();
   renderBillingTotalBills();
@@ -15092,6 +15146,7 @@ async function saveHoldOrderCorrections(shouldPrintKitchenSlip = false) {
         ord.status = 'cancelled';
         await markOrderNotificationsRead(ord.id);
       }
+      persistOrdersCache();
       showAdminToast('All orders cancelled. ✅', 'success');
       closeHoldAddItemsModal();
       renderOverview();
@@ -15167,6 +15222,8 @@ async function saveHoldOrderCorrections(shouldPrintKitchenSlip = false) {
       await insforge.database.from('orders').update({ total_amount: newTotal }).eq('id', ord.id);
       ord.total_amount = newTotal;
     }
+
+    persistOrdersCache();
 
     // 5. Kitchen Print handling if requested
     if (shouldPrintKitchenSlip) {
@@ -15420,7 +15477,7 @@ function renderBillingTotalBills() {
             settlementConflict = true;
             const conflictData = await res.json().catch(() => ({}));
             showAdminToast(conflictData.error || `Order #${formatDailyOrderNumber(order)} was already settled by another cashier.`, 'error');
-            await loadOrders();
+            await refreshDashboard(true);
             return;
           }
 
@@ -15439,7 +15496,6 @@ function renderBillingTotalBills() {
                 status: 'delivered',
                 payment_status: 'paid',
                 ticket_status: 'CLOSED',
-                idempotency_key: settleIdempotencyKey,
                 updated_at: new Date().toISOString()
               })
               .eq('id', orderId)
@@ -15450,7 +15506,6 @@ function renderBillingTotalBills() {
               await insforge.database.from('orders').update({
                 status: 'delivered',
                 payment_status: 'paid',
-                idempotency_key: settleIdempotencyKey,
                 updated_at: new Date().toISOString()
               }).eq('id', orderId);
               cloudSettled = true;
@@ -15458,7 +15513,7 @@ function renderBillingTotalBills() {
               cloudSettled = true;
             } else if (!updErr) {
               showAdminToast(`Order #${formatDailyOrderNumber(order)} was already closed by another cashier.`, 'error');
-              await loadOrders();
+              await refreshDashboard(true);
               return;
             }
           } catch (offlineErr) {
@@ -15471,6 +15526,7 @@ function renderBillingTotalBills() {
         order.payment_status = 'paid';
         order.ticket_status = 'CLOSED';
         order.updated_at = new Date().toISOString();
+        persistOrdersCache();
 
         // 3. EXTERNAL SIDE EFFECT 1: Print final customer bill (Decoupled from DB commit)
         // Settlement produces the final customer tax invoice without duplicating kitchen tickets.
