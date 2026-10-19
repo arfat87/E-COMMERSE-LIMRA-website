@@ -14090,7 +14090,8 @@ async function generateKOTHtml(order = {}, items = [], options = false) {
     `;
   }).join('');
 
-  const feedSpaces = '<br/>'.repeat(Math.max(1, p.kot_bottom_feed ? Math.min(2, p.kot_bottom_feed) : 1));
+  const feedLines = Math.max(3, parseInt(p.kot_bottom_feed || 3, 10));
+  const feedSpaces = '<br/>'.repeat(feedLines);
 
   return `<div style="width:${wPx}px;font-family:monospace,sans-serif;font-size:11px;color:#000;padding:0 ${sideGapPx}px;margin:0 auto;line-height:1.3;">
     ${isReprint ? `
@@ -14247,8 +14248,8 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
       </tr>
     `;
   }).join('');
-  
-  const feedLines = Math.max(1, p.bill_bottom_feed ? Math.min(4, p.bill_bottom_feed) : 2);
+
+  const feedLines = Math.max(3, parseInt(p.bill_bottom_feed || 3, 10));
   const feedSpaces = '<br/>'.repeat(feedLines);
 
   const qrSize = p.bill_qr_size || 'medium';
@@ -14444,46 +14445,19 @@ async function printCombinedKOTAndBill(order, itemsList, options = {}) {
     }
   }
 
-  const p = printerSettings;
-  const kotHtml = await generateKOTHtml(order, items, options);
-  const billHtml = await generateBillWithTaxHtml(order, items, options);
-
-  const combinedHtml = `
-    <div class="thermal-receipt-section thermal-kot-section page-break-divider" style="page-break-after:always;break-after:page;padding-bottom:12px;margin-bottom:12px;">
-      ${kotHtml}
-      <div style="text-align:center;font-size:10px;font-weight:900;letter-spacing:1px;padding:6px 0;border-top:1px dashed #000;border-bottom:1px dashed #000;margin-top:8px;">
-        ✂️ - - - - - TEAR / CUT HERE - - - - - ✂️
-      </div>
-    </div>
-    <div class="thermal-receipt-section thermal-bill-section">
-      ${billHtml}
-    </div>
-  `;
-
-  let escposText = '';
   try {
-    const kotEsc = buildEscPosKOT(order, items, p, options);
-    const billEsc = buildEscPosBill(order, items, p, options);
-    escposText = (kotEsc || '') + (billEsc || '');
-  } catch (e) {
-    console.warn('[ESC/POS] Error building combined KOT+Bill command stream:', e);
-  }
+    // 1. First print Kitchen Order Ticket (KOT) as dedicated job.
+    // The printer hardware driver triggers a clean auto-cut upon finishing KOT.
+    await printKOT(order, items, options);
 
-  // Enqueue job into resilient queue with immediate execution
-  const job = await printQueue.enqueue({
-    orderId: order.id,
-    orderNumber: formatDailyOrderNumber(order),
-    type: 'KOT_AND_BILL',
-    paperWidth: p.bill_paper_width || 80,
-    isReprint: Boolean(options?.isReprint),
-    payload: { html: combinedHtml, escposText, order, items }
-  });
+    // 2. Cooldown delay so printer physical blade cycle finishes and driver spooler clears
+    await new Promise(r => setTimeout(r, 450));
 
-  const isSuccess = job && (job.status === 'printed' || job.status === 'hardware_confirmed' || job.status === 'spooled');
-  if (isSuccess) {
-    showAdminToast(`Printed ✓ KOT + Bill #${job.orderNumber}`, 'success');
-  } else {
-    showAdminToast(`⚠️ Print failed for #${job?.orderNumber || 'Order'} (Saved to Queue)`, 'error');
+    // 3. Next print Final Customer Bill as dedicated job with its own auto-cut.
+    await printOrderReceiptWithTax(order, items, options);
+  } catch (err) {
+    console.error('[Combined KOT & Bill Print Error]:', err);
+    showAdminToast('Print error: ' + (err.message || 'Printer issue'), 'error');
   }
 }
 
