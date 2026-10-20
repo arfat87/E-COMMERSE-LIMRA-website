@@ -1489,8 +1489,8 @@
 #pos-food-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 
 .pos-food-tile-img {
-  background: #fff;
-  border: 1px solid var(--adm-border, #e5e7eb);
+  background: #ffffff;
+  border: 1.5px solid var(--adm-border, #e5e7eb);
   border-radius: 12px;
   overflow: hidden;
   padding: 0;
@@ -1499,14 +1499,14 @@
   display: flex;
   flex-direction: column;
   transition: border-color .18s, transform .15s, box-shadow .18s;
-  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  box-shadow: 0 1px 4px rgba(0,0,0,.03);
   width: 100%;
   position: relative;
 }
 .pos-food-tile-img:hover {
-  border-color: #6366f1;
+  border-color: #d0a047;
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(99,102,241,.18);
+  box-shadow: 0 8px 24px rgba(208,160,71,.18);
 }
 .pos-food-tile-img:active {
   transform: scale(.97);
@@ -1514,8 +1514,8 @@
 
 .pos-tile-img-box {
   width: 100%;
-  height: 76px;
-  background: #f1f5f9;
+  height: 84px;
+  background: #f8fafc;
   position: relative;
   overflow: hidden;
   display: flex;
@@ -1534,28 +1534,30 @@
 
 .pos-tile-badge {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  background: #6366f1;
+  top: 6px;
+  right: 6px;
+  background: #d0a047;
   color: #fff;
   font-size: .65rem;
   font-weight: 800;
   padding: .15rem .45rem;
   border-radius: 999px;
-  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  box-shadow: 0 2px 6px rgba(0,0,0,.2);
 }
 
 .pos-tile-body {
-  padding: .45rem .5rem;
+  padding: .5rem .55rem;
   display: flex;
   flex-direction: column;
-  gap: .2rem;
+  gap: .25rem;
   background: #fff;
+  flex: 1;
+  justify-content: space-between;
 }
 .pos-tile-title {
-  font-size: .75rem;
+  font-size: .78rem;
   font-weight: 700;
-  color: #111827;
+  color: #1e293b;
   line-height: 1.25;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1567,47 +1569,48 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: .15rem;
+  margin-top: .2rem;
 }
 .pos-tile-price-tag {
-  font-size: .8rem;
-  color: #059669;
+  font-size: .88rem;
+  color: #1e293b;
   font-weight: 800;
 }
 .pos-tile-add-btn {
-  background: #eef2ff;
-  color: #6366f1;
-  border: 1px solid #c7d2fe;
-  border-radius: 6px;
-  width: 22px;
-  height: 22px;
+  background: #d0a047;
+  color: #ffffff;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: .8rem;
+  font-size: .9rem;
   font-weight: 800;
+  box-shadow: 0 2px 6px rgba(208,160,71,.35);
+  transition: transform .15s ease, background .15s ease;
 }
 .pos-food-tile-img:hover .pos-tile-add-btn {
-  background: #6366f1;
-  color: #fff;
-  border-color: #6366f1;
+  background: #b88730;
+  transform: scale(1.12);
 }
 
 /* Category pills */
 .pos-cat-pill {
-  padding: .3rem .75rem;
+  padding: .35rem .85rem;
   border-radius: 999px;
-  font-size: .75rem;
+  font-size: .78rem;
   font-weight: 600;
   cursor: pointer;
   border: 1px solid var(--adm-border, #e5e7eb);
-  background: #f9fafb;
-  color: #374151;
+  background: #f8fafc;
+  color: #475569;
   transition: all .15s;
   white-space: nowrap;
 }
-.pos-cat-pill:hover  { border-color: #6366f1; color: #6366f1; background: #eef2ff; }
-.pos-cat-pill.active { background: #6366f1; color: #fff; border-color: #6366f1; box-shadow: 0 2px 8px rgba(99,102,241,.3); }
+.pos-cat-pill:hover  { border-color: #d0a047; color: #926017; background: #fffdf7; }
+.pos-cat-pill.active { background: #d0a047 !important; color: #fff !important; border-color: #d0a047 !important; box-shadow: 0 2px 8px rgba(208,160,71,.35) !important; font-weight: 700; }
 
 .pos-cat-pill-bar {
   display: flex;
@@ -2281,36 +2284,637 @@
   transform: scale(0.97);
 }
 
-/* 3-Column POS Billing Grid */
-.pos-billing-grid {
+/* ══════════════════════════════════════════════════════════════════════ */
+/* LIMRA RESTAURANT POS BILLING UI (MATCHING CANVA SPECIFICATION)         */
+/* ══════════════════════════════════════════════════════════════════════ */
+
+.pos-canva-app {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  font-family: inherit;
+}
+
+/* 1. Top Header Bar */
+.pos-canva-topbar {
+  background: #ffffff;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.pos-canva-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.pos-canva-brand-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #fdf4db, #fcebc2);
+  border: 1.5px solid #d0a047;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  box-shadow: 0 2px 8px rgba(208, 160, 71, 0.2);
+}
+.pos-canva-brand-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #1e293b;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.pos-canva-brand-sub {
+  font-size: 0.72rem;
+  color: #d0a047;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+/* Order Type Switcher */
+.pos-canva-types {
+  display: inline-flex;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 999px;
+  gap: 3px;
+  border: 1px solid #e2e8f0;
+}
+.pos-canva-types .pos-type-btn {
+  border-radius: 999px !important;
+  padding: 0.4rem 0.95rem !important;
+  font-size: 0.8rem !important;
+  font-weight: 700 !important;
+  min-height: 34px !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+.pos-canva-types .pos-type-btn.adm-btn-primary {
+  background: #d0a047 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(208, 160, 71, 0.4) !important;
+}
+.pos-canva-types .pos-type-btn.adm-btn-outline {
+  background: transparent !important;
+  color: #64748b !important;
+  box-shadow: none !important;
+}
+.pos-canva-types .pos-type-btn:hover {
+  color: #1e293b;
+}
+
+/* Table Badge Button */
+.pos-canva-table-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #fffdf7;
+  border: 1.5px solid #d0a047;
+  color: #926017;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 4px rgba(208, 160, 71, 0.15);
+}
+.pos-canva-table-pill:hover {
+  background: #fdf6e6;
+  border-color: #b88730;
+}
+
+/* Rounded Search Bar */
+.pos-canva-search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 340px;
+  min-width: 170px;
+}
+.pos-canva-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.85rem;
+  color: #94a3b8;
+  pointer-events: none;
+}
+.pos-canva-search-input {
+  width: 100%;
+  min-height: 38px;
+  border-radius: 999px;
+  padding: 0.45rem 2.8rem 0.45rem 2.3rem;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  font-size: 0.85rem;
+  color: #1e293b;
+  outline: none;
+  transition: all 0.15s;
+}
+.pos-canva-search-input:focus {
+  background: #ffffff;
+  border-color: #d0a047;
+  box-shadow: 0 0 0 3px rgba(208, 160, 71, 0.18);
+}
+.pos-canva-kbd {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #e2e8f0;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* Top Right status & user */
+.pos-canva-top-right {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.pos-canva-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #ecfdf5;
+  color: #059669;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid #a7f3d0;
+}
+.pos-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+}
+.pos-canva-user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #d0a047, #b88730);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(208, 160, 71, 0.3);
+}
+.pos-canva-close-btn {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pos-canva-close-btn:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+/* 2. Meta Ribbon Bar */
+.pos-canva-meta-bar {
+  background: #ffffff;
+  border-bottom: 1px solid #f1f5f9;
+  padding: 0.7rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.pos-table-selector-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.pos-meta-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #475569;
+}
+.pos-table-input {
+  max-width: 120px;
+  min-height: 34px;
+  border-radius: 8px;
+  border: 1.5px solid #e2e8f0;
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.6rem;
+  color: #1e293b;
+  background: #fff;
+}
+.pos-table-quick-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+.pos-table-pill-group {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+.pos-table-zone-tag {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 700;
+  margin-right: 2px;
+}
+.pos-customer-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #e2e8f0;
+}
+.pos-customer-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.15rem 0.6rem;
+  min-height: 34px;
+}
+.pos-cust-icon {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+.pos-cust-input {
+  border: none;
+  background: transparent;
+  font-size: 0.82rem;
+  color: #1e293b;
+  outline: none;
+  min-width: 140px;
+}
+.pos-delivery-grid-fields {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.pos-field-sublabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #475569;
+  display: block;
+  margin-bottom: 3px;
+}
+
+/* 3. Category Bar */
+.pos-canva-catbar {
+  background: #ffffff;
+  padding: 0.65rem 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.pos-canva-custom-btn {
+  background: #fffdf7;
+  border: 1.5px dashed #d0a047;
+  color: #926017;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.pos-canva-custom-btn:hover {
+  background: #d0a047;
+  color: #fff;
+}
+.pos-canva-manual-row {
+  background: #fffdf7;
+  border-bottom: 1px solid #f1f5f9;
+  padding: 0.65rem 1.25rem;
+}
+
+/* 4. Main 2-Column POS Layout */
+.pos-billing-grid.pos-canva-layout {
   display: grid;
-  grid-template-columns: 290px 1fr 370px;
+  grid-template-columns: 1fr 380px;
   gap: 1.25rem;
+  padding: 1.25rem;
+  background: #f8fafc;
   align-items: start;
 }
 
-@media (max-width: 1200px) {
-  .pos-billing-grid {
-    grid-template-columns: 270px 1fr 340px;
-    gap: 1rem;
-  }
-}
-
 @media (max-width: 1024px) {
-  .pos-billing-grid {
-    grid-template-columns: 1fr 360px;
-  }
-}
-
-@media (max-width: 768px) {
-  .pos-billing-grid {
+  .pos-billing-grid.pos-canva-layout {
     grid-template-columns: 1fr;
   }
 }
 
-.pos-col-tray {
+/* Menu Grid */
+.pos-canva-food-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.85rem;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+.pos-canva-food-grid::-webkit-scrollbar { width: 5px; }
+.pos-canva-food-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+
+/* Canva Bottom Action Bar */
+.pos-canva-bottom-bar {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+.pos-canva-hold-kot-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.pos-canva-action-btn {
+  min-height: 44px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.pos-btn-hold {
+  background: #fffdf9;
+  color: #926017;
+  border: 1.5px solid #d0a047;
+}
+.pos-btn-hold:hover {
+  background: #fdf5e2;
+  box-shadow: 0 2px 8px rgba(208, 160, 71, 0.25);
+}
+.pos-btn-kot {
+  background: #ffffff;
+  color: #1e293b;
+  border: 1.5px solid #cbd5e1;
+}
+.pos-btn-kot:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+.pos-btn-clear {
+  background: #ffffff;
+  color: #dc2626;
+  border: 1.5px solid #fecaca;
+}
+.pos-btn-clear:hover {
+  background: #fef2f2;
+  border-color: #ef4444;
+}
+.pos-btn-save {
+  background: #ffffff;
+  color: #475569;
+  border: 1.5px solid #cbd5e1;
+}
+.pos-btn-save:hover {
+  background: #f8fafc;
+}
+
+/* Right Cart & Settlement Card (Matching canva_image_4.png) */
+.pos-canva-cart-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1.2rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
   position: sticky;
   top: 1rem;
+}
+.pos-canva-cart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+.pos-canva-cart-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0;
+}
+.pos-canva-count-badge {
+  font-size: 0.72rem;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.pos-canva-badge-pill {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #926017;
+  background: #fffdf7;
+  border: 1px solid #e7c88b;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.pos-canva-cart-list {
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+.pos-canva-cart-list::-webkit-scrollbar { width: 4px; }
+.pos-canva-cart-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+
+/* Financial Summary (Matching Canva) */
+.pos-canva-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #f1f5f9;
+}
+.pos-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #475569;
+}
+.pos-summary-label {
+  font-weight: 600;
+}
+.pos-summary-val {
+  font-weight: 700;
+  color: #1e293b;
+}
+.pos-canva-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 0.35rem 0;
+}
+.pos-grand-total-row {
+  font-size: 1.25rem;
+  font-weight: 900;
+  color: #111827;
+  margin-top: 2px;
+}
+.pos-grand-label {
+  font-weight: 800;
+  color: #111827;
+}
+.pos-grand-val {
+  font-weight: 900;
+  color: #111827;
+  font-size: 1.35rem;
+}
+
+/* Extra Controls (Discount, Notes) */
+.pos-canva-extra-controls {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.55rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.pos-ctrl-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #475569;
+  margin: 0;
+}
+.pos-ctrl-input {
+  max-width: 70px;
+  min-height: 28px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: right;
+  background: #fff;
+}
+.pos-notes-textarea {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  resize: none;
+  background: #fff;
+  outline: none;
+}
+.pos-notes-textarea:focus {
+  border-color: #d0a047;
+}
+
+/* Payment Mode Grid (Matching Canva) */
+.pos-canva-pay-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.45rem;
+  margin-top: 0.2rem;
+}
+.pos-canva-pay-grid .pos-pay-mode-pill {
+  min-height: 42px !important;
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+  font-size: 0.85rem !important;
+  border: 1.5px solid #e2e8f0 !important;
+  background: #ffffff !important;
+  color: #475569 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  box-shadow: none !important;
+}
+.pos-canva-pay-grid .pos-pay-mode-pill.adm-btn-primary {
+  background: #d0a047 !important;
+  border-color: #d0a047 !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(208, 160, 71, 0.35) !important;
+}
+.pos-canva-pay-grid .pos-pay-mode-pill:hover {
+  border-color: #d0a047;
+}
+
+/* Primary Settle Button (Matching canva_image_4.png) */
+.pos-canva-settle-btn {
+  background: #d0a047;
+  color: #222222;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.05rem;
+  font-weight: 900;
+  min-height: 50px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 6px 20px rgba(208, 160, 71, 0.4);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.pos-canva-settle-btn:hover {
+  background: #c3943d;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(208, 160, 71, 0.45);
+}
+.pos-canva-settle-btn:active {
+  transform: scale(0.98);
+}
+.pos-btn-kbd {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  font-weight: 600;
 }
 
 /* FSSAI Veg / Non-Veg Indicator Badge */

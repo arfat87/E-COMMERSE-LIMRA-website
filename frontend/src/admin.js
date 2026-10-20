@@ -13349,6 +13349,22 @@ let allFoodsCache = [];
 let posActiveCat = "all";
 let posSelectedPlace = null; // { id, name, charge }
 
+function updatePosTableBadge() {
+  const badgeText = $('pos-table-badge-text');
+  const cartBadge = $('pos-cart-type-badge');
+  const tblInp = $('pos-table-number');
+  let label = 'Table 12';
+  if (posOrderType === 'delivery') {
+    label = 'Delivery';
+  } else if (posOrderType === 'pickup') {
+    label = 'Takeaway';
+  } else {
+    label = (tblInp && tblInp.value.trim()) ? tblInp.value.trim() : 'Table 12';
+  }
+  if (badgeText) badgeText.textContent = label;
+  if (cartBadge) cartBadge.textContent = label;
+}
+
 function syncPosOrderTypeState(type) {
   posOrderType = type;
   document.querySelectorAll('.pos-type-btn').forEach(b => {
@@ -13380,7 +13396,7 @@ function syncPosOrderTypeState(type) {
     if (custBadge) custBadge.innerHTML = '<span style="color:#ef4444;font-weight:700;">* Required for Delivery</span>';
     if (nameInp) nameInp.placeholder = 'Customer Name (Required for Delivery)';
     if (phoneInp) phoneInp.placeholder = '10-digit Mobile Number (Required)';
-    if (billBtnLabel) billBtnLabel.textContent = 'BILL & DISPATCH';
+    if (billBtnLabel) billBtnLabel.textContent = 'Create Bill (Delivery)';
     if (billBtnIcon) billBtnIcon.textContent = '🚗';
   } else if (type === 'pickup') {
     if (nameStar) nameStar.style.display = 'none';
@@ -13388,8 +13404,8 @@ function syncPosOrderTypeState(type) {
     if (custBadge) custBadge.innerHTML = '<span style="color:var(--adm-muted);">(Optional for Takeaway)</span>';
     if (nameInp) nameInp.placeholder = 'e.g. Salim Khan (Optional)';
     if (phoneInp) phoneInp.placeholder = 'e.g. 9876543210 (Optional)';
-    if (billBtnLabel) billBtnLabel.textContent = 'BILL & SETTLE (PICKUP)';
-    if (billBtnIcon) billBtnIcon.textContent = '⚡';
+    if (billBtnLabel) billBtnLabel.textContent = 'Create Bill (Pickup)';
+    if (billBtnIcon) billBtnIcon.textContent = '🗎';
     if (nameInp) nameInp.classList.remove('pos-input-invalid');
     if (phoneInp) phoneInp.classList.remove('pos-input-invalid');
   } else {
@@ -13399,11 +13415,13 @@ function syncPosOrderTypeState(type) {
     if (custBadge) custBadge.innerHTML = '<span style="color:var(--adm-muted);">(Optional for Table)</span>';
     if (nameInp) nameInp.placeholder = 'e.g. Salim Khan (Optional)';
     if (phoneInp) phoneInp.placeholder = 'e.g. 9876543210 (Optional)';
-    if (billBtnLabel) billBtnLabel.textContent = 'BILL & SETTLE';
-    if (billBtnIcon) billBtnIcon.textContent = '🧾';
+    if (billBtnLabel) billBtnLabel.textContent = 'Create Bill';
+    if (billBtnIcon) billBtnIcon.textContent = '🗎';
     if (nameInp) nameInp.classList.remove('pos-input-invalid');
     if (phoneInp) phoneInp.classList.remove('pos-input-invalid');
   }
+
+  updatePosTableBadge();
 
   if (typeof updatePosCartUI === 'function') {
     updatePosCartUI();
@@ -13593,26 +13611,39 @@ function updatePosCartUI() {
   const cartEl = $('pos-cart-items');
   if (!cartEl) return;
 
+  const allItems = (typeof getCombinedFoodItems === 'function') ? getCombinedFoodItems() : [];
+
   if (posCart.length === 0) {
-    cartEl.innerHTML = '<p style="color:var(--adm-muted);font-size:.85rem;text-align:center;padding:1rem;">No items added yet</p>';
+    cartEl.innerHTML = '<p style="color:var(--adm-muted);font-size:.85rem;text-align:center;padding:1.5rem 1rem;">🛒 No items added yet</p>';
   } else {
-    cartEl.innerHTML = posCart.map((item, idx) => `
-      <div style="display:flex;align-items:flex-start;gap:.5rem;padding:.45rem 0;border-bottom:1px solid var(--adm-border);">
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:.85rem;font-weight:700;color:#111827;line-height:1.2;word-break:break-word;">${escapeHtml(item.name)}</div>
-          ${item.notes ? `<div style="font-size:.72rem;color:#4f46e5;font-weight:600;font-style:italic;margin-top:2px;background:#eef2ff;display:inline-block;padding:1px 5px;border-radius:4px;">↳ Note: ${escapeHtml(item.notes)}</div>` : ''}
-          <div style="font-size:.75rem;color:var(--adm-muted);margin-top:2px;">₹${Number(item.price).toFixed(2)} each</div>
+    cartEl.innerHTML = posCart.map((item, idx) => {
+      const foodItem = allItems.find(f => (item.id && f.id === item.id) || (f.name && f.name.toLowerCase() === item.name.toLowerCase())) || item;
+      const isVeg = (typeof isFoodVeg === 'function') ? isFoodVeg(foodItem) : true;
+      const dotColor = isVeg ? '#16a34a' : '#dc2626';
+
+      return `
+        <div class="pos-cart-row" style="display:flex;align-items:center;justify-content:space-between;padding:.55rem 0;border-bottom:1px solid #f1f5f9;gap:.4rem;">
+          <div style="display:flex;align-items:flex-start;gap:.45rem;flex:1;min-width:0;">
+            <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${dotColor};margin-top:4px;flex-shrink:0;" title="${isVeg ? 'Vegetarian' : 'Non-Vegetarian'}"></span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:.84rem;font-weight:700;color:#1e293b;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.name)}</div>
+              ${item.notes ? `<div style="font-size:.7rem;color:#b45309;font-weight:600;font-style:italic;margin-top:2px;background:#fef3c7;display:inline-block;padding:1px 5px;border-radius:4px;">↳ ${escapeHtml(item.notes)}</div>` : ''}
+              <div style="font-size:.72rem;color:#64748b;margin-top:2px;">₹${Number(item.price).toFixed(0)} each</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:.35rem;flex-shrink:0;">
+            <button type="button" onclick="posEditItem(${idx})" style="padding:2px 5px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;cursor:pointer;color:#64748b;font-size:.7rem;" title="Edit dish or kitchen note">✏️</button>
+            <div style="display:inline-flex;align-items:center;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;padding:1px;">
+              <button type="button" onclick="posChangeQty(${idx},-1)" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;font-size:.85rem;display:flex;align-items:center;justify-content:center;font-weight:bold;color:#475569;">−</button>
+              <span style="min-width:20px;text-align:center;font-weight:800;font-size:.82rem;color:#1e293b;">${item.qty}</span>
+              <button type="button" onclick="posChangeQty(${idx},1)" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;font-size:.85rem;display:flex;align-items:center;justify-content:center;font-weight:bold;color:#475569;">+</button>
+            </div>
+            <span style="min-width:55px;text-align:right;font-weight:800;font-size:.88rem;color:#1e293b;">₹${(item.price * item.qty).toFixed(0)}</span>
+            <button type="button" onclick="posRemoveItem(${idx})" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;color:#94a3b8;font-size:.85rem;display:flex;align-items:center;justify-content:center;transition:color .15s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'" title="Remove">✕</button>
+          </div>
         </div>
-        <div style="display:flex;align-items:center;gap:.25rem;">
-          <button type="button" onclick="posEditItem(${idx})" style="padding:2px 6px;border:1px solid #c7d2fe;border-radius:6px;background:#eef2ff;cursor:pointer;color:#4f46e5;font-size:.75rem;font-weight:700;" title="Edit dish name, price or kitchen note">✏️ Edit</button>
-          <button type="button" onclick="posChangeQty(${idx},-1)" style="width:24px;height:24px;border:1px solid var(--adm-border);border-radius:6px;background:#f9fafb;cursor:pointer;font-size:.85rem;display:flex;align-items:center;justify-content:center;font-weight:bold;">−</button>
-          <span style="min-width:22px;text-align:center;font-weight:800;font-size:.85rem;">${item.qty}</span>
-          <button type="button" onclick="posChangeQty(${idx},1)" style="width:24px;height:24px;border:1px solid var(--adm-border);border-radius:6px;background:#f9fafb;cursor:pointer;font-size:.85rem;display:flex;align-items:center;justify-content:center;font-weight:bold;">+</button>
-          <button type="button" onclick="posRemoveItem(${idx})" style="width:24px;height:24px;border:1px solid #fca5a5;border-radius:6px;background:#fef2f2;cursor:pointer;color:#ef4444;font-size:.8rem;display:flex;align-items:center;justify-content:center;" title="Remove">✕</button>
-        </div>
-        <span style="min-width:60px;text-align:right;font-weight:800;font-size:.88rem;color:#111827;">₹${(item.price * item.qty).toFixed(2)}</span>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   }
 
   const t = getPosCartTotals();
@@ -13634,9 +13665,10 @@ function updatePosCartUI() {
   if ($('pos-sgst-rate-label')) $('pos-sgst-rate-label').textContent = t.sgstRate;
   if ($('pos-cgst-amt')) $('pos-cgst-amt').textContent = `₹${t.cgst.toFixed(2)}`;
   if ($('pos-sgst-amt')) $('pos-sgst-amt').textContent = `₹${t.sgst.toFixed(2)}`;
+  if ($('pos-gst-total-val')) $('pos-gst-total-val').textContent = (t.cgst + t.sgst).toFixed(2);
   
   const delFeeWrap = $('pos-delivery-fee-wrap');
-  if (delFeeWrap) delFeeWrap.style.display = posOrderType === 'delivery' ? 'block' : 'none';
+  if (delFeeWrap) delFeeWrap.style.display = posOrderType === 'delivery' ? 'flex' : 'none';
   const delRow = $('pos-delivery-charge-row');
   if (delRow) {
     delRow.style.display = (posOrderType === 'delivery' && t.deliveryFee > 0) ? 'flex' : 'none';
@@ -13644,6 +13676,11 @@ function updatePosCartUI() {
   }
 
   if ($('pos-grand-total')) $('pos-grand-total').textContent = `₹${t.grand.toFixed(2)}`;
+
+  // Update item count badge & context badge
+  const totalItemCount = posCart.reduce((sum, item) => sum + (item.qty || 1), 0);
+  if ($('pos-cart-count-badge')) $('pos-cart-count-badge').textContent = `${totalItemCount} item${totalItemCount === 1 ? '' : 's'}`;
+  updatePosTableBadge();
 
   // Re-render food grid to update in-cart badges
   renderFoodGrid($('pos-food-search')?.value);
@@ -15783,7 +15820,17 @@ async function initBillingPanel() {
         tInp.value = `Table ${btn.dataset.tbl}`;
         tInp.classList.remove('pos-input-invalid');
       }
+      updatePosTableBadge();
     });
+  });
+
+  $('pos-table-number')?.addEventListener('input', updatePosTableBadge);
+  $('pos-top-table-badge')?.addEventListener('click', () => {
+    const tInp = $('pos-table-number');
+    if (tInp) {
+      tInp.focus();
+      tInp.select?.();
+    }
   });
 
   // 6. Bind Order Type Buttons
