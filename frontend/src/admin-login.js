@@ -362,6 +362,21 @@ function clearUrlTokens() {
 }
 
 async function init() {
+  const isLocalDev = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '0.0.0.0' ||
+    (typeof import.meta !== 'undefined' && import.meta.env?.DEV === true)
+  );
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isStrict = urlParams?.get('strict_auth') === 'true';
+
+  // 🚀 In npm run dev (localhost), bypass login screen and redirect directly to admin.html
+  if (isLocalDev && !isStrict) {
+    window.location.replace('/admin.html');
+    return;
+  }
+
   handleEmailVerifyCallback();
   const hasCallbackError = handleOAuthCallback();
 
@@ -406,7 +421,6 @@ async function init() {
   initAuthUI();
 
   // 3. Localhost developer convenience
-  const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   if (isLocalDev) {
     const banner = $('dev-quick-login-banner');
     if (banner) show(banner);

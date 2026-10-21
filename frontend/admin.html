@@ -82,7 +82,7 @@
     <aside id="sidebar" class="adm-sidebar">
     <div class="adm-sidebar-head">
       <p class="adm-brand" style="display:flex;align-items:center;gap:8px;"><img src="/images/logo.png" alt="LIMRA Logo" style="width:30px;height:30px;border-radius:50%;object-fit:cover;" /><span class="adm-nav-label">LIMRA</span></p>
-      <button type="button" id="sidebar-close-btn" class="adm-sidebar-close" aria-label="Close menu">&times;</button>
+      <button type="button" id="sidebar-close-btn" class="adm-sidebar-close" aria-label="Toggle Sidebar" title="Turn off sidebar (Ctrl+B)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg></button>
     </div>
 
     <nav class="adm-nav">
@@ -202,7 +202,7 @@
 
   <div class="adm-main">
     <header class="adm-header">
-      <button id="sidebar-toggle" class="adm-menu-toggle" aria-label="Menu">
+      <button id="sidebar-toggle" class="adm-menu-toggle" aria-label="Toggle Sidebar" title="Toggle Sidebar (On/Off) [Ctrl+B]">
         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
       <div class="adm-search">
@@ -713,6 +713,19 @@
           </div>
         </div>
 
+        <!-- View Switcher Tabs: Live Orders vs Recent Bills -->
+        <div class="orders-tab-switcher" style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1.25rem;border-bottom:2px solid var(--adm-border);padding-bottom:0.75rem;flex-wrap:wrap;">
+          <button type="button" id="tab-orders-live" class="adm-btn adm-btn-primary" style="font-weight:700;display:inline-flex;align-items:center;gap:0.4rem;padding:0.45rem 1.1rem;border-radius:8px;">
+            <span>📦</span> Live Orders &amp; Dispatch
+          </button>
+          <button type="button" id="tab-orders-bills" class="adm-btn adm-btn-outline" style="font-weight:700;display:inline-flex;align-items:center;gap:0.4rem;padding:0.45rem 1.1rem;border-radius:8px;">
+            <span>🧾</span> Recent Bills &amp; Transactions
+            <span id="orders-bills-count-badge" class="adm-badge" style="background:#eef2ff;color:#4f46e5;font-weight:800;font-size:0.75rem;padding:2px 7px;border-radius:999px;">0</span>
+          </button>
+        </div>
+
+        <!-- 1. LIVE ORDERS SECTION -->
+        <div id="orders-live-section">
         <!-- 2. Smart Channel Tabs & Filters Toolbar -->
         <div class="adm-filters" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem;">
           <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;" id="order-type-pills">
@@ -784,6 +797,51 @@
           </table>
         </div>
         <div id="orders-pagination" class="adm-pagination" style="margin-top:1rem;"></div>
+        </div>
+
+        <!-- 2. RECENT BILLS SECTION (Moved from Billing) -->
+        <div id="orders-bills-section" style="display:none;">
+          <div id="billing-total-section">
+            <!-- Total Bills Table Card -->
+            <div class="adm-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.75rem;">
+                <div>
+                  <h3 style="font-size:1rem;font-weight:800;margin:0;">📊 Recent Bills &amp; Transactions</h3>
+                  <p style="font-size:.78rem;color:var(--adm-muted);margin:.15rem 0 0 0;">Complete list of bills generated in the billing system</p>
+                </div>
+                <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+                  <input id="billing-table-search" type="search" class="adm-input" placeholder="🔍 Search bill #, customer, phone..." style="max-width:240px;font-size:.82rem;" />
+                  <select id="billing-table-type-filter" class="adm-select" style="font-size:.82rem;">
+                    <option value="all">All Types</option>
+                    <option value="table">🪑 Dine-in Table</option>
+                    <option value="delivery">🚗 Delivery</option>
+                    <option value="pickup">🥡 Pickup</option>
+                  </select>
+                  <button id="billing-table-refresh-btn" class="adm-btn adm-btn-outline adm-btn-sm" title="Refresh list">🔄</button>
+                </div>
+              </div>
+
+              <div style="overflow-x:auto;">
+                <table class="adm-table" id="billing-bills-table" style="width:100%;border-collapse:collapse;">
+                  <thead>
+                    <tr style="background:#f9fafb;border-bottom:1px solid var(--adm-border);">
+                      <th style="padding:.75rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Bill #</th>
+                      <th style="padding:.75rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Time</th>
+                      <th style="padding:.75rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Customer</th>
+                      <th style="padding:.75rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Type / Table</th>
+                      <th style="padding:.75rem;text-align:right;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Amount</th>
+                      <th style="padding:.75rem;text-align:center;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Status</th>
+                      <th style="padding:.75rem;text-align:right;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-bills-tbody">
+                    <tr><td colspan="7" style="text-align:center;padding:1.5rem;color:var(--adm-muted);">Loading billing transactions...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -1080,7 +1138,8 @@
 
       <!-- Order Detail / Billing -->
       <section id="panel-order-detail" class="adm-panel">
-        <div class="adm-page-head">
+        <!-- Outer Head (Hidden by default to give POS full screen space, elements kept for backward compatibility) -->
+        <div class="adm-page-head" id="billing-outer-head" style="display:none;">
           <div>
             <h1 class="adm-page-title">🧾 Billing &amp; POS</h1>
             <p class="adm-page-sub">Create bills, manage running tables, and settle transactions</p>
@@ -1095,30 +1154,33 @@
           </div>
         </div>
 
-        <!-- POS CREATOR (Shown when "+ Create New Bill" is active) -->
-        <div id="billing-pos" class="pos-canva-app" style="display:none;margin-bottom:1.5rem;">
+        <!-- POS CREATOR (Open by default in Billing section) -->
+        <div id="billing-pos" class="pos-canva-app" style="display:block;">
           
-          <!-- CANVA TOP HEADER BAR -->
-          <div class="pos-canva-topbar">
-            <!-- Left: Brand / Restaurant Title -->
+          <!-- 1. COMPACT TOP HEADER BAR / POS TOOLBAR -->
+          <header class="pos-canva-topbar">
+            <!-- Left: Sidebar Toggle & Brand -->
             <div class="pos-canva-brand">
+              <button type="button" id="pos-sidebar-toggle-btn" class="pos-canva-sidebar-btn" title="Toggle Sidebar On/Off (Ctrl+B)">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
               <div class="pos-canva-brand-icon">👑</div>
-              <div>
+              <div class="pos-brand-text-wrap">
                 <div class="pos-canva-brand-title">LIMRA Restaurant</div>
                 <div class="pos-canva-brand-sub" id="pos-billing-subtitle">POS Billing Workstation</div>
               </div>
             </div>
 
-            <!-- Middle: Order Type Pill Switcher -->
+            <!-- Middle: Order Type Segmented Switcher -->
             <div class="pos-canva-types" id="pos-type-selector">
               <button type="button" class="pos-type-btn adm-btn adm-btn-primary" data-type="table">
-                🪑 Dine In
+                <span class="pos-type-icon">🪑</span> <span>Dine In</span>
               </button>
               <button type="button" class="pos-type-btn adm-btn adm-btn-outline" data-type="pickup">
-                🥡 Takeaway
+                <span class="pos-type-icon">🥡</span> <span>Takeaway</span>
               </button>
               <button type="button" class="pos-type-btn adm-btn adm-btn-outline" data-type="delivery">
-                🚗 Delivery
+                <span class="pos-type-icon">🚗</span> <span>Delivery</span>
               </button>
             </div>
 
@@ -1131,25 +1193,31 @@
               </button>
             </div>
 
-            <!-- Dish Search Bar (Rounded like Canva) -->
-            <div class="pos-canva-search-wrap">
-              <span class="pos-canva-search-icon">🔍</span>
-              <input id="pos-food-search" type="search" class="pos-canva-search-input" placeholder="Search menu items..." autocomplete="off" />
-              <kbd class="pos-canva-kbd" title="Shortcut key">F1</kbd>
+            <!-- Quick Action Links (Held Orders, Orders List, Refresh) -->
+            <div class="pos-top-quick-actions">
+              <button type="button" id="pos-quick-held-btn" class="pos-top-action-btn" title="View Held Orders">
+                <span>⏸️</span> <span class="pos-top-btn-text">Held Orders</span>
+              </button>
+              <button type="button" id="pos-quick-history-btn" class="pos-top-action-btn" title="View Order History">
+                <span>🧾</span> <span class="pos-top-btn-text">Orders List</span>
+              </button>
+              <button type="button" id="pos-quick-refresh-btn" class="pos-top-action-btn" title="Refresh POS Menu & Bills">
+                <span>🔄</span>
+              </button>
             </div>
 
             <!-- Right: Status, Avatar & Close Button -->
             <div class="pos-canva-top-right">
-              <div class="pos-canva-status-pill">
+              <div class="pos-canva-status-pill" title="POS System is Online">
                 <span class="pos-status-dot"></span>
                 <span>Online</span>
               </div>
               <div class="pos-canva-user-avatar" title="Logged in Cashier">AS</div>
               <button type="button" id="pos-close-btn" class="pos-canva-close-btn" title="Exit POS Billing">✕ Close POS</button>
             </div>
-          </div>
+          </header>
 
-          <!-- META CONTEXT DRAWER / BAR (Customer Details, Tables, Delivery Place) -->
+          <!-- 2. CONTEXT DRAWER / BAR (Customer Details, Tables, Delivery Place) -->
           <div id="pos-meta-bar" class="pos-canva-meta-bar">
             
             <!-- Table Selection Area (Visible when Order Type = Table) -->
@@ -1189,7 +1257,7 @@
               <div class="pos-delivery-grid-fields">
                 <div style="position:relative;flex:1;min-width:240px;">
                   <label class="pos-field-sublabel">📍 Delivery Area / Destination <span style="color:#ef4444;">*</span></label>
-                  <input id="pos-place-search" type="search" class="adm-input" placeholder="🔍 Search place (e.g. Contai, Egra)..." autocomplete="off" style="width:100%;min-height:38px;" />
+                  <input id="pos-place-search" type="search" class="adm-input" placeholder="🔍 Search place (e.g. Contai, Egra)..." autocomplete="off" style="width:100%;min-height:36px;" />
                   <div id="pos-place-suggestions" class="pos-place-dropdown" style="position:absolute;top:100%;left:0;right:0;z-index:99;background:#fff;border:1px solid var(--adm-border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;display:none;margin-top:3px;"></div>
                   <div id="pos-selected-place-chip" style="display:none;margin-top:.35rem;align-items:center;justify-content:space-between;background:#fef9ee;border:1px solid #e7c88b;border-radius:6px;padding:.25rem .5rem;">
                     <span style="font-size:.78rem;font-weight:700;color:#926017;" id="pos-selected-place-text">📍 Contai (Charge: ₹30)</span>
@@ -1199,7 +1267,7 @@
                 </div>
                 <div style="flex:1;min-width:240px;">
                   <label class="pos-field-sublabel">🏠 House / Street / Landmark</label>
-                  <input id="pos-delivery-address" type="text" class="adm-input" placeholder="House/Flat No., Road, Landmark..." style="width:100%;min-height:38px;" />
+                  <input id="pos-delivery-address" type="text" class="adm-input" placeholder="House/Flat No., Road, Landmark..." style="width:100%;min-height:36px;" />
                 </div>
               </div>
             </div>
@@ -1222,79 +1290,92 @@
             </div>
           </div>
 
-          <!-- CANVA CATEGORY TABS BAR -->
-          <div class="pos-canva-catbar">
-            <!-- Category Pills Bar (Horizontal Scrollable) -->
-            <div id="pos-category-pills" class="pos-cat-pill-bar"></div>
-            <!-- Custom Item Button -->
-            <button id="pos-food-manual-btn" type="button" class="pos-canva-custom-btn" title="Add a custom dish to ticket">
-              + Custom Item
-            </button>
-          </div>
-
-          <!-- Custom Food Manual Input Row (Hidden by default) -->
-          <div id="pos-manual-row" class="pos-canva-manual-row" style="display:none;">
-            <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;width:100%;">
-              <span style="font-size:.78rem;font-weight:700;color:#1e293b;margin-right:4px;">➕ Custom Dish:</span>
-              <input id="pos-manual-name" type="text" class="adm-input" placeholder="Dish name (e.g. Special Chai)" style="flex:2;min-width:140px;min-height:36px;font-size:0.82rem;" />
-              <input id="pos-manual-price" type="number" class="adm-input" placeholder="Price ₹" min="0" step="0.01" style="width:90px;min-height:36px;font-size:0.82rem;" />
-              <input id="pos-manual-qty" type="number" class="adm-input" placeholder="Qty" min="1" value="1" style="width:60px;min-height:36px;font-size:0.82rem;" />
-              <input id="pos-manual-notes" type="text" class="adm-input" placeholder="Kitchen note (optional)" style="flex:1;min-width:130px;min-height:36px;font-size:0.82rem;" />
-              <button id="pos-manual-add" class="adm-btn adm-btn-primary" style="min-height:36px;padding:0 0.85rem;background:#d0a047;border-color:#d0a047;color:#fff;font-weight:700;">Add to Cart</button>
-            </div>
-          </div>
-
-          <!-- MAIN 2-COLUMN WORKSTATION (Left: Menu & Quick Toolbar; Right: Current Order Tray) -->
-          <div class="pos-billing-grid pos-canva-layout">
+          <!-- 3. MAIN 3-COLUMN WORKSPACE (Full Viewport Height) -->
+          <div class="pos-workspace-3col">
             
-            <!-- LEFT COLUMN: Food Catalog Grid + Bottom Action Toolbar -->
-            <div class="pos-canva-menu-col">
-              <!-- Food Picture Grid -->
+            <!-- COLUMN 1: Categories Sidebar (Row by Row vertical Ant Design list) -->
+            <aside class="pos-col-categories" id="pos-category-sidebar">
+              <div class="pos-cat-sidebar-header">
+                <span class="pos-cat-sidebar-title">Categories</span>
+                <span class="pos-cat-sidebar-badge" id="pos-total-cats-badge">All</span>
+              </div>
+              
+              <!-- Vertical Category Menu List (Row by Row) -->
+              <div id="pos-category-pills" class="pos-cat-menu-list"></div>
+
+              <!-- Pinned Footer in Category Sidebar: Custom Dish Button -->
+              <div class="pos-cat-sidebar-foot">
+                <button id="pos-food-manual-btn" type="button" class="pos-canva-custom-btn" title="Add a custom dish to ticket">
+                  <span>➕</span> <span>Custom Item</span>
+                </button>
+              </div>
+            </aside>
+
+            <!-- COLUMN 2: Food Items Catalog (Primary vertically scrollable area) -->
+            <main class="pos-col-catalog" id="pos-catalog-container">
+              <!-- Custom Food Manual Input Row (Hidden by default) -->
+              <div id="pos-manual-row" class="pos-canva-manual-row" style="display:none;">
+                <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;width:100%;">
+                  <span style="font-size:.78rem;font-weight:700;color:#1e293b;margin-right:4px;">➕ Custom Dish:</span>
+                  <input id="pos-manual-name" type="text" class="adm-input" placeholder="Dish name (e.g. Special Chai)" style="flex:2;min-width:140px;min-height:36px;font-size:0.82rem;" />
+                  <input id="pos-manual-price" type="number" class="adm-input" placeholder="Price ₹" min="0" step="0.01" style="width:90px;min-height:36px;font-size:0.82rem;" />
+                  <input id="pos-manual-qty" type="number" class="adm-input" placeholder="Qty" min="1" value="1" style="width:60px;min-height:36px;font-size:0.82rem;" />
+                  <input id="pos-manual-notes" type="text" class="adm-input" placeholder="Kitchen note (optional)" style="flex:1;min-width:130px;min-height:36px;font-size:0.82rem;" />
+                  <button id="pos-manual-add" class="adm-btn adm-btn-primary" style="min-height:36px;padding:0 0.85rem;background:#d0a047;border-color:#d0a047;color:#fff;font-weight:700;">Add to Cart</button>
+                </div>
+              </div>
+
+              <!-- Catalog Toolbar: Active Category, Search Bar & Veg Filter -->
+              <div class="pos-catalog-toolbar">
+                <div class="pos-catalog-active-cat">
+                  <span id="pos-catalog-cat-name" class="pos-cat-active-name">🍽️ All Dishes</span>
+                  <span id="pos-catalog-cat-count" class="pos-catalog-count-pill">Loading...</span>
+                </div>
+                
+                <div class="pos-catalog-search-box">
+                  <span class="pos-catalog-search-icon">🔍</span>
+                  <input id="pos-food-search" type="search" class="pos-catalog-search-input" placeholder="Search menu dishes by name or category... (F1)" autocomplete="off" />
+                  <button type="button" id="pos-food-search-clear" class="pos-search-clear-btn" style="display:none;" title="Clear search">✕</button>
+                  <kbd class="pos-canva-kbd" title="Shortcut key">F1</kbd>
+                </div>
+
+                <button type="button" id="pos-veg-filter-btn" class="pos-veg-toggle-pill" data-veg-only="false" title="Show only Vegetarian dishes">
+                  <span class="pos-veg-dot-sm"></span>
+                  <span>Veg Only</span>
+                </button>
+              </div>
+
+              <!-- Food Dishes Grid (Responsive, Independent Vertical Scroll) -->
               <div id="pos-food-grid" class="pos-canva-food-grid">
                 <div style="grid-column:1/-1;text-align:center;color:var(--adm-muted);font-size:.85rem;padding:2rem 0;">Loading menu items...</div>
               </div>
+            </main>
 
-              <!-- CANVA BOTTOM ACTION TOOLBAR (Hold, KOT, Clear, Save Draft) -->
-              <div class="pos-canva-bottom-bar">
-                <!-- Group with HOLD & KOT -->
-                <div id="pos-hold-kot-group" class="pos-canva-hold-kot-pair">
-                  <button type="button" id="pos-kot-hold-btn" class="pos-canva-action-btn pos-btn-hold" title="Hold Order (F1)">
-                    <span>⏸️</span> <span>(F1) Hold Order</span>
-                  </button>
-                  <button type="button" id="pos-kot-only-btn" class="pos-canva-action-btn pos-btn-kot" title="Print KOT & Send to Kitchen">
-                    <span>👨‍🍳</span> <span>KOT</span>
-                  </button>
+            <!-- COLUMN 3: Cart & Billing Summary (Fixed right column with scrollable items & anchored footer) -->
+            <aside class="pos-col-cart" id="pos-cart-panel">
+              <!-- Cart Header -->
+              <div class="pos-cart-panel-header">
+                <div class="pos-cart-header-left">
+                  <span class="pos-cart-header-title">Order Ticket</span>
+                  <span id="pos-cart-count-badge" class="pos-canva-count-badge">0 items</span>
                 </div>
-                <!-- Clear Cart Button -->
-                <button type="button" id="pos-cart-clear-btn" class="pos-canva-action-btn pos-btn-clear" title="Clear all items">
-                  <span>🗑️</span> <span>Clear</span>
-                </button>
-                <!-- Save Draft Button -->
-                <button type="button" id="pos-save-only-btn" class="pos-canva-action-btn pos-btn-save" title="Save Order Draft">
-                  <span>💾</span> <span>Save Draft</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- RIGHT COLUMN: Order Ticket Tray & Settlement Panel (Matches canva_image_4.png) -->
-            <div class="pos-canva-cart-col">
-              <div class="pos-canva-cart-card" id="pos-cart-card">
-                
-                <!-- Ticket Header -->
-                <div class="pos-canva-cart-header">
-                  <div style="display:flex;align-items:center;gap:0.45rem;">
-                    <h3 class="pos-canva-cart-title">Current Order</h3>
-                    <span id="pos-cart-count-badge" class="pos-canva-count-badge">0 items</span>
-                  </div>
+                <div class="pos-cart-header-right">
                   <span id="pos-cart-type-badge" class="pos-canva-badge-pill">Table 12</span>
+                  <button type="button" id="pos-cart-clear-btn" class="pos-cart-clear-icon-btn" title="Clear all items from ticket">
+                    <span>🗑️ Clear</span>
+                  </button>
                 </div>
+              </div>
 
-                <!-- Scrollable Items List (Matches Canva) -->
-                <div id="pos-cart-items" class="pos-canva-cart-list">
-                  <p style="color:var(--adm-muted);font-size:.85rem;text-align:center;padding:1.5rem 1rem;">🛒 No items added yet</p>
-                </div>
+              <!-- Scrollable Cart Items List -->
+              <div id="pos-cart-items" class="pos-cart-panel-items">
+                <p style="color:var(--adm-muted);font-size:.85rem;text-align:center;padding:2rem 1rem;">🛒 No items added yet</p>
+              </div>
 
-                <!-- Financial Calculation Breakdown (Matches canva_image_4.png) -->
+              <!-- Fixed Anchored Billing Footer -->
+              <div class="pos-cart-panel-footer" id="pos-cart-summary-footer">
+                
+                <!-- Financial Calculation Summary -->
                 <div class="pos-canva-summary">
                   <div class="pos-summary-row">
                     <span class="pos-summary-label">Subtotal</span>
@@ -1313,9 +1394,9 @@
                   
                   <div class="pos-summary-row">
                     <span class="pos-summary-label">GST (5%)</span>
-                    <span style="font-weight:700;font-size:0.88rem;color:#1e293b;">
+                    <span style="font-weight:700;font-size:0.85rem;color:#1e293b;">
                       ₹<span id="pos-gst-total-val">0.00</span>
-                      <small style="font-size:0.7rem;color:#64748b;font-weight:400;margin-left:2px;">(CGST <span id="pos-cgst-amt">₹0.00</span> + SGST <span id="pos-sgst-amt">₹0.00</span>)</small>
+                      <small style="font-size:0.68rem;color:#64748b;font-weight:400;margin-left:2px;">(CGST <span id="pos-cgst-amt">₹0.00</span> + SGST <span id="pos-sgst-amt">₹0.00</span>)</small>
                     </span>
                     <span id="pos-cgst-rate-label" style="display:none;">2.5</span>
                     <span id="pos-sgst-rate-label" style="display:none;">2.5</span>
@@ -1341,34 +1422,28 @@
                     <label class="pos-ctrl-label">Discount (%):</label>
                     <div style="display:flex;align-items:center;gap:0.35rem;">
                       <input id="pos-discount-pct" type="number" class="pos-ctrl-input" placeholder="0" min="0" max="100" step="0.5" />
-                      <span id="pos-discount-calc-preview" style="font-size:.75rem;color:#64748b;">-₹0.00</span>
+                      <span id="pos-discount-calc-preview" style="font-size:.72rem;color:#64748b;">-₹0.00</span>
                     </div>
                   </div>
 
                   <!-- Delivery Fee Input (Only visible when delivery) -->
-                  <div id="pos-delivery-fee-wrap" style="display:none;align-items:center;justify-content:space-between;gap:0.5rem;margin-top:0.35rem;">
+                  <div id="pos-delivery-fee-wrap" style="display:none;align-items:center;justify-content:space-between;gap:0.5rem;margin-top:0.25rem;">
                     <label class="pos-ctrl-label">Delivery Fee (₹):</label>
                     <input id="pos-delivery-fee" type="number" class="pos-ctrl-input" placeholder="0" min="0" step="1" value="0" />
                   </div>
 
                   <!-- Kitchen Notes -->
-                  <div style="margin-top:0.35rem;">
+                  <div style="margin-top:0.25rem;">
                     <textarea id="pos-notes" class="pos-notes-textarea" rows="1" placeholder="Kitchen / Order notes (e.g. less spicy)..."></textarea>
                   </div>
                 </div>
 
-                <!-- Payment Mode Buttons (Matches canva_image_4.png) -->
+                <!-- Payment Mode Buttons -->
                 <div class="pos-canva-payment-section">
                   <div class="pos-canva-pay-grid" id="pos-quick-pay-modes">
-                    <button type="button" class="pos-pay-mode-pill adm-btn adm-btn-outline" data-pay="cash">
-                      Cash
-                    </button>
-                    <button type="button" class="pos-pay-mode-pill adm-btn adm-btn-primary" data-pay="upi">
-                      UPI
-                    </button>
-                    <button type="button" class="pos-pay-mode-pill adm-btn adm-btn-outline" data-pay="card">
-                      Card
-                    </button>
+                    <button type="button" class="pos-pay-mode-pill adm-btn adm-btn-outline" data-pay="cash">Cash</button>
+                    <button type="button" class="pos-pay-mode-pill adm-btn adm-btn-primary" data-pay="upi">UPI</button>
+                    <button type="button" class="pos-pay-mode-pill adm-btn adm-btn-outline" data-pay="card">Card</button>
                   </div>
                   <select id="pos-payment-mode" class="adm-select" style="display:none;">
                     <option value="cash">Cash</option>
@@ -1378,58 +1453,32 @@
                   </select>
                 </div>
 
-                <!-- Primary Bottom Settle Button (Matches canva_image_4.png) -->
-                <button type="button" id="pos-kot-bill-btn" class="pos-canva-settle-btn">
-                  <span id="pos-bill-btn-icon">🗎</span>
-                  <span id="pos-bill-btn-label">Create Bill</span>
-                  <span class="pos-btn-kbd">(F2)</span>
-                </button>
+                <!-- Primary Bottom Settle & Action Buttons -->
+                <div class="pos-cart-action-group">
+                  <!-- Group with HOLD & KOT (Shown for Dine-In, hidden for Takeaway/Delivery) -->
+                  <div id="pos-hold-kot-group" class="pos-canva-hold-kot-pair">
+                    <button type="button" id="pos-kot-hold-btn" class="pos-canva-action-btn pos-btn-hold" title="Hold Order (F1)">
+                      <span>⏸️</span> <span>(F1) Hold</span>
+                    </button>
+                    <button type="button" id="pos-kot-only-btn" class="pos-canva-action-btn pos-btn-kot" title="Print KOT & Send to Kitchen">
+                      <span>👨‍🍳</span> <span>KOT</span>
+                    </button>
+                  </div>
+                  
+                  <!-- Main Settle / Bill Button -->
+                  <button type="button" id="pos-kot-bill-btn" class="pos-canva-settle-btn">
+                    <span id="pos-bill-btn-icon">🗎</span>
+                    <span id="pos-bill-btn-label">Create Bill &amp; Settle</span>
+                    <span class="pos-btn-kbd">(F2)</span>
+                  </button>
+                </div>
+
+                <!-- Kept for backward compatibility -->
+                <button type="button" id="pos-save-only-btn" style="display:none;">Save Draft</button>
 
               </div>
-            </div>
+            </aside>
 
-          </div>
-        </div>
-
-        <!-- TOTAL BILLS OVERVIEW SECTION (All Bills Created in Billing / POS) -->
-        <div id="billing-total-section">
-          <!-- Total Bills Table Card -->
-          <div class="adm-card">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.75rem;">
-              <div>
-                <h3 style="font-size:1rem;font-weight:800;margin:0;">📊 Recent Bills &amp; Transactions</h3>
-                <p style="font-size:.78rem;color:var(--adm-muted);margin:.15rem 0 0 0;">Complete list of bills generated in the billing system</p>
-              </div>
-              <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
-                <input id="billing-table-search" type="search" class="adm-input" placeholder="🔍 Search bill #, customer, phone..." style="max-width:240px;font-size:.82rem;" />
-                <select id="billing-table-type-filter" class="adm-select" style="font-size:.82rem;">
-                  <option value="all">All Types</option>
-                  <option value="table">🪑 Dine-in Table</option>
-                  <option value="delivery">🚗 Delivery</option>
-                  <option value="pickup">🥡 Pickup</option>
-                </select>
-                <button id="billing-table-refresh-btn" class="adm-btn adm-btn-outline adm-btn-sm" title="Refresh list">🔄</button>
-              </div>
-            </div>
-
-            <div style="overflow-x:auto;">
-              <table class="adm-table" id="billing-bills-table" style="width:100%;border-collapse:collapse;">
-                <thead>
-                  <tr style="background:#f9fafb;border-bottom:1px solid var(--adm-border);">
-                    <th style="padding:.75rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Bill #</th>
-                    <th style="padding:.75rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Time</th>
-                    <th style="padding:.75rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Customer</th>
-                    <th style="padding:.75rem;text-align:left;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Type / Table</th>
-                    <th style="padding:.75rem;text-align:right;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Amount</th>
-                    <th style="padding:.75rem;text-align:center;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Status</th>
-                    <th style="padding:.75rem;text-align:right;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="billing-bills-tbody">
-                  <tr><td colspan="7" style="text-align:center;padding:1.5rem;color:var(--adm-muted);">Loading billing transactions...</td></tr>
-                </tbody>
-              </table>
-            </div>
           </div>
         </div>
 
@@ -1438,7 +1487,8 @@
           <div class="adm-page-head" style="margin-top:0;padding-top:0;">
             <div>
               <div style="display:flex;align-items:center;gap:.5rem;">
-                <button id="billing-detail-back-btn" class="adm-btn adm-btn-outline adm-btn-sm">← Back to Bills</button>
+                <button id="billing-detail-back-btn" class="adm-btn adm-btn-outline adm-btn-sm">← Back to POS</button>
+                <button type="button" id="billing-detail-orders-btn" class="adm-btn adm-btn-outline adm-btn-sm">📦 View Order List</button>
                 <h2 class="adm-page-title" id="order-detail-title" style="font-size:1.2rem;margin:0;">Order Detail</h2>
               </div>
               <p class="adm-page-sub" id="order-detail-sub" style="margin-top:.25rem;">View order items, payment status, and reprint options</p>

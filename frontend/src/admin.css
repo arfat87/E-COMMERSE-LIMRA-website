@@ -195,7 +195,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   box-shadow: 2px 0 12px rgba(0,0,0,0.15);
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease, visibility 0.28s ease;
 }
 
 @media (max-width: 1023px) {
@@ -212,28 +212,24 @@
 }
 
 .adm-sidebar-close {
-  display: none;
+  display: flex;
   background: rgba(255,255,255,0.08);
   border: 1px solid rgba(255,255,255,0.12);
   color: #fff;
   border-radius: 8px;
-  width: 32px;
-  height: 32px;
-  font-size: 1.1rem;
+  width: 30px;
+  height: 30px;
+  font-size: 1rem;
   line-height: 1;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   margin-left: auto;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.15s;
 }
 .adm-sidebar-close:hover {
-  background: rgba(255,255,255,0.18);
-}
-@media (max-width: 1023px) {
-  .adm-sidebar-close {
-    display: flex;
-  }
+  background: rgba(255,255,255,0.22);
+  transform: scale(1.05);
 }
 
 .adm-main {
@@ -243,6 +239,21 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  transition: margin-left 0.28s cubic-bezier(0.16, 1, 0.3, 1), width 0.28s ease;
+}
+
+/* Desktop Collapsed Sidebar State (On/Off) */
+@media (min-width: 1024px) {
+  .adm-layout.sidebar-collapsed .adm-sidebar {
+    transform: translateX(-100%) !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+  .adm-layout.sidebar-collapsed .adm-main {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
 }
 
 @media (max-width: 1023px) {
@@ -946,8 +957,29 @@
 }
 .adm-page-btn.active { background: var(--adm-green); color: #fff; }
 
-.adm-menu-toggle { display: flex; padding: 0.5rem; border-radius: 10px; color: var(--adm-muted); }
-@media (min-width: 1024px) { .adm-menu-toggle { display: none; } }
+.adm-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--adm-border, #e2e8f0);
+  background: var(--adm-card, #ffffff);
+  color: var(--adm-text, #1e293b);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.adm-menu-toggle:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #4f46e5;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+.adm-menu-toggle:active {
+  transform: scale(0.95);
+}
 
 /* Premium Notification Dropdown & Sync styles */
 .adm-dropdown {
@@ -2285,78 +2317,155 @@
 }
 
 /* ══════════════════════════════════════════════════════════════════════ */
-/* LIMRA RESTAURANT POS BILLING UI (MATCHING CANVA SPECIFICATION)         */
+/* LIMRA RESTAURANT POS BILLING WORKSPACE (ANT DESIGN 3-COLUMN SYSTEM)    */
 /* ══════════════════════════════════════════════════════════════════════ */
 
-.pos-canva-app {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
-  font-family: inherit;
+/* 1. Strict Viewport Lock & Full-Screen Workspace Containment */
+body.pos-mode-active,
+.adm-layout:has(#panel-order-detail.active) {
+  height: 100vh !important;
+  height: 100dvh !important;
+  overflow: hidden !important;
 }
 
-/* 1. Top Header Bar */
+.adm-layout:has(#panel-order-detail.active) .adm-main,
+body.pos-mode-active .adm-main {
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Hide outer admin navigation header during POS mode so POS toolbar is the single header */
+.adm-layout:has(#panel-order-detail.active) .adm-header,
+body.pos-mode-active .adm-header {
+  display: none !important;
+}
+
+/* Remove outer content padding to utilize 100% of viewport */
+.adm-layout:has(#panel-order-detail.active) .adm-content,
+body.pos-mode-active .adm-content {
+  padding: 0 !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+#panel-order-detail.active {
+  margin: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+#billing-pos.pos-canva-app {
+  height: 100% !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: #f8fafc;
+}
+
+#panel-order-detail #billing-detail-view {
+  padding: 1.5rem;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* 2. Top Header / POS Toolbar */
 .pos-canva-topbar {
+  height: 52px;
+  flex: 0 0 52px;
   background: #ffffff;
-  padding: 0.85rem 1.25rem;
+  padding: 0 1rem;
   border-bottom: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.85rem;
-  flex-wrap: wrap;
+  gap: 0.75rem;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.pos-canva-sidebar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-right: 0.25rem;
+  flex-shrink: 0;
+}
+.pos-canva-sidebar-btn:hover {
+  background: #fef9ee;
+  border-color: #d0a047;
+  color: #926017;
 }
 
 .pos-canva-brand {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.55rem;
+  flex-shrink: 0;
 }
 .pos-canva-brand-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   background: linear-gradient(135deg, #fdf4db, #fcebc2);
   border: 1.5px solid #d0a047;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
-  box-shadow: 0 2px 8px rgba(208, 160, 71, 0.2);
+  font-size: 1.1rem;
 }
 .pos-canva-brand-title {
-  font-size: 1.15rem;
+  font-size: 1rem;
   font-weight: 800;
   color: #1e293b;
-  letter-spacing: -0.02em;
   line-height: 1.1;
+  letter-spacing: -0.01em;
 }
 .pos-canva-brand-sub {
-  font-size: 0.72rem;
-  color: #d0a047;
+  font-size: 0.68rem;
+  color: #b88730;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  margin-top: 2px;
 }
 
-/* Order Type Switcher */
+/* Ant Design Segmented Order Type Selector */
 .pos-canva-types {
   display: inline-flex;
   background: #f1f5f9;
   padding: 3px;
-  border-radius: 999px;
-  gap: 3px;
+  border-radius: 8px;
+  gap: 2px;
   border: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
 .pos-canva-types .pos-type-btn {
-  border-radius: 999px !important;
-  padding: 0.4rem 0.95rem !important;
+  border-radius: 6px !important;
+  padding: 0.35rem 0.85rem !important;
   font-size: 0.8rem !important;
   font-weight: 700 !important;
-  min-height: 34px !important;
+  min-height: 30px !important;
   border: none !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
@@ -2366,9 +2475,10 @@
   gap: 0.35rem;
 }
 .pos-canva-types .pos-type-btn.adm-btn-primary {
-  background: #d0a047 !important;
-  color: #ffffff !important;
-  box-shadow: 0 2px 8px rgba(208, 160, 71, 0.4) !important;
+  background: #ffffff !important;
+  color: #926017 !important;
+  border: 1px solid #e7c88b !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06) !important;
 }
 .pos-canva-types .pos-type-btn.adm-btn-outline {
   background: transparent !important;
@@ -2379,79 +2489,64 @@
   color: #1e293b;
 }
 
-/* Table Badge Button */
+/* Table Context Badge */
 .pos-canva-table-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  background: #fffdf7;
-  border: 1.5px solid #d0a047;
+  gap: 0.35rem;
+  background: #fef9ee;
+  border: 1px solid #e7c88b;
   color: #926017;
   font-weight: 700;
-  font-size: 0.82rem;
-  padding: 0.4rem 0.9rem;
-  border-radius: 999px;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
-  box-shadow: 0 1px 4px rgba(208, 160, 71, 0.15);
+  flex-shrink: 0;
 }
 .pos-canva-table-pill:hover {
-  background: #fdf6e6;
+  background: #fdf2db;
   border-color: #b88730;
 }
 
-/* Rounded Search Bar */
-.pos-canva-search-wrap {
-  position: relative;
-  flex: 1;
-  max-width: 340px;
-  min-width: 170px;
+/* Quick Action Links in Top Header */
+.pos-top-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+  flex-shrink: 0;
 }
-.pos-canva-search-icon {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 0.85rem;
-  color: #94a3b8;
-  pointer-events: none;
-}
-.pos-canva-search-input {
-  width: 100%;
-  min-height: 38px;
-  border-radius: 999px;
-  padding: 0.45rem 2.8rem 0.45rem 2.3rem;
-  background: #f8fafc;
-  border: 1.5px solid #e2e8f0;
-  font-size: 0.85rem;
-  color: #1e293b;
-  outline: none;
-  transition: all 0.15s;
-}
-.pos-canva-search-input:focus {
+.pos-top-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   background: #ffffff;
-  border-color: #d0a047;
-  box-shadow: 0 0 0 3px rgba(208, 160, 71, 0.18);
-}
-.pos-canva-kbd {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: #e2e8f0;
-  color: #64748b;
-  font-size: 0.68rem;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
   font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-  pointer-events: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.pos-top-action-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+.pos-top-action-btn:active {
+  transform: scale(0.97);
 }
 
-/* Top Right status & user */
 .pos-canva-top-right {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.6rem;
+  flex-shrink: 0;
 }
 .pos-canva-status-pill {
   display: inline-flex;
@@ -2459,41 +2554,40 @@
   gap: 0.35rem;
   background: #ecfdf5;
   color: #059669;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  padding: 0.35rem 0.75rem;
+  padding: 0.25rem 0.6rem;
   border-radius: 999px;
   border: 1px solid #a7f3d0;
 }
 .pos-status-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #10b981;
 }
 .pos-canva-user-avatar {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: linear-gradient(135deg, #d0a047, #b88730);
   color: #fff;
   font-weight: 800;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(208, 160, 71, 0.3);
 }
 .pos-canva-close-btn {
   background: #ffffff;
-  border: 1.5px solid #e2e8f0;
+  border: 1px solid #e2e8f0;
   color: #64748b;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  padding: 0.35rem 0.75rem;
+  padding: 0.35rem 0.65rem;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
 }
 .pos-canva-close-btn:hover {
   border-color: #ef4444;
@@ -2501,21 +2595,23 @@
   background: #fef2f2;
 }
 
-/* 2. Meta Ribbon Bar */
+/* 3. Context Meta Ribbon Bar (Customer, Table, Delivery) */
 .pos-canva-meta-bar {
+  flex: 0 0 auto;
   background: #ffffff;
-  border-bottom: 1px solid #f1f5f9;
-  padding: 0.7rem 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.45rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 0.45rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
 }
 .pos-table-selector-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 .pos-meta-label {
   font-size: 0.8rem;
@@ -2523,20 +2619,22 @@
   color: #475569;
 }
 .pos-table-input {
-  max-width: 120px;
-  min-height: 34px;
-  border-radius: 8px;
-  border: 1.5px solid #e2e8f0;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  font-size: 0.85rem;
-  padding: 0.2rem 0.6rem;
   color: #1e293b;
-  background: #fff;
+  width: 110px;
+  outline: none;
+}
+.pos-table-input:focus {
+  border-color: #d0a047;
 }
 .pos-table-quick-pills {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
+  gap: 0.65rem;
   flex-wrap: wrap;
 }
 .pos-table-pill-group {
@@ -2547,27 +2645,57 @@
 }
 .pos-table-zone-tag {
   font-size: 0.72rem;
-  color: #64748b;
   font-weight: 700;
+  color: #94a3b8;
   margin-right: 2px;
 }
+.pos-quick-table-btn {
+  padding: 0.2rem 0.45rem !important;
+  font-size: 0.72rem !important;
+  min-height: 24px !important;
+  border-radius: 6px !important;
+  border: 1px solid #e2e8f0 !important;
+  font-weight: 700 !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
+  cursor: pointer !important;
+}
+.pos-quick-table-btn:hover {
+  background: #fef9ee !important;
+  border-color: #d0a047 !important;
+  color: #926017 !important;
+}
+
+.pos-delivery-grid-fields {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.pos-field-sublabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 2px;
+  display: block;
+}
+
 .pos-customer-strip {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
   flex-wrap: wrap;
-  padding-top: 0.5rem;
-  border-top: 1px dashed #e2e8f0;
+  padding-top: 0.3rem;
+  border-top: 1px dashed #f1f5f9;
 }
 .pos-customer-input-wrap {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.35rem;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 0.15rem 0.6rem;
-  min-height: 34px;
+  border-radius: 6px;
+  padding: 0.2rem 0.55rem;
 }
 .pos-cust-icon {
   font-size: 0.8rem;
@@ -2576,211 +2704,523 @@
 .pos-cust-input {
   border: none;
   background: transparent;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: #1e293b;
   outline: none;
   min-width: 140px;
 }
-.pos-delivery-grid-fields {
+
+/* 4. MAIN 3-COLUMN WORKSPACE */
+.pos-workspace-3col {
   display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-.pos-field-sublabel {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #475569;
-  display: block;
-  margin-bottom: 3px;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: #f8fafc;
 }
 
-/* 3. Category Bar */
-.pos-canva-catbar {
+/* ── COLUMN 1: Categories Sidebar ────────────────────────────── */
+.pos-col-categories {
+  flex: 0 0 200px;
+  width: 200px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: #ffffff;
-  padding: 0.65rem 1.25rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+.pos-cat-sidebar-header {
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid #f1f5f9;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  flex: 0 0 auto;
+}
+.pos-cat-sidebar-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.pos-cat-sidebar-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+/* Vertical Category Menu List (Row by Row Ant Design Style) */
+.pos-cat-menu-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pos-cat-menu-list::-webkit-scrollbar { width: 4px; }
+.pos-cat-menu-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+
+.pos-cat-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+.pos-cat-menu-item:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+.pos-cat-menu-item.active {
+  background: #fef9ee;
+  border-color: #e7c88b;
+  color: #926017;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(208, 160, 71, 0.12);
+}
+.pos-cat-label-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  flex: 1;
+}
+.pos-cat-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.pos-cat-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pos-cat-count-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.pos-cat-menu-item.active .pos-cat-count-badge {
+  background: #fde8bc;
+  color: #855310;
+}
+
+.pos-cat-sidebar-foot {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.65rem;
+  border-top: 1px solid #f1f5f9;
+  background: #ffffff;
 }
 .pos-canva-custom-btn {
-  background: #fffdf7;
-  border: 1.5px dashed #d0a047;
-  color: #926017;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  color: #475569;
   font-size: 0.78rem;
   font-weight: 700;
-  padding: 0.35rem 0.85rem;
-  border-radius: 999px;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
   cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
 }
 .pos-canva-custom-btn:hover {
-  background: #d0a047;
-  color: #fff;
+  background: #fef9ee;
+  border-color: #d0a047;
+  color: #926017;
+}
+
+/* ── COLUMN 2: Food Items Catalog ────────────────────────────── */
+.pos-col-catalog {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f8fafc;
 }
 .pos-canva-manual-row {
   background: #fffdf7;
   border-bottom: 1px solid #f1f5f9;
-  padding: 0.65rem 1.25rem;
+  padding: 0.55rem 0.85rem;
 }
 
-/* 4. Main 2-Column POS Layout */
-.pos-billing-grid.pos-canva-layout {
-  display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 1.25rem;
-  padding: 1.25rem;
-  background: #f8fafc;
-  align-items: start;
-}
-
-@media (max-width: 1024px) {
-  .pos-billing-grid.pos-canva-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Menu Grid */
-.pos-canva-food-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.85rem;
-  max-height: 520px;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-width: thin;
-}
-.pos-canva-food-grid::-webkit-scrollbar { width: 5px; }
-.pos-canva-food-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
-
-/* Canva Bottom Action Bar */
-.pos-canva-bottom-bar {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
-  gap: 0.65rem;
-  margin-top: 1rem;
-}
-.pos-canva-hold-kot-pair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-}
-.pos-canva-action-btn {
-  min-height: 44px;
-  border-radius: 10px;
-  font-weight: 700;
-  font-size: 0.82rem;
+.pos-catalog-toolbar {
+  flex: 0 0 auto;
+  padding: 0.55rem 0.85rem;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
-.pos-btn-hold {
-  background: #fffdf9;
-  color: #926017;
-  border: 1.5px solid #d0a047;
-}
-.pos-btn-hold:hover {
-  background: #fdf5e2;
-  box-shadow: 0 2px 8px rgba(208, 160, 71, 0.25);
-}
-.pos-btn-kot {
-  background: #ffffff;
-  color: #1e293b;
-  border: 1.5px solid #cbd5e1;
-}
-.pos-btn-kot:hover {
-  background: #f8fafc;
-  border-color: #94a3b8;
-}
-.pos-btn-clear {
-  background: #ffffff;
-  color: #dc2626;
-  border: 1.5px solid #fecaca;
-}
-.pos-btn-clear:hover {
-  background: #fef2f2;
-  border-color: #ef4444;
-}
-.pos-btn-save {
-  background: #ffffff;
-  color: #475569;
-  border: 1.5px solid #cbd5e1;
-}
-.pos-btn-save:hover {
-  background: #f8fafc;
-}
-
-/* Right Cart & Settlement Card (Matching canva_image_4.png) */
-.pos-canva-cart-card {
-  background: #ffffff;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 1.2rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  position: sticky;
-  top: 1rem;
-}
-.pos-canva-cart-header {
+.pos-catalog-active-cat {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding-bottom: 0.65rem;
-  border-bottom: 1px solid #f1f5f9;
+  gap: 0.45rem;
+  flex-shrink: 0;
 }
-.pos-canva-cart-title {
-  font-size: 1.05rem;
+.pos-cat-active-name {
+  font-size: 0.92rem;
   font-weight: 800;
   color: #1e293b;
-  margin: 0;
 }
-.pos-canva-count-badge {
+.pos-catalog-count-pill {
   font-size: 0.72rem;
+  font-weight: 700;
   color: #64748b;
   background: #f1f5f9;
   padding: 2px 7px;
   border-radius: 999px;
+}
+
+.pos-catalog-search-box {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+  max-width: 460px;
+}
+.pos-catalog-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.82rem;
+  color: #94a3b8;
+  pointer-events: none;
+}
+.pos-catalog-search-input {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 0.35rem 3.4rem 0.35rem 2rem;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  font-size: 0.82rem;
+  color: #1e293b;
+  outline: none;
+  transition: all 0.15s ease;
+}
+.pos-catalog-search-input:focus {
+  background: #ffffff;
+  border-color: #d0a047;
+  box-shadow: 0 0 0 3px rgba(208, 160, 71, 0.18);
+}
+.pos-search-clear-btn {
+  position: absolute;
+  right: 32px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 2px;
+}
+.pos-search-clear-btn:hover { color: #ef4444; }
+
+.pos-canva-kbd {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #e2e8f0;
+  color: #64748b;
+  font-size: 0.65rem;
   font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.pos-veg-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.pos-veg-toggle-pill.active {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #047857;
+  box-shadow: 0 1px 4px rgba(16, 185, 129, 0.2);
+}
+.pos-veg-dot-sm {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+/* Primary Vertically Scrollable Grid */
+.pos-canva-food-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.65rem;
+  align-content: start;
+}
+.pos-canva-food-grid::-webkit-scrollbar { width: 5px; }
+.pos-canva-food-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+
+/* Compact Food Dish Cards */
+.pos-food-tile-img {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.03);
+  width: 100%;
+  position: relative;
+}
+.pos-food-tile-img:hover {
+  border-color: #d0a047;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(208,160,71,.16);
+}
+.pos-food-tile-img:active {
+  transform: scale(.97);
+}
+.pos-food-tile-img.is-out-of-stock {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+
+.pos-tile-img-box {
+  width: 100%;
+  height: 72px;
+  background: #f8fafc;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pos-tile-img-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .25s ease;
+}
+.pos-food-tile-img:hover .pos-tile-img-box img {
+  transform: scale(1.06);
+}
+
+.pos-tile-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: #d0a047;
+  color: #fff;
+  font-size: .62rem;
+  font-weight: 800;
+  padding: .12rem .4rem;
+  border-radius: 999px;
+  box-shadow: 0 2px 4px rgba(0,0,0,.2);
+}
+
+.pos-tile-body {
+  padding: .4rem .5rem;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  background: #fff;
+  flex: 1;
+  justify-content: space-between;
+}
+.pos-tile-title {
+  font-size: .76rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 24px;
+}
+.pos-tile-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: .15rem;
+}
+.pos-tile-price-tag {
+  font-size: .84rem;
+  color: #1e293b;
+  font-weight: 800;
+}
+.pos-tile-add-btn {
+  background: #d0a047;
+  color: #ffffff;
+  border: none;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .85rem;
+  font-weight: 800;
+  box-shadow: 0 2px 4px rgba(208,160,71,.3);
+  transition: transform .15s ease, background .15s ease;
+}
+.pos-food-tile-img:hover .pos-tile-add-btn {
+  background: #b88730;
+  transform: scale(1.1);
+}
+
+/* ── COLUMN 3: Cart & Billing Summary ────────────────────────── */
+.pos-col-cart {
+  flex: 0 0 340px;
+  width: 340px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-left: 1px solid #e2e8f0;
+  overflow: hidden;
+  box-shadow: -2px 0 10px rgba(0,0,0,0.03);
+}
+
+.pos-cart-panel-header {
+  flex: 0 0 auto;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffffff;
+}
+.pos-cart-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.pos-cart-header-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+.pos-canva-count-badge {
+  font-size: 0.7rem;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.pos-cart-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 .pos-canva-badge-pill {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: #926017;
-  background: #fffdf7;
+  background: #fef9ee;
   border: 1px solid #e7c88b;
-  padding: 3px 9px;
-  border-radius: 999px;
+  padding: 2px 8px;
+  border-radius: 6px;
 }
-.pos-canva-cart-list {
-  max-height: 240px;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-width: thin;
+.pos-cart-clear-icon-btn {
+  background: transparent;
+  border: 1px solid #f1f5f9;
+  color: #94a3b8;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
-.pos-canva-cart-list::-webkit-scrollbar { width: 4px; }
-.pos-canva-cart-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.pos-cart-clear-icon-btn:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #ef4444;
+}
 
-/* Financial Summary (Matching Canva) */
-.pos-canva-summary {
+/* Scrollable Cart Items Container */
+.pos-cart-panel-items {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.5rem 0.75rem;
+}
+.pos-cart-panel-items::-webkit-scrollbar { width: 4px; }
+.pos-cart-panel-items::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+
+/* Fixed Anchored Billing Footer */
+.pos-cart-panel-footer {
+  flex: 0 0 auto;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  padding: 0.65rem 0.85rem;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.03);
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  padding-top: 0.65rem;
-  border-top: 1px solid #f1f5f9;
+}
+
+.pos-canva-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 .pos-summary-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: #475569;
 }
 .pos-summary-label {
@@ -2793,13 +3233,13 @@
 .pos-canva-divider {
   height: 1px;
   background: #e2e8f0;
-  margin: 0.35rem 0;
+  margin: 0.25rem 0;
 }
 .pos-grand-total-row {
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 900;
   color: #111827;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 .pos-grand-label {
   font-weight: 800;
@@ -2807,33 +3247,33 @@
 }
 .pos-grand-val {
   font-weight: 900;
-  color: #111827;
-  font-size: 1.35rem;
+  color: #b88730;
+  font-size: 1.25rem;
 }
 
 /* Extra Controls (Discount, Notes) */
 .pos-canva-extra-controls {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.35rem;
 }
 .pos-ctrl-label {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: #475569;
   margin: 0;
 }
 .pos-ctrl-input {
-  max-width: 70px;
-  min-height: 28px;
+  max-width: 65px;
+  min-height: 26px;
   border-radius: 6px;
   border: 1px solid #cbd5e1;
-  padding: 2px 6px;
-  font-size: 0.8rem;
+  padding: 2px 5px;
+  font-size: 0.78rem;
   font-weight: 700;
   text-align: right;
   background: #fff;
@@ -2842,8 +3282,8 @@
   width: 100%;
   border-radius: 6px;
   border: 1px solid #cbd5e1;
-  padding: 4px 8px;
-  font-size: 0.78rem;
+  padding: 3px 6px;
+  font-size: 0.75rem;
   resize: none;
   background: #fff;
   outline: none;
@@ -2852,19 +3292,18 @@
   border-color: #d0a047;
 }
 
-/* Payment Mode Grid (Matching Canva) */
+/* Payment Mode Grid */
 .pos-canva-pay-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 0.45rem;
-  margin-top: 0.2rem;
+  gap: 0.35rem;
 }
 .pos-canva-pay-grid .pos-pay-mode-pill {
-  min-height: 42px !important;
-  border-radius: 10px !important;
+  min-height: 36px !important;
+  border-radius: 8px !important;
   font-weight: 700 !important;
-  font-size: 0.85rem !important;
-  border: 1.5px solid #e2e8f0 !important;
+  font-size: 0.8rem !important;
+  border: 1px solid #e2e8f0 !important;
   background: #ffffff !important;
   color: #475569 !important;
   display: flex !important;
@@ -2875,46 +3314,122 @@
   box-shadow: none !important;
 }
 .pos-canva-pay-grid .pos-pay-mode-pill.adm-btn-primary {
-  background: #d0a047 !important;
+  background: #fef9ee !important;
   border-color: #d0a047 !important;
-  color: #ffffff !important;
-  box-shadow: 0 4px 12px rgba(208, 160, 71, 0.35) !important;
-}
-.pos-canva-pay-grid .pos-pay-mode-pill:hover {
-  border-color: #d0a047;
+  color: #926017 !important;
+  box-shadow: 0 1px 4px rgba(208, 160, 71, 0.25) !important;
 }
 
-/* Primary Settle Button (Matching canva_image_4.png) */
+/* Action Group */
+.pos-cart-action-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.15rem;
+}
+.pos-canva-hold-kot-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+.pos-canva-action-btn {
+  min-height: 38px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.pos-btn-hold {
+  background: #ffffff;
+  color: #926017;
+  border: 1px solid #e7c88b;
+}
+.pos-btn-hold:hover {
+  background: #fef9ee;
+  border-color: #d0a047;
+}
+.pos-btn-kot {
+  background: #ffffff;
+  color: #1e293b;
+  border: 1px solid #cbd5e1;
+}
+.pos-btn-kot:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+/* Primary Settle / Bill Button */
 .pos-canva-settle-btn {
-  background: #d0a047;
-  color: #222222;
+  background: linear-gradient(135deg, #d0a047, #b88730);
+  color: #ffffff;
   border: none;
-  border-radius: 12px;
-  font-size: 1.05rem;
-  font-weight: 900;
-  min-height: 50px;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  min-height: 44px;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  box-shadow: 0 6px 20px rgba(208, 160, 71, 0.4);
+  gap: 0.45rem;
+  box-shadow: 0 4px 14px rgba(208, 160, 71, 0.35);
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
 }
 .pos-canva-settle-btn:hover {
-  background: #c3943d;
+  background: linear-gradient(135deg, #b88730, #a07223);
   transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(208, 160, 71, 0.45);
+  box-shadow: 0 6px 18px rgba(208, 160, 71, 0.45);
 }
 .pos-canva-settle-btn:active {
   transform: scale(0.98);
 }
 .pos-btn-kbd {
-  font-size: 0.75rem;
-  opacity: 0.8;
+  font-size: 0.72rem;
+  opacity: 0.85;
   font-weight: 600;
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 1200px) {
+  .pos-col-categories {
+    flex: 0 0 175px;
+    width: 175px;
+  }
+  .pos-col-cart {
+    flex: 0 0 310px;
+    width: 310px;
+  }
+}
+@media (max-width: 900px) {
+  .pos-col-categories {
+    flex: 0 0 150px;
+    width: 150px;
+  }
+  .pos-col-cart {
+    flex: 0 0 290px;
+    width: 290px;
+  }
+}
+@media (max-width: 768px) {
+  .pos-workspace-3col {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .pos-col-categories,
+  .pos-col-catalog,
+  .pos-col-cart {
+    flex: 0 0 auto;
+    width: 100%;
+    overflow: visible;
+  }
 }
 
 /* FSSAI Veg / Non-Veg Indicator Badge */
@@ -3516,7 +4031,7 @@ html, body {
     grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)) !important;
   }
   .pos-billing-grid {
-    grid-template-columns: 1fr 340px !important;
+    grid-template-columns: 1fr 300px !important;
     gap: 0.85rem !important;
   }
   #tables-grid-container {
@@ -3533,17 +4048,27 @@ html, body {
 /* ── 5. LAPTOPS & DESKTOPS (>= 1024px) ─────────────────────────── */
 @media (min-width: 1024px) {
   .adm-sidebar {
-    width: 244px !important;
-    transform: translateX(0) !important;
+    width: 244px;
+    transform: translateX(0);
   }
   .adm-main {
-    margin-left: 244px !important;
+    margin-left: 244px;
+  }
+  .adm-layout.sidebar-collapsed .adm-sidebar {
+    transform: translateX(-100%) !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+  .adm-layout.sidebar-collapsed .adm-main {
+    margin-left: 0 !important;
+    width: 100% !important;
   }
   .adm-menu-toggle {
-    display: none !important;
+    display: inline-flex !important;
   }
   .adm-sidebar-close {
-    display: none !important;
+    display: flex !important;
   }
   .adm-stats {
     grid-template-columns: repeat(4, 1fr) !important;

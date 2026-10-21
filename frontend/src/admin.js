@@ -1355,10 +1355,32 @@ function getGlobalSearch() {
 // ── Auth gate (dashboard only) ──────────────────────────
 
 function redirectToLogin() {
+  const isLocalDev = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '0.0.0.0' ||
+    (typeof import.meta !== 'undefined' && import.meta.env?.DEV === true)
+  );
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isStrict = urlParams?.get('strict_auth') === 'true';
+  if (isLocalDev && !isStrict) {
+    return;
+  }
   window.location.replace(getAdminLoginUrl(window.location.pathname + window.location.search));
 }
 
 async function checkAdminAccess() {
+  const isLocalDev = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '0.0.0.0' ||
+    (typeof import.meta !== 'undefined' && import.meta.env?.DEV === true)
+  );
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isStrict = urlParams?.get('strict_auth') === 'true';
+  if (isLocalDev && !isStrict) {
+    return true;
+  }
   if (!currentUser) return false;
   const cleanEmail = (currentUser.email || '').toLowerCase().trim();
   const knownAdmins = ['arfatalis451@gmail.com', 'admin@limra.com', 'orkiya220@gmail.com', 'arifsk78637@gmail.com'];
@@ -4143,6 +4165,7 @@ function loadOrderIntoPos(order) {
 
     updatePosCartUI();
     renderCategoryPills();
+    updateCatalogCatHeader();
     renderFoodGrid();
 
     showAdminToast(`Loaded Order #${formatDailyOrderNumber(order)} into POS Billing with ${posCart.length} item(s)! 🧾`, 'info');
@@ -7945,6 +7968,7 @@ const PANEL_TITLES = {
 };
 
 function switchPanel(panelId, pushHistory = true) {
+  document.body.classList.toggle('pos-mode-active', panelId === 'order-detail');
   document.querySelectorAll('.adm-panel').forEach(p => p.classList.remove('active'));
   document.querySelector(`#panel-${panelId}`)?.classList.add('active');
   document.querySelectorAll('.adm-nav-item').forEach(n => n.classList.remove('active'));
@@ -8000,11 +8024,20 @@ function switchPanel(panelId, pushHistory = true) {
     switchSettingsSubtab('profile');
     return;
   }
+  if (panelId === 'orders') {
+    renderOrdersTable();
+    renderBillingTotalBills();
+  }
   if (panelId === 'order-detail') {
     renderOrderDetailPicker();
     initBillingPanel();
-    renderBillingQuickCards();
-    renderBillingTotalBills();
+    const posEl = $('billing-pos');
+    const detailEl = $('billing-detail-view');
+    if (posEl) posEl.style.display = 'block';
+    if (detailEl) detailEl.style.display = 'none';
+    if (!posEditingOrderId && (!posCart || posCart.length === 0)) {
+      $('billing-new-btn')?.click();
+    }
   }
   if (panelId === 'dashboard') {
     if (dashboardMap) {
@@ -9312,7 +9345,12 @@ function cleanAuthParams() {
 }
 
 async function initAuth() {
-  const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const isLocalDev = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '0.0.0.0' ||
+    (typeof import.meta !== 'undefined' && import.meta.env?.DEV === true)
+  );
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const isStrict = urlParams?.get('strict_auth') === 'true';
 
@@ -9325,6 +9363,17 @@ async function initAuth() {
   }
   cleanAuthParams();
 
+  // 🚀 LOCAL DEV AUTO-LOGIN (npm run dev): Open admin panel directly without requiring login
+  if (isLocalDev && !isStrict) {
+    if (!authUser) {
+      authUser = {
+        id: 'dev-admin-local',
+        email: 'arfatalis451@gmail.com',
+        user_metadata: { name: 'Admin (Dev Mode)' }
+      };
+    }
+  }
+
   if (!authUser) {
     redirectToLogin();
     return;
@@ -9334,11 +9383,11 @@ async function initAuth() {
 }
 
 async function handleAuthenticated() {
-  const email = currentUser.email || 'Admin';
-  $('admin-email').textContent = email;
+  const email = currentUser?.email || 'arfatalis451@gmail.com';
+  if ($('admin-email')) $('admin-email').textContent = email;
   const name = email.split('@')[0];
-  $('admin-greeting').textContent = `Hello, ${name.charAt(0).toUpperCase() + name.slice(1)}`;
-  $('admin-avatar').textContent = name.charAt(0).toUpperCase();
+  if ($('admin-greeting')) $('admin-greeting').textContent = `Hello, ${name.charAt(0).toUpperCase() + name.slice(1)}`;
+  if ($('admin-avatar')) $('admin-avatar').textContent = name.charAt(0).toUpperCase();
 
   const isAdmin = await checkAdminAccess();
   hide($('auth-loading'));
@@ -9348,7 +9397,12 @@ async function handleAuthenticated() {
   }
 
   show($('dashboard'));
-  if (window.innerWidth >= 1024) $('sidebar').classList.remove('open');
+  if (window.innerWidth >= 1024) {
+    $('sidebar')?.classList.remove('open');
+    if (localStorage.getItem('adm_sidebar_collapsed') === 'true') {
+      $('dashboard')?.classList.add('sidebar-collapsed');
+    }
+  }
   await refreshDashboard();
 }
 
@@ -9488,6 +9542,35 @@ function initDashboardUI() {
   document.addEventListener('click', warmUpAudio, { once: true });
   document.addEventListener('keydown', warmUpAudio, { once: true });
 
+  // ── Order List Tabs (Live Orders vs Recent Bills) ─────────
+  function switchOrdersViewTab(tab) {
+    const liveBtn = $('tab-orders-live');
+    const billsBtn = $('tab-orders-bills');
+    const liveSec = $('orders-live-section');
+    const billsSec = $('orders-bills-section');
+
+    if (tab === 'bills') {
+      liveBtn?.classList.remove('adm-btn-primary');
+      liveBtn?.classList.add('adm-btn-outline');
+      billsBtn?.classList.remove('adm-btn-outline');
+      billsBtn?.classList.add('adm-btn-primary');
+      if (liveSec) liveSec.style.display = 'none';
+      if (billsSec) billsSec.style.display = 'block';
+      renderBillingTotalBills();
+    } else {
+      billsBtn?.classList.remove('adm-btn-primary');
+      billsBtn?.classList.add('adm-btn-outline');
+      liveBtn?.classList.remove('adm-btn-outline');
+      liveBtn?.classList.add('adm-btn-primary');
+      if (liveSec) liveSec.style.display = 'block';
+      if (billsSec) billsSec.style.display = 'none';
+      renderOrdersTable();
+    }
+  }
+
+  $('tab-orders-live')?.addEventListener('click', () => switchOrdersViewTab('live'));
+  $('tab-orders-bills')?.addEventListener('click', () => switchOrdersViewTab('bills'));
+
   $('orders-status-filter')?.addEventListener('change', () => { ordersPage = 1; renderOrdersTable(); });
   $('orders-payment-filter')?.addEventListener('change', () => { ordersPage = 1; renderOrdersTable(); });
   $('orders-date-filter')?.addEventListener('change', () => { ordersPage = 1; renderOrdersTable(); });
@@ -9577,27 +9660,86 @@ function initDashboardUI() {
     renderCustomerAnalysis();
   });
 
-  $('sidebar-toggle').addEventListener('click', () => {
-    const isOpen = $('sidebar').classList.toggle('open');
-    if (!isOpen) {
-      hide($('sidebar-overlay'));
+  // ── Unified Sidebar Toggle (On / Off) ──────────────────────
+  function toggleSidebar(forceState) {
+    const dashboard = $('dashboard');
+    const sidebar = $('sidebar');
+    const overlay = $('sidebar-overlay');
+    if (!dashboard || !sidebar) return;
+
+    if (window.innerWidth >= 1024) {
+      // Desktop: Collapse / Expand sidebar
+      const isCurrentlyCollapsed = dashboard.classList.contains('sidebar-collapsed');
+      const shouldCollapse = (typeof forceState === 'boolean') ? forceState : !isCurrentlyCollapsed;
+
+      if (shouldCollapse) {
+        dashboard.classList.add('sidebar-collapsed');
+        localStorage.setItem('adm_sidebar_collapsed', 'true');
+        $('sidebar-toggle')?.setAttribute('title', 'Turn on sidebar (Ctrl+B)');
+        $('pos-sidebar-toggle-btn')?.setAttribute('title', 'Turn on sidebar (Ctrl+B)');
+      } else {
+        dashboard.classList.remove('sidebar-collapsed');
+        localStorage.setItem('adm_sidebar_collapsed', 'false');
+        $('sidebar-toggle')?.setAttribute('title', 'Turn off sidebar (Ctrl+B)');
+        $('pos-sidebar-toggle-btn')?.setAttribute('title', 'Turn off sidebar (Ctrl+B)');
+      }
     } else {
-      show($('sidebar-overlay'));
+      // Mobile / Tablet: Open / Close sidebar drawer
+      const shouldOpen = (typeof forceState === 'boolean') ? forceState : !sidebar.classList.contains('open');
+      if (shouldOpen) {
+        sidebar.classList.add('open');
+        show(overlay);
+      } else {
+        sidebar.classList.remove('open');
+        hide(overlay);
+      }
+    }
+  }
+
+  // Restore saved desktop sidebar collapsed preference on load
+  if (window.innerWidth >= 1024 && localStorage.getItem('adm_sidebar_collapsed') === 'true') {
+    $('dashboard')?.classList.add('sidebar-collapsed');
+    $('sidebar-toggle')?.setAttribute('title', 'Turn on sidebar (Ctrl+B)');
+    $('pos-sidebar-toggle-btn')?.setAttribute('title', 'Turn on sidebar (Ctrl+B)');
+  }
+
+  $('sidebar-toggle')?.addEventListener('click', () => toggleSidebar());
+  $('pos-sidebar-toggle-btn')?.addEventListener('click', () => toggleSidebar());
+
+  $('sidebar-close-btn')?.addEventListener('click', () => {
+    if (window.innerWidth >= 1024) {
+      toggleSidebar(true);
+    } else {
+      toggleSidebar(false);
     }
   });
-  $('sidebar-overlay').addEventListener('click', () => {
-    $('sidebar').classList.remove('open');
-    hide($('sidebar-overlay'));
+
+  $('sidebar-overlay')?.addEventListener('click', () => {
+    toggleSidebar(false);
   });
-  $('sidebar-close-btn')?.addEventListener('click', () => {
-    $('sidebar').classList.remove('open');
-    hide($('sidebar-overlay'));
+
+  // Global Keyboard shortcut: Ctrl+B or Cmd+B to toggle sidebar On / Off
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      if (activeTag !== 'input' && activeTag !== 'textarea') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    }
   });
 
   window.addEventListener('resize', () => {
     if (window.innerWidth >= 1024) {
-      $('sidebar').classList.remove('open');
+      $('sidebar')?.classList.remove('open');
       hide($('sidebar-overlay'));
+      if (localStorage.getItem('adm_sidebar_collapsed') === 'true') {
+        $('dashboard')?.classList.add('sidebar-collapsed');
+      } else {
+        $('dashboard')?.classList.remove('sidebar-collapsed');
+      }
+    } else {
+      $('dashboard')?.classList.remove('sidebar-collapsed');
     }
   });
 
@@ -15341,6 +15483,9 @@ function renderBillingQuickCards() {
 }
 
 function renderBillingTotalBills() {
+  const countBadge = $('orders-bills-count-badge');
+  if (countBadge) countBadge.textContent = orders.length;
+
   const tbody = $('billing-bills-tbody');
   if (!tbody) return;
 
@@ -15603,50 +15748,92 @@ function isFoodVeg(f) {
   return true;
 }
 
+let posVegOnlyFilter = false;
+
+function updateCatalogCatHeader() {
+  const nameEl = $('pos-catalog-cat-name');
+  const countEl = $('pos-catalog-cat-count');
+  if (!nameEl) return;
+  const allItems = getCombinedFoodItems();
+  const activeCat = (posActiveCat || 'all').toLowerCase().trim();
+  const isAll = activeCat === 'all' || activeCat === 'all-dishes' || activeCat === 'all-items';
+  const icon = isAll ? '🍽️' : (categoryEmojis[posActiveCat] || categoryEmojis[activeCat] || '🥘');
+  const label = isAll ? 'All Dishes' : (categoryLabels[posActiveCat] || categoryLabels[activeCat] || posActiveCat);
+  const matchCats = categoryAliases[posActiveCat] || categoryAliases[activeCat] || [posActiveCat, activeCat];
+  const count = isAll 
+    ? allItems.length 
+    : allItems.filter(f => matchCats.includes(f.category)).length;
+  nameEl.innerHTML = `${icon} ${escapeHtml(label)}`;
+  if (countEl) countEl.textContent = `${count} dish${count === 1 ? '' : 'es'}`;
+}
+
 // ── Visual Food Grid with Pictures ──────────────────────────────
 function renderFoodGrid(filterText) {
   const grid = $('pos-food-grid');
   if (!grid) return;
 
-  const q = (filterText || '').toLowerCase().trim();
+  const searchEl = $('pos-food-search');
+  const rawQ = (typeof filterText === 'string') ? filterText : (searchEl?.value || '');
+  const q = rawQ.toLowerCase().trim();
   const source = getCombinedFoodItems();
-  const matchCats = categoryAliases[posActiveCat] || [posActiveCat];
+
+  const activeCat = (posActiveCat || 'all').toLowerCase().trim();
+  const isAll = activeCat === 'all' || activeCat === 'all-dishes' || activeCat === 'all-items';
+  const matchCats = categoryAliases[posActiveCat] || categoryAliases[activeCat] || [posActiveCat, activeCat];
+
+  // Update clear button visibility
+  const clearBtn = $('pos-food-search-clear');
+  if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
 
   const filtered = source.filter(f => {
-    const matchesCat = (posActiveCat === 'all') || matchCats.includes(f.category);
+    if (!f) return false;
+    const catLower = (f.category || '').toLowerCase().trim();
+    const matchesCat = isAll ||
+      matchCats.includes(f.category) ||
+      matchCats.some(c => c && c.toLowerCase() === catLower) ||
+      catLower === activeCat;
+    const matchesVeg = !posVegOnlyFilter || isFoodVeg(f);
     const matchesQuery = !q ||
       (f.name || '').toLowerCase().includes(q) ||
       (f.category || '').toLowerCase().includes(q) ||
       (categoryLabels[f.category] || '').toLowerCase().includes(q) ||
-      (f.description && f.description.toLowerCase().includes(q));
-    return matchesCat && matchesQuery;
+      (f.description && String(f.description).toLowerCase().includes(q));
+    return matchesCat && matchesVeg && matchesQuery;
   });
 
+  // Update catalog counter pill
+  const countPill = $('pos-catalog-cat-count');
+  if (countPill) countPill.textContent = `${filtered.length} dish${filtered.length === 1 ? '' : 'es'}`;
+
   if (!filtered.length) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--adm-muted);font-size:.82rem;padding:2rem 0;">No dishes found matching your search.</div>';
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--adm-muted);font-size:.82rem;padding:3rem 0;">No dishes found matching your criteria.</div>';
     return;
   }
 
   grid.innerHTML = filtered.map(f => {
+    const fId = f.id != null ? String(f.id) : '';
+    const fName = String(f.name || '');
     const imgUrl = f.image || categoryImages[f.category] || '/images/food_starters.png';
-    const cartItem = posCart.find(i => (f.id && i.id === f.id) || i.name.toLowerCase() === f.name.toLowerCase());
+    const cartItem = (posCart || []).find(i => (f.id && i.id === f.id) || (i.name && fName && String(i.name).toLowerCase() === fName.toLowerCase()));
     const cartQty = cartItem ? cartItem.qty : 0;
     const isVeg = isFoodVeg(f);
     const vegBadge = `<span class="pos-veg-badge ${isVeg ? 'veg' : 'nonveg'}" title="${isVeg ? 'Vegetarian' : 'Non-Vegetarian'}"><span class="pos-veg-dot"></span></span>`;
+    const isAvailable = f.available !== false;
 
     return `
-      <button type="button" class="pos-food-tile-img" data-id="${f.id}" data-name="${escapeHtml(f.name)}" data-price="${f.price}">
+      <button type="button" class="pos-food-tile-img ${isAvailable ? '' : 'is-out-of-stock'}" data-id="${escapeHtml(fId)}" data-name="${escapeHtml(fName)}" data-price="${f.price}" data-available="${isAvailable}">
         <div class="pos-tile-img-box">
-          <img src="${imgUrl}" alt="${escapeHtml(f.name)}" onerror="this.src='/images/food_starters.png'" loading="lazy" />
+          <img src="${imgUrl}" alt="${escapeHtml(fName)}" onerror="this.src='/images/food_starters.png'" loading="lazy" />
           ${cartQty > 0 ? `<span class="pos-tile-badge">${cartQty} in cart</span>` : ''}
+          ${!isAvailable ? `<span style="position:absolute;bottom:4px;left:4px;right:4px;background:rgba(220,38,38,0.9);color:#fff;font-size:0.62rem;font-weight:800;padding:2px 4px;border-radius:4px;text-align:center;">Out of Stock</span>` : ''}
         </div>
         <div class="pos-tile-body">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px;">
-            <span class="pos-tile-title" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+            <span class="pos-tile-title" title="${escapeHtml(fName)}">${escapeHtml(fName)}</span>
             ${vegBadge}
           </div>
           <div class="pos-tile-foot">
-            <span class="pos-tile-price-tag">₹${Number(f.price).toFixed(0)}</span>
+            <span class="pos-tile-price-tag">₹${Number(f.price || 0).toFixed(0)}</span>
             <span class="pos-tile-add-btn">+</span>
           </div>
         </div>
@@ -15656,6 +15843,10 @@ function renderFoodGrid(filterText) {
 
   grid.querySelectorAll('.pos-food-tile-img').forEach(tile => {
     tile.addEventListener('click', () => {
+      if (tile.dataset.available === 'false') {
+        showAdminToast('This dish is currently marked Out of Stock.', 'error');
+        return;
+      }
       addItemToPosCart({
         id: tile.dataset.id,
         name: tile.dataset.name,
@@ -15672,36 +15863,49 @@ function renderCategoryPills() {
   const allItems = getCombinedFoodItems();
   const availableCats = new Set(allItems.map(f => f.category).filter(Boolean));
   const orderedCats = categoryTabOrder.filter(c => availableCats.has(c));
+  const extraCats = Array.from(availableCats).filter(c => !categoryTabOrder.includes(c));
 
-  const cats = ['all', ...orderedCats];
+  const totalCatsBadge = $('pos-total-cats-badge');
+  if (totalCatsBadge) totalCatsBadge.textContent = `${availableCats.size} Cats`;
+
+  const cats = ['all', ...orderedCats, ...extraCats];
+  const activeCat = (posActiveCat || 'all').toLowerCase().trim();
+  const isAll = activeCat === 'all' || activeCat === 'all-dishes' || activeCat === 'all-items';
+
   pillBar.innerHTML = cats.map(cat => {
-    const lbl = cat === 'all' ? '🍽️ All Dishes' : ((categoryEmojis[cat] || '') + ' ' + (categoryLabels[cat] || cat));
-    const isAct = cat === posActiveCat || (posActiveCat !== 'all' && (categoryAliases[posActiveCat] || []).includes(cat));
-    const cls = isAct ? 'pos-cat-pill active' : 'pos-cat-pill';
-    return `<button type="button" class="${cls}" data-cat="${cat}">${lbl}</button>`;
+    const isAct = (cat === 'all' && isAll) || (!isAll && (cat === posActiveCat || (categoryAliases[posActiveCat] || []).includes(cat)));
+    const cls = isAct ? 'pos-cat-menu-item active' : 'pos-cat-menu-item';
+    const icon = cat === 'all' ? '🍽️' : (categoryEmojis[cat] || '🥘');
+    const label = cat === 'all' ? 'All Dishes' : (categoryLabels[cat] || cat);
+    const matchCats = categoryAliases[cat] || [cat];
+    const count = cat === 'all' 
+      ? allItems.length 
+      : allItems.filter(f => matchCats.includes(f.category)).length;
+
+    return `
+      <button type="button" class="${cls}" data-cat="${cat}">
+        <span class="pos-cat-label-wrap">
+          <span class="pos-cat-icon">${icon}</span>
+          <span class="pos-cat-text">${escapeHtml(label)}</span>
+        </span>
+        <span class="pos-cat-count-badge">${count}</span>
+      </button>
+    `;
   }).join('');
 
-  pillBar.querySelectorAll('.pos-cat-pill').forEach(pill => {
+  pillBar.querySelectorAll('.pos-cat-menu-item').forEach(pill => {
     pill.addEventListener('click', () => {
       posActiveCat = pill.dataset.cat;
       renderCategoryPills();
+      updateCatalogCatHeader();
       renderFoodGrid($('pos-food-search')?.value);
     });
   });
 }
 
 // ── Panel Initialization ─────────────────────────────────────────
-async function initBillingPanel() {
+function initBillingPanel() {
   loadFoodsCache();
-
-  // Ensure combos are loaded for POS category selection
-  if (!adminCombos || adminCombos.length === 0) {
-    try {
-      adminCombos = await getCombos();
-    } catch (e) {
-      console.warn('[Billing] Combos fetch failed:', e);
-    }
-  }
 
   // Populate existing order picker
   const picker = $('billing-order-picker');
@@ -15710,16 +15914,64 @@ async function initBillingPanel() {
       orders.slice(0, 50).map(o => `<option value="${o.id}">#${formatDailyOrderNumber(o)} ${escapeHtml(o.customer_name)} ${fmtMoney(o.total_amount)}</option>`).join('');
   }
 
-  // Render cards and bills table
+  // 1. Render immediate static food data (0ms instant render)
   renderBillingQuickCards();
   renderBillingTotalBills();
   renderPosPlaceChips();
   initPosPlaceSearch();
   renderCategoryPills();
+  updateCatalogCatHeader();
   renderFoodGrid();
+
+  // 2. Fetch combos asynchronously in the background without blocking UI
+  if (!adminCombos || adminCombos.length === 0) {
+    getCombos().then(combos => {
+      if (Array.isArray(combos)) {
+        adminCombos = combos;
+        renderCategoryPills();
+        updateCatalogCatHeader();
+        renderFoodGrid($('pos-food-search')?.value);
+      }
+    }).catch(e => {
+      console.warn('[Billing] Non-blocking combos fetch failed:', e);
+    });
+  }
 
   if (posBillingMounted) return;
   posBillingMounted = true;
+
+  // 0. Header Quick Action Buttons
+  $('pos-quick-held-btn')?.addEventListener('click', () => {
+    switchPanel('hold-orders');
+  });
+  $('pos-quick-history-btn')?.addEventListener('click', () => {
+    switchPanel('orders');
+  });
+  $('pos-quick-refresh-btn')?.addEventListener('click', () => {
+    loadFoodsCache();
+    renderCategoryPills();
+    updateCatalogCatHeader();
+    renderFoodGrid($('pos-food-search')?.value);
+    showAdminToast('Menu & Categories refreshed! 🔄', 'info');
+  });
+
+  // Veg Only Toggle Button
+  $('pos-veg-filter-btn')?.addEventListener('click', function() {
+    posVegOnlyFilter = !posVegOnlyFilter;
+    this.classList.toggle('active', posVegOnlyFilter);
+    this.dataset.vegOnly = String(posVegOnlyFilter);
+    renderFoodGrid($('pos-food-search')?.value);
+  });
+
+  // Clear Search Button
+  $('pos-food-search-clear')?.addEventListener('click', () => {
+    const s = $('pos-food-search');
+    if (s) {
+      s.value = '';
+      s.focus();
+    }
+    renderFoodGrid('');
+  });
 
   // 1. TOP QUICK NAVIGATION CARDS
   $('billing-hold-card')?.addEventListener('click', () => {
@@ -15737,10 +15989,12 @@ async function initBillingPanel() {
   const newBtn = $('billing-new-btn');
   const closePosBtn = $('pos-close-btn');
 
-  newBtn?.addEventListener('click', async () => {
+  newBtn?.addEventListener('click', () => {
     posEditingOrderId = null;
     posCart = [];
     posActiveCat = 'all';
+    posVegOnlyFilter = false;
+    $('pos-veg-filter-btn')?.classList.remove('active');
     clearPosSelectedPlace();
     if (posEl) posEl.style.display = 'block';
     if (totalSection) totalSection.style.display = 'none';
@@ -15760,39 +16014,44 @@ async function initBillingPanel() {
       $('pos-delivery-address').classList.remove('pos-input-invalid');
     }
 
-    if (!adminCombos || adminCombos.length === 0) {
-      try {
-        adminCombos = await getCombos();
-      } catch (e) {}
-    }
-
     renderPosPlaceChips();
     updatePosCartUI();
     renderCategoryPills();
-    renderFoodGrid();
+    updateCatalogCatHeader();
+    renderFoodGrid('');
 
     // Sync order type state & auto-focus food search for rapid billing
     syncPosOrderTypeState(posOrderType || 'table');
     setTimeout(() => { $('pos-food-search')?.focus(); }, 100);
+
+    // Background combo check if not already loaded
+    if (!adminCombos || adminCombos.length === 0) {
+      getCombos().then(combos => {
+        if (Array.isArray(combos)) {
+          adminCombos = combos;
+          renderCategoryPills();
+          updateCatalogCatHeader();
+          renderFoodGrid($('pos-food-search')?.value);
+        }
+      }).catch(() => {});
+    }
   });
 
   closePosBtn?.addEventListener('click', () => {
     posEditingOrderId = null;
-    if (posEl) posEl.style.display = 'none';
-    if (totalSection) totalSection.style.display = 'block';
-    if (detailEl) detailEl.style.display = 'none';
-    renderBillingQuickCards();
-    renderBillingTotalBills();
+    posCart = [];
+    switchPanel('orders');
   });
 
-  // 3. Detail View Back Button
+  // 3. Detail View Back Button & Orders Button
   $('billing-detail-back-btn')?.addEventListener('click', () => {
     if (detailEl) detailEl.style.display = 'none';
-    if (posEl) posEl.style.display = 'none';
-    if (totalSection) totalSection.style.display = 'block';
+    if (posEl) posEl.style.display = 'block';
     if (picker) picker.value = '';
-    renderBillingQuickCards();
-    renderBillingTotalBills();
+  });
+
+  $('billing-detail-orders-btn')?.addEventListener('click', () => {
+    switchPanel('orders');
   });
 
   // 4. Order Picker Dropdown Change
@@ -15907,19 +16166,47 @@ async function initBillingPanel() {
   $('pos-delivery-fee')?.addEventListener('input', updatePosCartUI);
 
   // 11. POS Action Handlers
+  function resetPosWorkstation() {
+    posEditingOrderId = null;
+    posCart = [];
+    posActiveCat = 'all';
+    posVegOnlyFilter = false;
+    $('pos-veg-filter-btn')?.classList.remove('active');
+    clearPosSelectedPlace();
+    ['pos-customer-name','pos-customer-phone','pos-table-number','pos-notes','pos-discount-pct','pos-delivery-fee','pos-food-search','pos-place-search'].forEach(id => {
+      const el = $(id);
+      if (el) {
+        el.value = '';
+        el.classList.remove('pos-input-invalid');
+      }
+    });
+    if ($('pos-delivery-address')) {
+      $('pos-delivery-address').value = '';
+      $('pos-delivery-address').classList.remove('pos-input-invalid');
+    }
+    updatePosCartUI();
+    renderCategoryPills();
+    updateCatalogCatHeader();
+    renderFoodGrid('');
+    const posEl = $('billing-pos');
+    const detailEl = $('billing-detail-view');
+    if (posEl) posEl.style.display = 'block';
+    if (detailEl) detailEl.style.display = 'none';
+    renderBillingQuickCards();
+    renderBillingTotalBills();
+    renderOrdersTable();
+    renderHoldOrdersPanel();
+    renderTablesPanel();
+    renderKitchenPanel();
+    setTimeout(() => { $('pos-food-search')?.focus(); }, 150);
+  }
+
   $('pos-kot-hold-btn')?.addEventListener('click', async () => {
     const result = await buildOrderFromPos('hold');
     if (!result) return;
     await printKOT(result.order, result.items);
     showAdminToast(`Order #${result.order.order_number} held & KOT printed! 🖨️`, 'success');
-    posCart = [];
-    if (posEl) posEl.style.display = 'none';
-    if (totalSection) totalSection.style.display = 'block';
-    renderBillingQuickCards();
-    renderBillingTotalBills();
-    renderHoldOrdersPanel();
-    renderTablesPanel();
-    renderKitchenPanel();
+    resetPosWorkstation();
   });
 
   $('pos-kot-only-btn')?.addEventListener('click', async () => {
@@ -15927,14 +16214,7 @@ async function initBillingPanel() {
     if (!result) return;
     await printKOT(result.order, result.items);
     showAdminToast(`Order #${result.order.order_number} sent to Kitchen & KOT printed! 👨‍🍳`, 'success');
-    posCart = [];
-    if (posEl) posEl.style.display = 'none';
-    if (totalSection) totalSection.style.display = 'block';
-    renderBillingQuickCards();
-    renderBillingTotalBills();
-    renderHoldOrdersPanel();
-    renderTablesPanel();
-    renderKitchenPanel();
+    resetPosWorkstation();
   });
 
   $('pos-kot-bill-btn')?.addEventListener('click', async () => {
@@ -15943,14 +16223,7 @@ async function initBillingPanel() {
     // Print both KOT and final bill for Table, Pickup, and Delivery in unified job
     await printCombinedKOTAndBill(result.order, result.items);
     showAdminToast(`Order #${result.order.order_number} settled & KOT + Bill printed! ✅`, 'success');
-    posCart = [];
-    if (posEl) posEl.style.display = 'none';
-    if (totalSection) totalSection.style.display = 'block';
-    renderBillingQuickCards();
-    renderBillingTotalBills();
-    renderHoldOrdersPanel();
-    renderTablesPanel();
-    renderKitchenPanel();
+    resetPosWorkstation();
   });
 
   // Fast Billing Keyboard Shortcuts (F2: Settle, F1: Search Dish)
@@ -15969,7 +16242,7 @@ async function initBillingPanel() {
   // Quick Enter in food search: adds first filtered dish
   $('pos-food-search')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      const firstDishBtn = document.querySelector('#pos-food-grid .pos-food-card');
+      const firstDishBtn = document.querySelector('#pos-food-grid .pos-food-tile-img, #pos-food-grid .pos-food-card');
       if (firstDishBtn) {
         e.preventDefault();
         firstDishBtn.click();
