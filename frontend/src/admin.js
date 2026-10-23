@@ -13493,18 +13493,48 @@ let posSelectedPlace = null; // { id, name, charge }
 
 function updatePosTableBadge() {
   const badgeText = $('pos-table-badge-text');
+  const badgeIcon = $('pos-table-badge-icon');
   const cartBadge = $('pos-cart-type-badge');
+  const badgeBtn = $('pos-top-table-badge');
   const tblInp = $('pos-table-number');
-  let label = 'Table 12';
+
+  let label = 'Select Table';
+  let icon = '🪑';
+  let title = 'Click to change Table';
+
   if (posOrderType === 'delivery') {
     label = 'Delivery';
+    icon = '🚗';
+    title = 'Delivery Order';
   } else if (posOrderType === 'pickup') {
     label = 'Takeaway';
+    icon = '🥡';
+    title = 'Takeaway Order';
   } else {
-    label = (tblInp && tblInp.value.trim()) ? tblInp.value.trim() : 'Table 12';
+    const rawVal = tblInp ? tblInp.value.trim() : '';
+    if (rawVal) {
+      label = rawVal.toLowerCase().startsWith('table') ? rawVal : `Table ${rawVal}`;
+    } else {
+      label = 'Select Table';
+    }
+    icon = '🪑';
+    title = 'Click to change Table';
   }
+
   if (badgeText) badgeText.textContent = label;
+  if (badgeIcon) badgeIcon.textContent = icon;
   if (cartBadge) cartBadge.textContent = label;
+  if (badgeBtn) badgeBtn.title = title;
+
+  // Synchronize quick table button pills (.active class)
+  const activeTblDigits = (tblInp && posOrderType === 'table') ? tblInp.value.replace(/\D/g, '') : '';
+  document.querySelectorAll('.pos-quick-table-btn').forEach(btn => {
+    if (activeTblDigits && btn.dataset.tbl === activeTblDigits) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
 }
 
 function syncPosOrderTypeState(type) {
@@ -13699,20 +13729,22 @@ function initPosPlaceSearch() {
 }
 
 function getBillSettings() {
+  const rawCgst = parseFloat(printerSettings.cgst_rate ?? localStorage.getItem('qz-bill-cgst-rate'));
+  const rawSgst = parseFloat(printerSettings.sgst_rate ?? localStorage.getItem('qz-bill-sgst-rate'));
   return {
     restaurantName: printerSettings.restaurant_name || localStorage.getItem('qz-bill-restaurant-name') || 'LIMRA RESTAURANT',
     address: printerSettings.restaurant_address || localStorage.getItem('qz-bill-address') || 'Main Road, Near Bus Stand, Egra',
     phone: printerSettings.restaurant_phone || localStorage.getItem('qz-bill-phone') || '+91 99999 88888',
     gstin: printerSettings.restaurant_gstin || localStorage.getItem('qz-bill-gstin') || '',
     fssai: printerSettings.restaurant_fssai || localStorage.getItem('qz-bill-fssai') || '',
-    cgstRate: parseFloat(printerSettings.cgst_rate ?? localStorage.getItem('qz-bill-cgst-rate') ?? 2.5),
-    sgstRate: parseFloat(printerSettings.sgst_rate ?? localStorage.getItem('qz-bill-sgst-rate') ?? 2.5),
-    billPaperSize: parseInt(printerSettings.bill_paper_width || localStorage.getItem('qz-paper-size-bill') || '80'),
-    kotPaperSize: parseInt(printerSettings.kot_paper_width || localStorage.getItem('qz-paper-size-kot') || '80'),
+    cgstRate: isNaN(rawCgst) ? 2.5 : Math.max(0, rawCgst),
+    sgstRate: isNaN(rawSgst) ? 2.5 : Math.max(0, rawSgst),
+    billPaperSize: parseInt(printerSettings.bill_paper_width || localStorage.getItem('qz-paper-size-bill') || '80', 10),
+    kotPaperSize: parseInt(printerSettings.kot_paper_width || localStorage.getItem('qz-paper-size-kot') || '80', 10),
     billSideGap: parseFloat(printerSettings.bill_side_gap ?? localStorage.getItem('qz-bill-side-gap') ?? 2),
     kotSideGap: parseFloat(printerSettings.kot_side_gap ?? localStorage.getItem('qz-kot-side-gap') ?? 2),
-    billBottomFeed: parseInt(printerSettings.bill_bottom_feed ?? localStorage.getItem('qz-bill-bottom-feed') ?? 4),
-    kotBottomFeed: parseInt(printerSettings.kot_bottom_feed ?? localStorage.getItem('qz-kot-bottom-feed') ?? 3),
+    billBottomFeed: parseInt(printerSettings.bill_bottom_feed ?? localStorage.getItem('qz-bill-bottom-feed') ?? 4, 10),
+    kotBottomFeed: parseInt(printerSettings.kot_bottom_feed ?? localStorage.getItem('qz-kot-bottom-feed') ?? 3, 10),
     showLogo: printerSettings.bill_show_logo !== false,
     logoUrl: printerSettings.bill_logo_url || '/images/logo.png',
     upiId: printerSettings.bill_upi_id || '',
@@ -13723,8 +13755,10 @@ function getBillSettings() {
 
 function getPosCartTotals() {
   const s = getBillSettings();
-  const discountPct = parseFloat($('pos-discount-pct')?.value || '0') || 0;
-  const deliveryFee = posOrderType === 'delivery' ? (parseFloat($('pos-delivery-fee')?.value || '0') || 0) : 0;
+  const rawDiscount = parseFloat($('pos-discount-pct')?.value || '0');
+  const discountPct = (isNaN(rawDiscount) || rawDiscount < 0) ? 0 : Math.min(100, rawDiscount);
+  const rawDelFee = parseFloat($('pos-delivery-fee')?.value || '0');
+  const deliveryFee = posOrderType === 'delivery' ? ((isNaN(rawDelFee) || rawDelFee < 0) ? 0 : rawDelFee) : 0;
 
   const billing = calculateOrderBilling({
     items: posCart,
@@ -13749,7 +13783,7 @@ function getPosCartTotals() {
   };
 }
 
-function updatePosCartUI() {
+function updatePosCartUI(shouldUpdateGrid = false) {
   const cartEl = $('pos-cart-items');
   if (!cartEl) return;
 
@@ -13762,6 +13796,10 @@ function updatePosCartUI() {
       const foodItem = allItems.find(f => (item.id && f.id === item.id) || (f.name && f.name.toLowerCase() === item.name.toLowerCase())) || item;
       const isVeg = (typeof isFoodVeg === 'function') ? isFoodVeg(foodItem) : true;
       const dotColor = isVeg ? '#16a34a' : '#dc2626';
+      const uPrice = Number(item.price || 0);
+      const uPriceStr = (uPrice % 1 === 0) ? uPrice.toFixed(0) : uPrice.toFixed(2);
+      const lTotal = uPrice * Number(item.qty || 1);
+      const lTotalStr = (lTotal % 1 === 0) ? lTotal.toFixed(0) : lTotal.toFixed(2);
 
       return `
         <div class="pos-cart-row" style="display:flex;align-items:center;justify-content:space-between;padding:.55rem 0;border-bottom:1px solid #f1f5f9;gap:.4rem;">
@@ -13770,7 +13808,7 @@ function updatePosCartUI() {
             <div style="flex:1;min-width:0;">
               <div style="font-size:.84rem;font-weight:700;color:#1e293b;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.name)}</div>
               ${item.notes ? `<div style="font-size:.7rem;color:#b45309;font-weight:600;font-style:italic;margin-top:2px;background:#fef3c7;display:inline-block;padding:1px 5px;border-radius:4px;">↳ ${escapeHtml(item.notes)}</div>` : ''}
-              <div style="font-size:.72rem;color:#64748b;margin-top:2px;">₹${Number(item.price).toFixed(0)} each</div>
+              <div style="font-size:.72rem;color:#64748b;margin-top:2px;">₹${uPriceStr} each</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:.35rem;flex-shrink:0;">
@@ -13780,7 +13818,7 @@ function updatePosCartUI() {
               <span style="min-width:20px;text-align:center;font-weight:800;font-size:.82rem;color:#1e293b;">${item.qty}</span>
               <button type="button" onclick="posChangeQty(${idx},1)" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;font-size:.85rem;display:flex;align-items:center;justify-content:center;font-weight:bold;color:#475569;">+</button>
             </div>
-            <span style="min-width:55px;text-align:right;font-weight:800;font-size:.88rem;color:#1e293b;">₹${(item.price * item.qty).toFixed(0)}</span>
+            <span style="min-width:55px;text-align:right;font-weight:800;font-size:.88rem;color:#1e293b;">₹${lTotalStr}</span>
             <button type="button" onclick="posRemoveItem(${idx})" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;color:#94a3b8;font-size:.85rem;display:flex;align-items:center;justify-content:center;transition:color .15s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'" title="Remove">✕</button>
           </div>
         </div>
@@ -13824,15 +13862,27 @@ function updatePosCartUI() {
   if ($('pos-cart-count-badge')) $('pos-cart-count-badge').textContent = `${totalItemCount} item${totalItemCount === 1 ? '' : 's'}`;
   updatePosTableBadge();
 
-  // Re-render food grid to update in-cart badges
-  renderFoodGrid($('pos-food-search')?.value);
+  // Re-render food grid to update in-cart badges only when explicitly requested
+  if (shouldUpdateGrid) {
+    renderFoodGrid($('pos-food-search')?.value);
+  }
 }
 
 window.posChangeQty = function(idx, delta) {
-  posCart[idx].qty = Math.max(1, posCart[idx].qty + delta);
-  updatePosCartUI();
+  if (typeof idx !== 'number' || !posCart[idx]) return;
+  const newQty = Number(posCart[idx].qty || 1) + Number(delta);
+  if (newQty <= 0) {
+    posCart.splice(idx, 1);
+  } else {
+    posCart[idx].qty = Math.max(1, Math.floor(newQty));
+  }
+  updatePosCartUI(true);
 };
 window.posRemoveItem = function(idx) {
+  if (typeof idx !== 'number' || !posCart[idx]) return;
+  posCart.splice(idx, 1);
+  updatePosCartUI(true);
+};
   posCart.splice(idx, 1);
   updatePosCartUI();
 };
@@ -13920,8 +13970,15 @@ function initPosEditModalListeners() {
     posCart[idx].notes = notes;
 
     closePosEditItemModal();
-    updatePosCartUI();
+    updatePosCartUI(true);
     showAdminToast(`Updated "${name}" in cart! 📝`, 'success');
+  });
+
+  $('pos-edit-item-form')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target?.tagName !== 'TEXTAREA') {
+      e.preventDefault();
+      $('pos-edit-item-save-btn')?.click();
+    }
   });
 }
 
@@ -13932,23 +13989,28 @@ function loadFoodsCache() {
 
 function addItemToPosCart(food, customNote = '') {
   const note = (customNote || food.notes || '').trim();
+  const addQty = Math.max(1, parseInt(food.qty, 10) || 1);
   const existing = posCart.find(i =>
     ((food.id && i.id === food.id) || i.name.toLowerCase() === food.name.toLowerCase()) &&
     (i.notes || '').trim() === note
   );
   if (existing) {
-    existing.qty++;
+    existing.qty += addQty;
   } else {
     posCart.push({
       id: food.id || null,
       name: food.name,
       price: Number(food.price || 0),
-      qty: Number(food.qty || 1),
+      qty: addQty,
       notes: note,
       gst_applicable: food.gst_applicable !== false
     });
   }
-  updatePosCartUI();
+  updatePosCartUI(true);
+  const cartEl = $('pos-cart-items');
+  if (cartEl) {
+    setTimeout(() => { cartEl.scrollTop = cartEl.scrollHeight; }, 20);
+  }
   showAdminToast(`Added "${food.name}" to cart 🛒`, 'success');
 }
 
@@ -14049,7 +14111,9 @@ async function buildOrderFromPos(action) {
         table_number: posOrderType === 'table' ? (parseInt(String(tableNum).replace(/\D/g, ''), 10) || null) : null,
         total_amount: t.grand,
         status: action === 'hold' ? 'hold' : (action === 'bill' ? 'delivered' : (action === 'kot' ? 'pending' : 'confirmed')),
-        payment_status: payMode === 'pay_later' ? 'unpaid' : ((action === 'hold' || action === 'kot') ? 'unpaid' : 'paid'),
+        payment_status: (existingOrder.payment_status === 'paid' && (action === 'hold' || action === 'kot'))
+          ? 'paid'
+          : (payMode === 'pay_later' ? 'unpaid' : ((action === 'hold' || action === 'kot') ? 'unpaid' : 'paid')),
         ticket_status: action === 'hold' ? 'HOLD' : (action === 'bill' ? 'CLOSED' : 'OPEN'),
         notes: notesStr,
         updated_at: new Date().toISOString()
@@ -15739,6 +15803,7 @@ function renderBillingTotalBills() {
 
 // ── Food Veg / Non-Veg Helper ───────────────────────────────────
 function isFoodVeg(f) {
+  if (!f || typeof f !== 'object') return true;
   if (typeof f.isVeg === 'boolean') return f.isVeg;
   if (typeof f.is_veg === 'boolean') return f.is_veg;
   const cat = (f.category || '').toLowerCase();
@@ -16085,6 +16150,9 @@ function initBillingPanel() {
 
   $('pos-table-number')?.addEventListener('input', updatePosTableBadge);
   $('pos-top-table-badge')?.addEventListener('click', () => {
+    if (posOrderType !== 'table') {
+      syncPosOrderTypeState('table');
+    }
     const tInp = $('pos-table-number');
     if (tInp) {
       tInp.focus();
@@ -16093,8 +16161,6 @@ function initBillingPanel() {
   });
 
   // 6. Bind Order Type Buttons
-
-  // Bind Order Type Buttons
   document.querySelectorAll('.pos-type-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       syncPosOrderTypeState(btn.dataset.type);
@@ -16119,14 +16185,27 @@ function initBillingPanel() {
     if (posCart.length === 0) return;
     if (confirm('Clear all items from current cart?')) {
       posCart = [];
-      updatePosCartUI();
+      updatePosCartUI(true);
     }
   });
 
   // 8. Custom Food Manual Add
   $('pos-food-manual-btn')?.addEventListener('click', () => {
     const r = $('pos-manual-row');
-    if (r) r.style.display = r.style.display === 'none' ? 'block' : 'none';
+    if (r) {
+      const isOpening = r.style.display === 'none';
+      r.style.display = isOpening ? 'block' : 'none';
+      if (isOpening) {
+        setTimeout(() => $('pos-manual-name')?.focus(), 50);
+      }
+    }
+  });
+
+  $('pos-manual-row')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('pos-manual-add')?.click();
+    }
   });
 
   // Initialize POS Item Edit modal listeners
@@ -16162,8 +16241,8 @@ function initBillingPanel() {
   });
 
   // 10. Discount & Delivery fee input listeners
-  $('pos-discount-pct')?.addEventListener('input', updatePosCartUI);
-  $('pos-delivery-fee')?.addEventListener('input', updatePosCartUI);
+  $('pos-discount-pct')?.addEventListener('input', () => updatePosCartUI(false));
+  $('pos-delivery-fee')?.addEventListener('input', () => updatePosCartUI(false));
 
   // 11. POS Action Handlers
   function resetPosWorkstation() {
@@ -16184,7 +16263,23 @@ function initBillingPanel() {
       $('pos-delivery-address').value = '';
       $('pos-delivery-address').classList.remove('pos-input-invalid');
     }
-    updatePosCartUI();
+
+    // Comprehensive reset of order type and payment modes
+    syncPosOrderTypeState('table');
+    const paySel = $('pos-payment-mode');
+    if (paySel) paySel.value = 'upi';
+    document.querySelectorAll('.pos-pay-mode-pill').forEach(b => {
+      const isUpi = b.dataset.pay === 'upi';
+      b.className = 'pos-pay-mode-pill adm-btn ' + (isUpi ? 'adm-btn-primary' : 'adm-btn-outline');
+    });
+    document.querySelectorAll('.pos-quick-table-btn').forEach(b => b.classList.remove('active'));
+
+    const billBtnLabel = $('pos-bill-btn-label');
+    const billBtnIcon = $('pos-bill-btn-icon');
+    if (billBtnLabel) billBtnLabel.textContent = 'Create Bill & Settle';
+    if (billBtnIcon) billBtnIcon.textContent = '🗎';
+
+    updatePosCartUI(true);
     renderCategoryPills();
     updateCatalogCatHeader();
     renderFoodGrid('');
