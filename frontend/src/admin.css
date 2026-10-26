@@ -1520,114 +1520,6 @@
 #pos-food-grid::-webkit-scrollbar-track { background: transparent; }
 #pos-food-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 
-.pos-food-tile-img {
-  background: #ffffff;
-  border: 1.5px solid var(--adm-border, #e5e7eb);
-  border-radius: 12px;
-  overflow: hidden;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  transition: border-color .18s, transform .15s, box-shadow .18s;
-  box-shadow: 0 1px 4px rgba(0,0,0,.03);
-  width: 100%;
-  position: relative;
-}
-.pos-food-tile-img:hover {
-  border-color: #d0a047;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(208,160,71,.18);
-}
-.pos-food-tile-img:active {
-  transform: scale(.97);
-}
-
-.pos-tile-img-box {
-  width: 100%;
-  height: 84px;
-  background: #f8fafc;
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.pos-tile-img-box img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform .25s ease;
-}
-.pos-food-tile-img:hover .pos-tile-img-box img {
-  transform: scale(1.08);
-}
-
-.pos-tile-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  background: #d0a047;
-  color: #fff;
-  font-size: .65rem;
-  font-weight: 800;
-  padding: .15rem .45rem;
-  border-radius: 999px;
-  box-shadow: 0 2px 6px rgba(0,0,0,.2);
-}
-
-.pos-tile-body {
-  padding: .5rem .55rem;
-  display: flex;
-  flex-direction: column;
-  gap: .25rem;
-  background: #fff;
-  flex: 1;
-  justify-content: space-between;
-}
-.pos-tile-title {
-  font-size: .78rem;
-  font-weight: 700;
-  color: #1e293b;
-  line-height: 1.25;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 28px;
-}
-.pos-tile-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: .2rem;
-}
-.pos-tile-price-tag {
-  font-size: .88rem;
-  color: #1e293b;
-  font-weight: 800;
-}
-.pos-tile-add-btn {
-  background: #d0a047;
-  color: #ffffff;
-  border: none;
-  border-radius: 50%;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: .9rem;
-  font-weight: 800;
-  box-shadow: 0 2px 6px rgba(208,160,71,.35);
-  transition: transform .15s ease, background .15s ease;
-}
-.pos-food-tile-img:hover .pos-tile-add-btn {
-  background: #b88730;
-  transform: scale(1.12);
-}
-
 /* Category pills */
 .pos-cat-pill {
   padding: .35rem .85rem;
@@ -2734,8 +2626,8 @@ body.pos-mode-active .adm-content {
 
 /* ── COLUMN 1: Categories Sidebar ────────────────────────────── */
 .pos-col-categories {
-  flex: 0 0 200px;
-  width: 200px;
+  flex: 0 0 220px;
+  width: 220px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -2744,7 +2636,7 @@ body.pos-mode-active .adm-content {
   overflow: hidden;
 }
 .pos-cat-sidebar-header {
-  padding: 0.65rem 0.85rem;
+  padding: 0.75rem 0.9rem;
   border-bottom: 1px solid #f1f5f9;
   display: flex;
   align-items: center;
@@ -2752,18 +2644,18 @@ body.pos-mode-active .adm-content {
   flex: 0 0 auto;
 }
 .pos-cat-sidebar-title {
-  font-size: 0.76rem;
-  font-weight: 700;
-  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #475569;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .pos-cat-sidebar-badge {
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 700;
   background: #f1f5f9;
   color: #475569;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 999px;
 }
 
@@ -2773,10 +2665,10 @@ body.pos-mode-active .adm-content {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0.45rem;
+  padding: 0.5rem;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 .pos-cat-menu-list::-webkit-scrollbar { width: 4px; }
 .pos-cat-menu-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
@@ -2786,12 +2678,12 @@ body.pos-mode-active .adm-content {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 0.55rem 0.7rem;
+  padding: 0.65rem 0.8rem;
   border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
   color: #334155;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -2806,28 +2698,29 @@ body.pos-mode-active .adm-content {
   border-color: #e7c88b;
   color: #926017;
   font-weight: 700;
-  box-shadow: 0 1px 3px rgba(208, 160, 71, 0.12);
+  box-shadow: 0 1px 4px rgba(208, 160, 71, 0.15);
 }
 .pos-cat-label-wrap {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.55rem;
   min-width: 0;
   flex: 1;
 }
 .pos-cat-icon {
-  font-size: 1rem;
+  font-size: 1.18rem;
   flex-shrink: 0;
 }
 .pos-cat-text {
+  font-size: 0.88rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .pos-cat-count-badge {
-  font-size: 0.7rem;
+  font-size: 0.74rem;
   font-weight: 700;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 999px;
   background: #f1f5f9;
   color: #64748b;
@@ -3006,38 +2899,42 @@ body.pos-mode-active .adm-content {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0.75rem;
+  padding: 0.85rem;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.85rem;
   align-content: start;
 }
-.pos-canva-food-grid::-webkit-scrollbar { width: 5px; }
+.pos-canva-food-grid::-webkit-scrollbar { width: 6px; }
 .pos-canva-food-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 
-/* Compact Food Dish Cards */
+/* Food Dish Cards - Clear, legible, touch-friendly POS tiles */
 .pos-food-tile-img {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
   padding: 0;
   cursor: pointer;
   text-align: left;
-  display: flex;
-  flex-direction: column;
-  transition: border-color .15s, transform .15s, box-shadow .15s;
-  box-shadow: 0 1px 3px rgba(0,0,0,.03);
+  display: flex !important;
+  flex-direction: column !important;
+  height: 220px !important;
+  min-height: 220px !important;
   width: 100%;
   position: relative;
+  box-sizing: border-box;
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,.04);
+  user-select: none;
 }
 .pos-food-tile-img:hover {
   border-color: #d0a047;
   transform: translateY(-2px);
-  box-shadow: 0 6px 18px rgba(208,160,71,.16);
+  box-shadow: 0 8px 20px rgba(208,160,71,.18);
 }
 .pos-food-tile-img:active {
-  transform: scale(.97);
+  transform: scale(.98);
 }
 .pos-food-tile-img.is-out-of-stock {
   opacity: 0.55;
@@ -3047,7 +2944,10 @@ body.pos-mode-active .adm-content {
 
 .pos-tile-img-box {
   width: 100%;
-  height: 72px;
+  height: 110px !important;
+  min-height: 110px !important;
+  max-height: 110px !important;
+  flex: 0 0 110px !important;
   background: #f8fafc;
   position: relative;
   overflow: hidden;
@@ -3067,66 +2967,71 @@ body.pos-mode-active .adm-content {
 
 .pos-tile-badge {
   position: absolute;
-  top: 5px;
-  right: 5px;
+  top: 6px;
+  right: 6px;
   background: #d0a047;
   color: #fff;
-  font-size: .62rem;
+  font-size: .7rem;
   font-weight: 800;
-  padding: .12rem .4rem;
+  padding: .15rem .5rem;
   border-radius: 999px;
-  box-shadow: 0 2px 4px rgba(0,0,0,.2);
+  box-shadow: 0 2px 4px rgba(0,0,0,.25);
+  z-index: 2;
 }
 
 .pos-tile-body {
-  padding: .4rem .5rem;
-  display: flex;
-  flex-direction: column;
-  gap: .2rem;
+  padding: .55rem .65rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  justify-content: space-between !important;
+  gap: .25rem;
   background: #fff;
-  flex: 1;
-  justify-content: space-between;
+  min-height: 90px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .pos-tile-title {
-  font-size: .76rem;
+  font-size: .88rem;
   font-weight: 700;
-  color: #1e293b;
-  line-height: 1.2;
+  color: #0f172a;
+  line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 24px;
+  min-height: 36px;
 }
 .pos-tile-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: .15rem;
+  margin-top: .2rem;
 }
 .pos-tile-price-tag {
-  font-size: .84rem;
-  color: #1e293b;
+  font-size: 1.02rem;
+  color: #0f172a;
   font-weight: 800;
+  letter-spacing: -0.01em;
 }
 .pos-tile-add-btn {
   background: #d0a047;
   color: #ffffff;
   border: none;
   border-radius: 50%;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: .85rem;
+  font-size: 1.1rem;
   font-weight: 800;
-  box-shadow: 0 2px 4px rgba(208,160,71,.3);
+  box-shadow: 0 2px 6px rgba(208,160,71,.35);
   transition: transform .15s ease, background .15s ease;
 }
 .pos-food-tile-img:hover .pos-tile-add-btn {
   background: #b88730;
-  transform: scale(1.1);
+  transform: scale(1.08);
 }
 
 /* ── COLUMN 3: Cart & Billing Summary ────────────────────────── */
@@ -3417,12 +3322,12 @@ body.pos-mode-active .adm-content {
 /* Responsive adjustments for smaller screens */
 @media (max-width: 1200px) {
   .pos-col-categories {
-    flex: 0 0 175px;
-    width: 175px;
+    flex: 0 0 195px;
+    width: 195px;
   }
   .pos-col-cart {
-    flex: 0 0 310px;
-    width: 310px;
+    flex: 0 0 320px;
+    width: 320px;
   }
   .pos-top-btn-text {
     display: none;
@@ -3433,12 +3338,12 @@ body.pos-mode-active .adm-content {
 }
 @media (max-width: 900px) {
   .pos-col-categories {
-    flex: 0 0 150px;
-    width: 150px;
+    flex: 0 0 180px;
+    width: 180px;
   }
   .pos-col-cart {
-    flex: 0 0 290px;
-    width: 290px;
+    flex: 0 0 300px;
+    width: 300px;
   }
   .pos-canva-status-pill {
     display: none;
@@ -3526,11 +3431,11 @@ body.pos-mode-active .adm-content {
     font-size: 0.88rem;
   }
   .pos-tile-img-box {
-    height: 58px;
+    height: 92px;
   }
   .pos-tile-title {
-    font-size: 0.72rem;
-    min-height: 20px;
+    font-size: 0.84rem;
+    min-height: 32px;
   }
 }
 
@@ -4003,14 +3908,18 @@ html, body {
   }
   #pos-food-grid {
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 0.45rem !important;
-    max-height: 360px !important;
+    gap: 0.55rem !important;
+    max-height: 400px !important;
   }
   .pos-food-tile-img .pos-tile-img-box {
-    height: 65px !important;
+    height: 85px !important;
   }
   .pos-food-tile-body {
-    padding: 0.45rem !important;
+    padding: 0.5rem 0.55rem !important;
+  }
+  .pos-food-tile-img .pos-tile-title {
+    font-size: 0.82rem !important;
+    min-height: 28px !important;
   }
   .pos-action-btn {
     min-height: 48px !important;

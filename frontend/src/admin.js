@@ -8401,7 +8401,7 @@ function renderClosedEditFoodGrid(filterText) {
     const inOrderQty = inOrder ? inOrder.qty : 0;
 
     return `
-      <button type="button" class="pos-food-tile-img" data-id="${f.id}" data-name="${escapeHtml(f.name)}" data-price="${f.price}">
+      <div role="button" tabindex="0" class="pos-food-tile-img" data-id="${f.id}" data-name="${escapeHtml(f.name)}" data-price="${f.price}">
         <div class="pos-tile-img-box">
           <img src="${imgUrl}" alt="${escapeHtml(f.name)}" onerror="this.src='/images/food_starters.png'" loading="lazy" />
           ${inOrderQty > 0 ? `<span class="pos-tile-badge">${inOrderQty} in bill</span>` : ''}
@@ -8413,7 +8413,7 @@ function renderClosedEditFoodGrid(filterText) {
             <span class="pos-tile-add-btn">+</span>
           </div>
         </div>
-      </button>
+      </div>
     `;
   }).join('');
 
@@ -13883,9 +13883,6 @@ window.posRemoveItem = function(idx) {
   posCart.splice(idx, 1);
   updatePosCartUI(true);
 };
-  posCart.splice(idx, 1);
-  updatePosCartUI();
-};
 
 window.posEditItem = function(idx) {
   const item = posCart[idx];
@@ -15875,7 +15872,7 @@ function renderFoodGrid(filterText) {
     return;
   }
 
-  grid.innerHTML = filtered.map(f => {
+  function buildDishCardHtml(f) {
     const fId = f.id != null ? String(f.id) : '';
     const fName = String(f.name || '');
     const imgUrl = f.image || categoryImages[f.category] || '/images/food_starters.png';
@@ -15886,7 +15883,7 @@ function renderFoodGrid(filterText) {
     const isAvailable = f.available !== false;
 
     return `
-      <button type="button" class="pos-food-tile-img ${isAvailable ? '' : 'is-out-of-stock'}" data-id="${escapeHtml(fId)}" data-name="${escapeHtml(fName)}" data-price="${f.price}" data-available="${isAvailable}">
+      <div role="button" tabindex="0" class="pos-food-tile-img ${isAvailable ? '' : 'is-out-of-stock'}" data-id="${escapeHtml(fId)}" data-name="${escapeHtml(fName)}" data-price="${f.price}" data-available="${isAvailable}">
         <div class="pos-tile-img-box">
           <img src="${imgUrl}" alt="${escapeHtml(fName)}" onerror="this.src='/images/food_starters.png'" loading="lazy" />
           ${cartQty > 0 ? `<span class="pos-tile-badge">${cartQty} in cart</span>` : ''}
@@ -15899,15 +15896,56 @@ function renderFoodGrid(filterText) {
           </div>
           <div class="pos-tile-foot">
             <span class="pos-tile-price-tag">₹${Number(f.price || 0).toFixed(0)}</span>
-            <span class="pos-tile-add-btn">+</span>
+            <span class="pos-tile-add-btn" title="Add to cart">+</span>
           </div>
         </div>
-      </button>
+      </div>
     `;
-  }).join('');
+  }
+
+  if (isAll && !q) {
+    const availableCats = new Set(filtered.map(f => f.category).filter(Boolean));
+    const orderedCats = categoryTabOrder.filter(c => availableCats.has(c));
+    const extraCats = Array.from(availableCats).filter(c => !categoryTabOrder.includes(c));
+    const groups = [...orderedCats, ...extraCats];
+
+    let html = '';
+    groups.forEach(catKey => {
+      const itemsInCat = filtered.filter(f => f.category === catKey);
+      if (!itemsInCat.length) return;
+      const catLabel = categoryLabels[catKey] || catKey;
+      const catEmoji = categoryEmojis[catKey] || '🍲';
+      html += `
+        <div class="pos-category-row-header" style="grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.85rem; margin-top: 0.65rem; margin-bottom: 0.15rem; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #d0a047;">
+          <div style="display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 0.92rem; color: #0f172a;">
+            <span>${catEmoji}</span>
+            <span>${escapeHtml(catLabel)}</span>
+          </div>
+          <span style="font-size: 0.75rem; font-weight: 700; color: #64748b; background: #ffffff; padding: 2px 8px; border-radius: 999px; border: 1px solid #e2e8f0;">
+            ${itemsInCat.length} dish${itemsInCat.length === 1 ? '' : 'es'}
+          </span>
+        </div>
+      `;
+      html += itemsInCat.map(buildDishCardHtml).join('');
+    });
+
+    const uncategorized = filtered.filter(f => !f.category);
+    if (uncategorized.length) {
+      html += `
+        <div class="pos-category-row-header" style="grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.85rem; margin-top: 0.65rem; margin-bottom: 0.15rem; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #d0a047;">
+          <span style="font-weight: 800; font-size: 0.92rem; color: #0f172a;">🍽️ Other Dishes</span>
+          <span style="font-size: 0.75rem; font-weight: 700; color: #64748b; background: #fff; padding: 2px 8px; border-radius: 999px; border: 1px solid #e2e8f0;">${uncategorized.length}</span>
+        </div>
+      `;
+      html += uncategorized.map(buildDishCardHtml).join('');
+    }
+    grid.innerHTML = html;
+  } else {
+    grid.innerHTML = filtered.map(buildDishCardHtml).join('');
+  }
 
   grid.querySelectorAll('.pos-food-tile-img').forEach(tile => {
-    tile.addEventListener('click', () => {
+    const handleSelect = () => {
       if (tile.dataset.available === 'false') {
         showAdminToast('This dish is currently marked Out of Stock.', 'error');
         return;
@@ -15917,6 +15955,14 @@ function renderFoodGrid(filterText) {
         name: tile.dataset.name,
         price: parseFloat(tile.dataset.price)
       });
+    };
+
+    tile.addEventListener('click', handleSelect);
+    tile.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleSelect();
+      }
     });
   });
 }
