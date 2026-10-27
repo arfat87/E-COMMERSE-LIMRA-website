@@ -25,6 +25,18 @@ export function safeNum(val, fallback = 0) {
   return isNaN(n) ? fallback : n;
 }
 
+/** Helper: format rupee with 2 decimal places (e.g. ₹25.00, ₹4.25) */
+export function formatRupee(amount) {
+  const num = Number(amount) || 0;
+  return '₹' + num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Helper: format bill amount to whole rupees with .00 (e.g. ₹25.50 -> ₹25.00, ₹25.25 -> ₹25.00, ₹25 -> ₹25.00) */
+export function formatBillAmount(amount) {
+  const num = Math.floor(Math.max(0, Number(amount) || 0));
+  return '₹' + num.toLocaleString('en-IN') + '.00';
+}
+
 /**
  * Standard Status Enumerations
  */
@@ -94,6 +106,12 @@ export function parseNotesBillingMetadata(notes) {
   if (feeMatch) {
     const f = parseFloat(feeMatch[1]);
     if (!isNaN(f) && f >= 0) result.deliveryFee = f;
+  } else {
+    const plainFeeMatch = raw.match(/Delivery\s+(?:charge|fee):\s*₹?\s*([0-9.]+)/i);
+    if (plainFeeMatch) {
+      const f = parseFloat(plainFeeMatch[1]);
+      if (!isNaN(f) && f >= 0) result.deliveryFee = f;
+    }
   }
 
   const cgstMatch = raw.match(/\[CGST:\s*([^\]|%]+)%?\]/i);
@@ -290,8 +308,8 @@ export function calculateOrderBilling({
     (subtotal - finalDiscountAmt) + totalGst + cleanDeliveryFee
   );
 
-  // Commercial integer rounding for cash/billing (e.g. 538.50 -> 539.00)
-  const roundedGrandTotal = Math.round(unroundedGrandTotal);
+  // Standardize payable bill total to whole rupees (floor rounding, e.g. ₹25.50 -> ₹25.00, ₹25.25 -> ₹25.00)
+  const roundedGrandTotal = Math.floor(Math.max(0, unroundedGrandTotal));
   const roundOff = round2(roundedGrandTotal - unroundedGrandTotal);
 
   return {
@@ -305,17 +323,24 @@ export function calculateOrderBilling({
     taxableDiscountAmt,
     nonTaxableDiscountAmt,
     taxableValue: netTaxableValue,
+    taxableAmount: netTaxableValue,
     nonTaxableValue: netNonTaxableValue,
+    nonTaxableAmount: netNonTaxableValue,
     cgstRate: isInterstate ? 0 : cleanCgstRate,
     cgstAmt,
+    cgstAmount: cgstAmt,
     sgstRate: isInterstate ? 0 : cleanSgstRate,
     sgstAmt,
+    sgstAmount: sgstAmt,
     igstRate: isInterstate ? totalGstRate : 0,
     igstAmt,
+    igstAmount: igstAmt,
     totalGstRate,
     totalGst,
+    discountAmount: finalDiscountAmt,
     deliveryFee: cleanDeliveryFee,
-    grandTotal: unroundedGrandTotal,
+    grandTotal: roundedGrandTotal,
+    unroundedGrandTotal,
     roundedGrandTotal,
     roundOff,
     isInterstate

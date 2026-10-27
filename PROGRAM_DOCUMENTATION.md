@@ -233,6 +233,8 @@
 | Thermal Kitchen Order Ticket (KOT) Print | `frontend/src/admin.js` | `printKOT()` | 14371 | 14515 | `frontend/src/lib/escpos.js` |
 | Thermal Final Tax Invoice Print | `frontend/src/admin.js` | `printOrderReceiptWithTax()` | 14620 | 14669 | `frontend/src/lib/escpos.js` |
 | Dual Sequential KOT & Bill Printing | `frontend/src/admin.js` | `printCombinedKOTAndBill()` | 14670 | 14815 | `frontend/src/lib/print-queue.js` |
+| Close Orders Historical Fetching & Pagination | `frontend/src/admin.js` | `ensureHistoricalClosedOrders()`, `renderClosedPagination()` | 8097 | 8450 | `frontend/admin.html` |
+| Orders API Historical Range & Status Query | `backend/api/orders.js` | `default (GET handler)` | 584 | 655 | `backend/server.js` |
 | Dine-In Table Session Initialization | `frontend/src/table/table.js` | `init()` | 46 | 82 | `frontend/table/index.html` |
 | Table Cart Multi-Round Placement | `frontend/src/table/table.js` | Round Placement Handler | 525 | 720 | `frontend/src/lib/supabase.js` |
 | Digital Staff Call ("Call Waiter / Bill") | `frontend/src/table/table.js` | Service Call Handler | 730 | 810 | `backend/api/orders.js` |
@@ -412,6 +414,28 @@
   → Sequentially flushes outbox queue with exponential backoff & idempotency headers
   → Server confirms insertion → Job marked 'synced' and purged from local queue
   ```
+
+---
+
+### Feature 8: Centralized Restaurant Settings & Configuration Hub
+- **User-Facing Entry Point:** Admin Sidebar `#panel=settings`, `#panel=printer`, `#panel=profile`.
+- **Main Component / Templates:** `frontend/admin.html` (lines 2538–3620) & `frontend/src/admin.css` (lines 4090–4605).
+- **Controller Engine:** `frontend/src/admin.js` (lines 16530–16750).
+- **Persistence Target:** Database table `public.printer_settings`, `public.admin_users`, and synchronized `localStorage` keys.
+- **Settings Categories (8 Dedicated Hub Modules):**
+  1. **🏢 Restaurant Profile:** Legal trade name, contact phone, primary address, FSSAI license, logo toggle and URL.
+  2. **🧾 Billing & GST Compliance:** Intrastate 5% food GST split (2.5% CGST + 2.5% SGST under SAC 996331), GSTIN tax ID, receipt badges (table number, delivery place), paper-saver compact header, custom footer message.
+  3. **💳 Payments & Delivery Logistics:** Merchant UPI ID / VPA, registered business payee name, dynamic QR code sizing, area delivery charges.
+  4. **🖨️ Thermal Printer & Hardware Studio:** TVS RP3200 Plus direct driver spooler vs QZ Tray, custom roll widths (80mm/72mm/58mm/A4), auto-cutter options, side margins, bottom feed lines, bold typography, spacing density, live interactive receipt canvas preview.
+  5. **🍳 Kitchen Display & KOT Settings:** KOT roll dimensions, cutter rules, chef ticket visibility toggles (table, order type, customer name, timestamp, chef instructions, bold quantity), font sizing (medium, large, xlarge).
+  6. **👥 Staff, Roles & Permissions:** Multi-tier RBAC (Store Manager, POS Cashier, Head Chef, Service Captain, Delivery Rider), shift scheduling, live duty status tracking, CSV export.
+  7. **💬 WhatsApp & Audio Alerts:** 1-click customer direct chat with dynamic templates, automated dispatch notices, Google review booster invites, promotional coupons, POS chime and voice announcements.
+  8. **🌐 Cloud Integrations & Google Sync:** Google Business Profile metadata, Google review links, thermal bill review QR generation, real-time Google Sheets webhook sync with batch and test payload capabilities.
+- **Safety & Dirty State Tracking:**
+  - Real-time dirty state indicators (`#stg-dirty-badge`, `#stg-bottom-dirty-badge`) showing `🟡 Unsaved changes` on edit and `🟢 All changes saved` on sync.
+  - Browser `beforeunload` interceptor preventing accidental tab closure with unsaved modifications.
+  - Unified `saveAllRestaurantSettings()` saving to Supabase database with automatic column-healing and localStorage caching.
+  - One-click `resetAllRestaurantSettings()` reverting inputs to verified database values.
 
 ---
 
@@ -742,9 +766,65 @@ Modifying any of these central files introduces high regression risk across the 
 
 ---
 
-### Rule 4: Commercial Half-Rupee Rounding (CGST Act Section 170)
-- **Implementation:** `backend/api/lib/billing-engine.js` (lines 294-296).
-- **Rule Formulation:** The grand total is commercially rounded to the nearest integer rupee (`roundOff = roundedTotal - unroundedTotal`), where fractions $\ge 0.50$ round up and $< 0.50$ round down.
+### Rule 4: Whole-Rupee Payable Rounding & Standardized Currency Formatting
+- **Implementation:** `backend/api/lib/billing-engine.js` (lines 30-48, 290-305), `frontend/src/lib/billing-engine.js`, `frontend/src/lib/escpos.js`, `frontend/src/admin.js`, `frontend/src/main.js`, `frontend/src/table/table.js`.
+- **Rule Formulation:**
+  1. *Whole-Rupee Floor Rounding:* The payable grand total is explicitly rounded down to the nearest whole rupee (`roundedGrandTotal = Math.floor(Math.max(0, unroundedGrandTotal))`).
+  2. *Explicit Round-off Difference:* The exact difference is captured in `roundOff` (`roundOff = round2(roundedGrandTotal - unroundedGrandTotal)`), which is displayed as a dedicated discount line item on thermal ESC/POS slips, POS live previews, web checkout carts, table order summaries, and customer receipts whenever non-zero.
+  3. *Unbroken Intermediate Precision:* Intermediate calculation stages (item unit prices, line totals, taxable subtotals, proportional discounts, and 5% food GST split into 2.5% CGST + 2.5% SGST) strictly preserve mathematical 2-decimal paise precision without premature or independent truncation.
+  4. *Whole-Rupee Bill Display Format:* All final bill amount displays throughout the application are standardized to whole rupees ending in `.00` (e.g. `₹25.50` → `₹25.00`, `₹25.25` → `₹25.00`, `₹25` → `₹25.00`) via the shared utility `formatBillAmount()`.
+  5. *Quad-Layer Parity:* The printed thermal bill, customer receipt, online payment gateway (Razorpay paise `Math.round(grandTotal * 100)`), POS cash/UPI counter settlements, and database order record (`total_amount`) agree on the exact same whole rupee value, eliminating any customer overcharge or reconciliation dispute.
+
+---
+
+### Rule 4.1: Delivery Charge Invariant & Close Orders Harmonization
+- **Implementation:** `backend/api/lib/billing-engine.js`, `frontend/src/lib/billing-engine.js`, and `frontend/src/admin.js` (`computeOrderTaxDetails()`, `printOrderReceiptWithTax()`, `renderClosedEditItems()`, `saveClosedOrderCorrections()`).
+- **Rule Formulation:**
+  1. *Applicability:* Delivery charges apply solely when `order_type === 'delivery'`. For Dine-in (`table`) and Takeaway/Pickup (`pickup`), `deliveryFee` is strictly `0.00`.
+  2. *Single Inclusion:* The delivery charge is included exactly once in the final payable amount:
+     $$\text{Grand Total} = (\text{Subtotal} - \text{Discount}) + \text{Total GST} + \text{Delivery Fee}$$
+  3. *Close Orders Parity:* The Close Orders view, KPI cards (`closed-kpi-total-rev`, `closed-kpi-today-rev`), table summary bar, edit/hold recalculation, and CSV audit reports compute authoritative financial totals via `calculateOrderBilling()`, ensuring total parity between POS counter bills, printed ESC/POS slips, customer receipts, and database order headers.
+  4. *Zero Delivery Fee Safety:* Free delivery (`deliveryFee: 0`) is explicitly preserved and must never fall back to default non-zero values (such as ₹10 or ₹50).
+
+---
+
+### Rule 4.2: Historical Close Orders Retrieval, Timezone Boundaries & Server-Side Pagination
+- **Implementation:** `frontend/src/admin.js` (`ensureHistoricalClosedOrders()`, `getClosedDateRangeIso()`, `renderClosedPagination()`, `ensureOrderItemsLoaded()`, `exportRestaurantGSTReportCSV()`, `exportClosedOrdersCSV()`), `backend/api/orders.js` (lines 584-655), and `frontend/admin.html` (lines 1134-1155).
+- **Rule Formulation:**
+  1. *Complete Historical Coverage:* The Close Orders view must not be constrained by global baseline in-memory limits (e.g. initial 300 orders cache). When a historical period is selected (e.g. "All Time", "This Month", "Custom Range"), the system dynamically fetches historical closed/settled orders from Supabase using chunked range pagination (`.range(from, from + pageSize - 1)`) and merges them into memory via Map deduplication by order ID (`orderMap.set(String(o.id), o)`).
+  2. *Local Timezone & Midnight Boundary Accuracy:* Indian Standard Time (IST, UTC+5:30) midnight boundaries (`00:00:00.000` to `23:59:59.999`) must be converted to local start-of-day and end-of-day ISO UTC timestamps (`new Date(y, m - 1, d, 0, 0, 0, 0).toISOString()`). For instance, an order placed at 00:15 AM IST on Oct 1 corresponds to `18:45:00 UTC` on Sept 30; converting from local midnight prevents late night or early morning orders from being omitted.
+  3. *Strict Status Eligibility:* Close Orders must strictly display settled/closed orders (`status in ('delivered', 'completed', 'closed')` or `payment_status = 'paid'`) and cancelled orders (for audit tracking). Unpaid pending, preparing, or hold orders are strictly excluded from Close Orders.
+  4. *Cancelled Revenue Safeguard:* Cancelled orders are displayed with a distinct Cancelled status badge and are excluded from the net closed revenue summation (`closed-kpi-total-rev`).
+  5. *Sliding-Window Pagination Controls:* To prevent UI freezing and ensure older orders are navigable, Close Orders renders a responsive pagination bar (`#closed-orders-pagination-wrap`) supporting configurable page sizes (25, 50, 100 per page), an active page range indicator (`#closed-page-range`, `#closed-total-count`), and a sliding window of 7 numeric buttons with Previous (`«`) and Next (`»`) controls.
+  6. *On-Demand Line Item Loading:* Historical order records loaded without line items are enriched on demand: `ensureOrderItemsLoaded()` fetches missing items from `order_items` in batches of 100 before rendering the active page or exporting CSV reports, ensuring full dish details and GST breakdowns are consistently available.
+
+---
+
+### Rule 4.3: Held Orders Cash/UPI Payment Selection & Atomic Settlement
+- **Implementation:** `frontend/admin.html` (`#adm-hold-settle-modal`, lines 4215-4315), `frontend/src/admin.css` (`.hold-settle-method-card`, lines 1625-1655), `frontend/src/admin.js` (`openHoldSettleModal()`, `selectHoldSettleMethod()`, `executeHoldSettlement()`, `createFinalBillForTableSession()`, `settleSingleHeldOrder()`), `backend/api/orders.js` (`PATCH /api/orders`, lines 832-840), `frontend/src/lib/escpos.js` (lines 103, 270), and database schema RPC `settle_order_atomic`.
+- **Rule Formulation:**
+  1. *Explicit Payment Mode Selection:* When confirming or finalizing any held order (active table session with consolidated KOTs or single held takeaway/delivery orders), the operator is presented with a high-contrast modal featuring explicit **Cash** and **UPI** method cards.
+  2. *Pre-Settlement Payable Clarity:* The modal displays the exact grand total payable amount formatted in whole rupees with `.00` (via `formatBillAmount`), accompanied by a subtotal and GST breakdown, ensuring total transparency before financial commitment.
+  3. *Payment Method State Preservation:* The selected payment method is strictly recorded against `orders.payment_method`, appended to `notes` as `[PAYMENT: cash|upi]`, recorded in `payment_history`, and reflected on thermal printouts (`printOrderReceiptWithTax`) and ESC/POS printer jobs. Resuming a held order into the POS workstation (`loadOrderIntoPos()`) automatically synchronizes `pos-payment-mode` and `.pos-pay-mode-pill` to preserve existing selections.
+  4. *Delayed Settlement Invariant:* Neither resuming a held order into the POS cart nor opening the confirmation modal may transition the order to `paid`, `delivered`, or `CLOSED`. Status finalization occurs exclusively upon explicit confirmation in the settlement modal or the POS cart's Settle & Pay button.
+  5. *Concurrency & Double-Settlement Guard:* Double-clicks and network retries are prevented by the `isHoldSettling` execution lock, disabled action buttons with visual opacity drop, client-side UUID idempotency keys passed in headers and request bodies, and database `neq('ticket_status', 'CLOSED')` / `settle_order_atomic` transactional row locks.
+  6. *UPI Proof & Verification:* When UPI is selected, the modal presents an optional UPI Reference / UTR field (`#hold-settle-upi-ref`), which is recorded in the order notes (`[UPI_REF: <utr>]`) and audit trail without treating selection alone as automatic proof of funds arrival.
+
+---
+
+### Rule 4.4: GST Tax Accounting & Date-Range Reporting Compliance
+- **Implementation:** `frontend/admin.html` (lines 574–650), `frontend/src/admin.css` (lines 1400–1425), `frontend/src/admin.js` (`renderGSTSection()`, `getGstDateRangeBounds()`, `ensureOrdersForGstRange()`, `getGstFilteredOrders()`, `setGstDatePreset()`, `applyGstCustomRange()`, `resetGstFilter()`, `exportMonthlyGSTFilingCSV()`, lines 2240–2600), `backend/api/lib/billing-engine.js` (lines 185–323), and `backend/tests/gst-date-filtering.test.mjs`.
+- **Rule Formulation:**
+  1. *Dynamic Multi-Period Filtering & Preset Bounds:* The GST Tax Accounting & Compliance Hub provides quick presets (`Today`, `Yesterday`, `This Month`, `Last Month`, `Last 7 Days`, `Last 30 Days`, `Custom Range`) alongside two dedicated date inputs (`#dash-gst-start-date` and `#dash-gst-end-date`). The default reporting period is `this_month`. Applying any custom range overrides the preset without modifying saved underlying invoices.
+  2. *Local Timezone & Midnight Boundary Accuracy:* Filter ranges are computed in the restaurant's local Indian Standard Time (IST, UTC+5:30) zone, spanning from `00:00:00.000` on the start date through `23:59:59.999` on the end date. Single-day selections (e.g. 2026-10-15 to 2026-10-15) encapsulate the entire 24-hour day, including late-night orders placed near midnight.
+  3. *Validation Integrity:* The filter enforces that `startDate <= endDate`. If an invalid range is provided (e.g. start date later than end date), an alert is displayed and the query is safely aborted without state corruption.
+  4. *Dining Table Session Consolidation (No Double-Counting):* Dine-in orders frequently generate multiple KOT rounds prior to settlement. The GST calculator strictly processes orders through `getConsolidatedClosedBills(matchedOrders)` to aggregate session rounds, preventing duplicate counting of sales volume, net taxable turnover, and collected taxes.
+  5. *Status Eligibility & Exclusions:* Cancelled orders (`status === 'cancelled'`) are strictly excluded from taxable turnover and tax liabilities. Unsettled hold or in-progress orders are excluded from settled tax metrics.
+  6. *Authoritative Indian GST Bifurcation:* Accurately bifurcates food and beverage sales into 2.5% CGST + 2.5% SGST under SAC Code 996331 for standalone restaurants, and isolates any interstate IGST.
+  7. *Summary KPI Metrics:* Computes and renders 7 authoritative metrics: Gross Sales (`#stat-gst-gross`), Taxable Sales (`#stat-gst-taxable`), Total GST Collected (`#stat-gst-total`), CGST (`#stat-gst-cgst`), SGST (`#stat-gst-sgst`), IGST (`#stat-gst-igst`), and Volume/Status breakdown (`#stat-gst-order-count`, `#stat-gst-paid`, `#stat-gst-pending`).
+  8. *Empty State Resilience:* When zero transactions match the selected period, the hub displays a dedicated empty state banner (`#dash-gst-empty-state`) with clean zero values rather than broken `NaN` or phantom figures.
+  9. *Date-Range Synchronized CSV Exports:* The statutory GST filing CSV export (`exportMonthlyGSTFilingCSV`) respects the exact active date range, pre-loads line items on demand (`ensureOrderItemsLoaded`), includes SAC Code 996331, and outputs formatted file names (e.g. `LIMRA_Restaurant_GST_Report_2026-10-01_to_2026-10-15.csv`).
+
 
 ---
 
@@ -853,20 +933,24 @@ OPEN  ───►  HOLD  ───►  OPEN
 - **Master Test Runner:** `backend/tests/run-all.mjs`.
 - **Command:** `npm test`.
 
-### Automated Test Coverage Breakdown (205 Tests across 10 Subsystems)
+### Automated Test Coverage Breakdown (286 Tests across 14 Subsystems)
 
 | # | Test Suite | File Location | Tests | Status | Key Verifications |
 |---|---|---|---:|---|---|
 | 1 | FIFO Inventory Accounting Engine | `frontend/src/stock/stock-engine.test.mjs` | 29 | PASSED | 7-day month weeks, strict FIFO lot exhaustion, deficit handling, multi-lot crossover, Indian rupee formatting. |
 | 2 | API Security & RBAC Enforcement | `backend/tests/security.test.mjs` | 24 | PASSED | Role hierarchy (`owner` > `manager` > `cashier` > `kitchen`), token tampering rejection, forbidden tables protection. |
-| 3 | Razorpay Payment Security | `backend/tests/payment-security.test.mjs` | 18 | PASSED | Trusted amount computation, INR currency enforcement, timing-safe HMAC SHA-256 signature verification, replay rejection. |
-| 4 | Transaction Integrity & Idempotency | `backend/tests/transaction-integrity.test.mjs` | 18 | PASSED | Idempotency keys, concurrent order row locks, atomic stored procedure execution, inventory deduction idempotency. |
-| 5 | Table Session Lifecycle | `backend/tests/table-session.test.mjs` | 22 | PASSED | Contactless table session lifecycle (Tables 1-19), multi-round ordering progression, service alert deduplication. |
-| 6 | Thermal Printing & KOT Sequencing | `backend/tests/thermal-printing.test.mjs` | 20 | PASSED | ESC/POS raw byte formatting, 80mm vs 58mm column layout, dual sequential KOT + tax bill generation, queue retry logic. |
-| 7 | Offline-First Sync & Resilience | `backend/tests/offline-sync.test.mjs` | 21 | PASSED | Outbox queuing, network event listeners, conflict resolution, offline table rounds flush. |
-| 8 | Billing & State Integrity | `backend/tests/billing-and-state-integrity.test.mjs` | 22 | PASSED | 5% GST calculation, proportional discount allocation (CGST Act S.15), commercial rounding, valid state transitions. |
-| 9 | Supabase Egress & Caching | `backend/tests/egress-and-performance.test.mjs` | 16 | PASSED | Reference data caching (TTL), singleflight promise coalescing, reduced network egress payloads. |
-| 10 | Deployment & Reliability | `backend/tests/deployment-and-reliability.test.mjs` | 29 | PASSED | Multi-platform packaging verification (Web, Windows Electron, Android APK), Vercel serverless delegates, health check. |
+| 3 | Razorpay Payment Security | `backend/tests/payment-security.test.mjs` | 20 | PASSED | Trusted amount computation, INR currency enforcement, timing-safe HMAC SHA-256 signature verification, replay rejection. |
+| 4 | Transaction Integrity & Idempotency | `backend/tests/transaction-integrity.test.mjs` | 26 | PASSED | Idempotency keys, concurrent order row locks, atomic stored procedure execution, inventory deduction idempotency. |
+| 5 | Table Session Lifecycle | `backend/tests/table-session.test.mjs` | 18 | PASSED | Contactless table session lifecycle (Tables 1-19), multi-round ordering progression, service alert deduplication. |
+| 6 | Thermal Printing & KOT Sequencing | `backend/tests/thermal-printing.test.mjs` | 18 | PASSED | ESC/POS raw byte formatting, 80mm vs 58mm column layout, dual sequential KOT + tax bill generation, queue retry logic. |
+| 7 | Offline-First Sync & Resilience | `backend/tests/offline-sync.test.mjs` | 16 | PASSED | Outbox queuing, network event listeners, conflict resolution, offline table rounds flush. |
+| 8 | Billing & State Integrity | `backend/tests/billing-and-state-integrity.test.mjs` | 16 | PASSED | 5% GST calculation, proportional discount allocation (CGST Act S.15), commercial rounding, valid state transitions. |
+| 9 | Supabase Egress & Caching | `backend/tests/egress-and-performance.test.mjs` | 14 | PASSED | Reference data caching (TTL), singleflight promise coalescing, reduced network egress payloads. |
+| 10 | Deployment & Reliability | `backend/tests/deployment-and-reliability.test.mjs` | 17 | PASSED | Multi-platform packaging verification (Web, Windows Electron, Android APK), Vercel serverless delegates, health check. |
+| 11 | Settings Interface & Hub Integrity | `backend/tests/settings-interface.test.mjs` | 49 | PASSED | 8 settings categories, subtab switching, dirty-state protection, sticky action bar, database schema mapping. |
+| 12 | Close Orders Historical Queries & Pagination | `backend/tests/close-orders-historical.test.mjs` | 20 | PASSED | IST midnight timezone boundaries, GET /api/orders parameters, status eligibility, map deduplication, sliding pagination, CSV export loading. |
+| 13 | Held Orders Cash/UPI Payment Selection & Settlement | `backend/tests/hold-orders-payment.test.mjs` | 22 | PASSED | Modal architecture, Cash/UPI card selection, prominent payable amount, payment_method preservation, delayed settlement invariant, idempotency guards, ESC/POS & HTML receipt payment mode display. |
+| 14 | GST Date-Range Filtering & Report Compliance | `backend/tests/gst-date-filtering.test.mjs` | 17 | PASSED | Custom date range filtering, preset bounds, single-day/cross-month boundaries, table session consolidation, 5% GST split (2.5% CGST + 2.5% SGST), empty state handling, and CSV export. |
 
 ---
 
@@ -932,3 +1016,47 @@ Update PROGRAM_DOCUMENTATION.md Line Numbers & Changes
   - Optimized cart UI re-renders to prevent wasteful 202-dish grid rebuilds on discount and delivery fee typing.
   - Enhanced desktop/laptop responsive sizing via `@media (max-height: 800px)` and mobile horizontal category swipe bar.
   - Re-ran all 10 automated test suites (205 tests passing 100%).
+- **Maintenance Entry (October 27, 2026):** Close Orders Historical Retrieval & Server-Side Pagination Remediation (TASK 4):
+  - Investigated and diagnosed missing historical orders in Close Orders: initial database load was capped at 300 orders globally, leaving 2,385+ historical records (Sept-Oct 2026) unretrieved.
+  - Upgraded `GET /api/orders` endpoint in `backend/api/orders.js` to support `startDate`/`from`, `endDate`/`to`, `status=closed` mapping, pagination (`page`, `pageSize`, `limit`, `offset`), and count metadata.
+  - Added dedicated pagination and page size selection markup (`#closed-orders-pagination-wrap`, `#closed-orders-pagination`, `#closed-page-range`, `#closed-total-count`, `#closed-page-size-select`) in `frontend/admin.html`.
+  - Implemented `getClosedDateRangeIso()` in `frontend/src/admin.js` with timezone-safe IST midnight boundaries (`00:00:00.000` to `23:59:59.999`) to prevent late-night/early-morning order omission.
+  - Implemented `ensureHistoricalClosedOrders()` in `frontend/src/admin.js` to batch-fetch records across Supabase using `.range()` and deduplicate via `Map` keyed by order ID.
+  - Implemented `renderClosedPagination()` with a sliding window of 7 numeric buttons and Previous/Next navigation.
+  - Implemented `ensureOrderItemsLoaded()` to batch-load missing line items from `order_items` in chunks of 100 on demand.
+  - Updated `exportRestaurantGSTReportCSV` and `exportClosedOrdersCSV` to asynchronous routines that ensure all historical records and items are loaded before generating CSV files.
+  - Authored comprehensive test suite `backend/tests/close-orders-historical.test.mjs` (23 tests passing) and integrated into `backend/tests/run-all.mjs`.
+  - Verified full test suite execution (`npm test`: 12 suites, 247 tests passing 100%) and clean production build (`npm run build`).
+- **Maintenance Entry (October 27, 2026):** Held Orders Cash/UPI Payment Selection & Atomic Settlement (TASK 5):
+  - Addressed cashier requirement when confirming or resuming held orders: cashiers must explicitly choose Cash or UPI with prominent payable total before closing.
+  - Added `#adm-hold-settle-modal` in `frontend/admin.html` with gold accent header, order/table summary, prominent payable total (`#hold-settle-payable-amount`), interactive Cash and UPI method cards, optional UPI reference / UTR field (`#hold-settle-upi-ref`), and Confirm/Cancel actions.
+  - Implemented `.hold-settle-method-card` interactive styling in `frontend/src/admin.css` adhering to the LIMRA white-and-gold design system.
+  - Added backend parameter support in `backend/api/orders.js` (`PATCH /api/orders`) for `payment_method` (validated against `'cash'`, `'upi'`, `'card'`, `'pay_later'`) and `txn_ref`.
+  - Implemented `openHoldSettleModal(target)` in `frontend/src/admin.js` supporting both active dining table sessions (consolidated KOTs) and single held delivery/pickup orders.
+  - Added `settleSingleHeldOrder(orderId, paymentMethod, txnRef, idempotencyKey)` and enhanced `createFinalBillForTableSession` to persist `payment_method` on primary and sibling records and append `[PAYMENT: method]` to notes.
+  - Added `hold-resume-pos-btn` ("▶️ Resume in POS") to non-table hold cards in `renderHoldOrdersPanel()` and updated `loadOrderIntoPos(order)` to preserve existing payment method in the POS workstation.
+  - Enforced delayed settlement invariant: resuming or inspecting held orders does NOT mark them as paid or closed prematurely.
+  - Guarded against double-settlement and retry conflicts with the `isHoldSettling` execution lock, disabled buttons, client UUID idempotency keys, and database `neq('ticket_status', 'CLOSED')` checks.
+  - Updated thermal receipt rendering (`generateBillWithTaxHtml` in `frontend/src/admin.js`) and ESC/POS printer builder (`frontend/src/lib/escpos.js`) to read and display `order.payment_method`.
+  - Authored comprehensive test suite `backend/tests/hold-orders-payment.test.mjs` (22 tests passing) and registered as Suite 13 in `backend/tests/run-all.mjs`.
+  - Verified full test suite execution (`npm test`: 13 suites, 269 tests passing 100%) and clean production build (`npm run build`).
+- **Maintenance Entry (October 27, 2026):** GST Date-Range Filtering & Multi-Period Compliance Hub (TASK 6):
+  - Investigated single-month limitation in Section 4 ("GST Tax Accounting & Compliance Hub"): the previous `#dash-gst-month-select` dropdown only held single-month presets, and changing it only set an export variable without updating on-screen KPI cards (which were computing unfiltered memory totals).
+  - Upgraded Section 4 in `frontend/admin.html` (lines 574–650) with:
+    - Dedicated reporting period badge `#dash-gst-period-display` with `#dash-gst-period-text` (e.g. `GST Report: 01 October 2026 – 15 October 2026`).
+    - 7 quick preset filter buttons (`today`, `yesterday`, `this_month`, `last_month`, `7d`, `30d`, `custom`) with `.gst-preset-btn`.
+    - Custom date range input container `#dash-gst-custom-range-wrap` with `#dash-gst-start-date`, `#dash-gst-end-date`, Apply Filter (`#dash-gst-apply-btn`), and Reset (`#dash-gst-reset-btn`) restoring `this_month`.
+    - High-visibility empty state banner `#dash-gst-empty-state` for zero-order periods.
+    - 7 comprehensive KPI cards: Gross Sales (`#stat-gst-gross`), Taxable Sales (`#stat-gst-taxable`), Total GST (`#stat-gst-total`), CGST (`#stat-gst-cgst`), SGST (`#stat-gst-sgst`), IGST (`#stat-gst-igst`), and Volume/Status breakdown (`#stat-gst-order-count`, `#stat-gst-paid`, `#stat-gst-pending`).
+  - Added `.gst-preset-btn` and `.gst-preset-btn.active` styling in `frontend/src/admin.css` (lines 1400–1425) with LIMRA gold accent `#d97706`.
+  - Upgraded controller in `frontend/src/admin.js` (lines 2240–2600):
+    - Added `renderGSTSection()` to calculate metrics strictly across active date bounds.
+    - Implemented `getGstDateRangeBounds(preset, startStr, endStr)` providing exact IST local midnight boundaries (`00:00:00.000` to `23:59:59.999`) for all presets and custom ranges.
+    - Implemented `ensureOrdersForGstRange(startIso, endIso)` to load historical orders dynamically from Supabase if beyond initial in-memory cache.
+    - Implemented `getGstFilteredOrders(startDate, endDate)` applying table session consolidation via `getConsolidatedClosedBills()` (preventing duplicate sales/tax counting from multiple KOT rounds) and strictly excluding cancelled orders (`status !== 'cancelled'`).
+    - Implemented `setGstDatePreset(preset)`, `applyGstCustomRange(startStr, endStr)` with date validation (`startStr <= endStr`), and `resetGstFilter()`.
+    - Upgraded `exportMonthlyGSTFilingCSV()` to respect the active date range, load line items via `ensureOrderItemsLoaded()`, include SAC Code 996331, and export matching filenames.
+    - Implemented `initGSTSectionListeners()` and bound to app initialization.
+  - Authored comprehensive test suite `backend/tests/gst-date-filtering.test.mjs` (17 tests passing) covering markup, CSS styles, single-day/cross-month boundaries, invalid range validation, GST math & session consolidation, and CSV export.
+  - Registered Suite 14 in `backend/tests/run-all.mjs`.
+  - Verified full test suite execution (`npm test`: 14 suites, 286 tests passing 100%) and clean production build (`npm run build`).

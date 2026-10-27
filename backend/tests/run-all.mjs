@@ -37,7 +37,11 @@ const TEST_STEPS = [
   { name: "7. Offline-First Sync & IndexedDB Resilience", cmd: "node backend/tests/offline-sync.test.mjs" },
   { name: "8. Billing, GST Math & State Integrity", cmd: "node backend/tests/billing-and-state-integrity.test.mjs" },
   { name: "9. Egress Optimization & Cache Performance", cmd: "node backend/tests/egress-and-performance.test.mjs" },
-  { name: "10. Deployment & Operational Reliability", cmd: "node backend/tests/deployment-and-reliability.test.mjs" }
+  { name: "10. Deployment & Operational Reliability", cmd: "node backend/tests/deployment-and-reliability.test.mjs" },
+  { name: "11. Settings Interface & Hub Integrity", cmd: "node backend/tests/settings-interface.test.mjs" },
+  { name: "12. Close Orders Historical Queries & Pagination", cmd: "node backend/tests/close-orders-historical.test.mjs" },
+  { name: "13. Held Orders Cash/UPI Payment Selection & Settlement", cmd: "node backend/tests/hold-orders-payment.test.mjs" },
+  { name: "14. GST Date-Range Filtering & Report Compliance", cmd: "node backend/tests/gst-date-filtering.test.mjs" }
 ];
 
 let allPassed = true;

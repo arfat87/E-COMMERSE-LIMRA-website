@@ -1,5 +1,5 @@
 import { insforge, saveOrder, saveTableRound, requestTableService, getMenuOverrides, validateCouponCode, redeemCoupon, getCombos, getCustomDishes } from '../lib/insforge.js';
-import { calculateOrderBilling } from '../lib/billing-engine.js';
+import { calculateOrderBilling, formatBillAmount, formatRupee } from '../lib/billing-engine.js';
 import { menuItems, categoryTabOrder, categoryLabels, categoryEmojis } from '../data/menu.js';
 import { initLanguageSystem, applyTranslations, t, getLanguage, setLanguage } from '../lib/i18n.js';
 
@@ -562,6 +562,7 @@ function updateCartUI() {
 
   const discountAmt = billing.discountAmt;
   const gst = billing.totalGst;
+  const roundOff = billing.roundOff;
   const totalAmt = billing.grandTotal;
 
   // Update Badges & Totals
@@ -578,7 +579,7 @@ function updateCartUI() {
       const countEl = $('#floating-cart-count');
       const amtEl = $('#floating-cart-amount');
       if (countEl) countEl.textContent = `${totalQty} ${totalQty === 1 ? 'ITEM' : 'ITEMS'} IN TRAY`;
-      if (amtEl) amtEl.textContent = `₹${totalAmt.toFixed(2)}`;
+      if (amtEl) amtEl.textContent = formatBillAmount(totalAmt);
     } else {
       floatingBar.classList.remove('visible');
     }
@@ -597,7 +598,17 @@ function updateCartUI() {
   }
   
   if ($('modal-gst')) $('modal-gst').textContent = `₹${gst.toFixed(2)}`;
-  if ($('modal-total')) $('modal-total').textContent = `₹${totalAmt.toFixed(2)}`;
+
+  if ($('modal-roundoff-row')) {
+    if (roundOff !== 0) {
+      if ($('modal-roundoff')) $('modal-roundoff').textContent = `-₹${Math.abs(roundOff).toFixed(2)}`;
+      show($('modal-roundoff-row'));
+    } else {
+      hide($('modal-roundoff-row'));
+    }
+  }
+
+  if ($('modal-total')) $('modal-total').textContent = formatBillAmount(totalAmt);
 
   // Enable/Disable Place Order Buttons with dynamic price
   const hasItems = totalQty > 0;
@@ -605,11 +616,11 @@ function updateCartUI() {
   const btnMobile = $('#btn-checkout-mobile');
   if (btnDesktop) {
     btnDesktop.disabled = !hasItems;
-    btnDesktop.innerHTML = `<span>🍽️ Place Table Order (₹${totalAmt.toFixed(2)})</span>`;
+    btnDesktop.innerHTML = `<span>🍽️ Place Table Order (${formatBillAmount(totalAmt)})</span>`;
   }
   if (btnMobile) {
     btnMobile.disabled = !hasItems;
-    btnMobile.innerHTML = `<span>🍽️ Place Table Order (₹${totalAmt.toFixed(2)})</span>`;
+    btnMobile.innerHTML = `<span>🍽️ Place Table Order (${formatBillAmount(totalAmt)})</span>`;
   }
 
   // Render Cart Listings

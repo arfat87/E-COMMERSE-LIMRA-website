@@ -1,6 +1,6 @@
 import './style.css';
 import { insforge, saveOrder, saveBooking, getCustomerBookings, getCustomerOrders, getMenuOverrides, getCoupons, getCombos, getCustomDishes, getDeliveryAreas, offlineSync } from './lib/insforge.js';
-import { calculateOrderBilling } from './lib/billing-engine.js';
+import { calculateOrderBilling, formatBillAmount, formatRupee } from './lib/billing-engine.js';
 import { menuItems, categoryImages, categoryLabels, categoryEmojis, categoryTabOrder } from './data/menu.js';
 import { sendEmailNotification, generateOrderPlacedHtml } from './lib/email-service.js';
 import { NotificationService } from './lib/notifications.js';
@@ -455,10 +455,12 @@ function updateCartUI() {
     }
   }
 
-  const discount = getCouponDiscountAmount();
-  const delivery = getDeliveryCharge();
-  const taxes = getTaxesAmount();
-  const total = getCartTotal();
+  const billingDetails = getCartBillingDetails();
+  const discount = billingDetails.discountAmt;
+  const delivery = billingDetails.cleanDeliveryFee;
+  const taxes = billingDetails.totalGst;
+  const roundOff = billingDetails.roundOff;
+  const total = billingDetails.grandTotal;
 
   // Render Discount Row
   const discRow = document.getElementById('cart-discount-row-3');
@@ -468,7 +470,7 @@ function updateCartUI() {
     if (discount > 0) {
       discRow.classList.remove('hidden');
       if (discPctSpan) discPctSpan.textContent = appliedCoupon.discount_pct;
-      if (discValSpan) discValSpan.textContent = discount;
+      if (discValSpan) discValSpan.textContent = discount.toFixed(2);
     } else {
       discRow.classList.add('hidden');
     }
@@ -503,7 +505,7 @@ function updateCartUI() {
       const countEl = document.getElementById('floating-cart-count');
       const amtEl = document.getElementById('floating-cart-amount');
       if (countEl) countEl.textContent = `${count} ${count === 1 ? 'ITEM' : 'ITEMS'} IN CART`;
-      if (amtEl) amtEl.textContent = `₹${total.toFixed(2)}`;
+      if (amtEl) amtEl.textContent = formatBillAmount(total);
     } else {
       floatingBar.classList.remove('visible');
     }
@@ -522,13 +524,23 @@ function updateCartUI() {
 
   // Step 3 Breakdown
   const sub3 = document.getElementById('cart-subtotal-3');
-  if (sub3) sub3.textContent = subtotal;
+  if (sub3) sub3.textContent = (Number(subtotal) || 0).toFixed(2);
   const del3 = document.getElementById('cart-delivery-charge-3');
-  if (del3) del3.textContent = delivery;
+  if (del3) del3.textContent = (Number(delivery) || 0).toFixed(2);
   const tax3 = document.getElementById('cart-taxes-3');
-  if (tax3) tax3.textContent = taxes;
+  if (tax3) tax3.textContent = (Number(taxes) || 0).toFixed(2);
+  const roundOffRow3 = document.getElementById('cart-roundoff-row-3');
+  const roundOff3 = document.getElementById('cart-roundoff-3');
+  if (roundOffRow3) {
+    if (roundOff !== 0) {
+      roundOffRow3.classList.remove('hidden');
+      if (roundOff3) roundOff3.textContent = Math.abs(roundOff).toFixed(2);
+    } else {
+      roundOffRow3.classList.add('hidden');
+    }
+  }
   const tot3 = document.getElementById('cart-total-3');
-  if (tot3) tot3.textContent = total;
+  if (tot3) tot3.textContent = (Number(total) || 0).toFixed(2);
   
   const delRow3 = document.getElementById('delivery-charge-row-3');
   if (delRow3) {
@@ -537,13 +549,13 @@ function updateCartUI() {
 
   // Step 5 Confirmation Breakdown
   const confSub = document.getElementById('confirm-subtotal');
-  if (confSub) confSub.textContent = subtotal;
+  if (confSub) confSub.textContent = (Number(subtotal) || 0).toFixed(2);
   const confDel = document.getElementById('confirm-delivery-charge');
-  if (confDel) confDel.textContent = delivery;
+  if (confDel) confDel.textContent = (Number(delivery) || 0).toFixed(2);
   const confTax = document.getElementById('confirm-taxes');
-  if (confTax) confTax.textContent = taxes;
+  if (confTax) confTax.textContent = (Number(taxes) || 0).toFixed(2);
   const confTot = document.getElementById('confirm-total');
-  if (confTot) confTot.textContent = total;
+  if (confTot) confTot.textContent = (Number(total) || 0).toFixed(2);
   
   const confDelRow = document.getElementById('confirm-delivery-charge-row');
   if (confDelRow) {
@@ -556,12 +568,12 @@ function updateCartUI() {
     const payMode = getSelectedPaymentMethod();
     const isOnline = payMode.toLowerCase().includes('online') || payMode.toLowerCase().includes('razorpay');
     if (isOnline) {
-      placeBtn.innerHTML = `💳 Pay ₹${total} Online &amp; Confirm Order ➔`;
+      placeBtn.innerHTML = `💳 Pay ${formatBillAmount(total)} Online &amp; Confirm Order ➔`;
     } else {
       if (isDelivery) {
-        placeBtn.innerHTML = `🛍️ Place Delivery Order (Cash on Delivery) ➔`;
+        placeBtn.innerHTML = `🛍️ Place Delivery Order (${formatBillAmount(total)} COD) ➔`;
       } else {
-        placeBtn.innerHTML = `🥡 Confirm Pickup Order (Pay at Counter) ➔`;
+        placeBtn.innerHTML = `🥡 Confirm Pickup Order (${formatBillAmount(total)}) ➔`;
       }
     }
   }
@@ -633,32 +645,41 @@ function animateBadge() {
 
 // Build WhatsApp order message
 function buildOrderMessage() {
-  const subtotal = getCartSubtotal();
-  const delivery = getDeliveryCharge();
-  const total = getCartTotal();
+  const billing = getCartBillingDetails();
+  const subtotal = billing.subtotal;
+  const delivery = billing.cleanDeliveryFee;
+  const taxes = billing.totalGst;
+  const roundOff = billing.roundOff;
+  const total = billing.grandTotal;
 
   let msg = '🛒 *NEW ORDER — LIMRA Restaurant*\n';
   msg += '═══════════════════════\n\n';
 
   cart.forEach(item => {
-    msg += `• *${item.name}* x ${item.qty} = ₹${item.price * item.qty}\n`;
+    msg += `• *${item.name}* x ${item.qty} = ₹${(item.price * item.qty).toFixed(2)}\n`;
   });
 
   msg += '\n═══════════════════════\n';
-  msg += `*Subtotal:* ₹${subtotal}\n`;
+  msg += `*Subtotal:* ₹${subtotal.toFixed(2)}\n`;
 
   if (appliedCoupon) {
-    const discAmt = getCouponDiscountAmount();
-    msg += `*Discount (${appliedCoupon.code} - ${appliedCoupon.discount_pct}%):* -₹${discAmt}\n`;
+    const discAmt = billing.discountAmt;
+    msg += `*Discount (${appliedCoupon.code} - ${appliedCoupon.discount_pct}%):* -₹${discAmt.toFixed(2)}\n`;
   }
 
   if (isDelivery) {
-    msg += `*Delivery Fee:* ₹${delivery}\n`;
-    msg += `*Grand Total: ₹${total}*\n`;
+    msg += `*Delivery Fee:* ₹${delivery.toFixed(2)}\n`;
+  }
+  msg += `*Taxes (5% GST Incl.):* ₹${taxes.toFixed(2)}\n`;
+  if (roundOff !== 0) {
+    msg += `*Round Off:* -₹${Math.abs(roundOff).toFixed(2)}\n`;
+  }
+  msg += `*Grand Total:* ${formatBillAmount(total)}\n`;
+  if (isDelivery) {
     const address = document.getElementById('order-address')?.value.trim();
-    if (address) msg += `\n\n📍 *Deliver to:* ${address}`;
+    if (address) msg += `\n📍 *Deliver to:* ${address}`;
   } else {
-    msg += `\n*Total: ₹${subtotal}* (Self Pickup — Free)`;
+    msg += ` (Self Pickup — Free)`;
   }
   msg += '\n\nPlease confirm my order. Thank you! 🙏';
   return encodeURIComponent(msg);
@@ -3756,12 +3777,12 @@ document.addEventListener('DOMContentLoaded', () => {
           } else {
             orderItemsText += `\n*Delivery Charge: ₹${charge}*`;
           }
-          orderItemsText += `\n*Taxes (5% GST Incl.): ₹${taxes}*`;
-          orderItemsText += `\n*Grand Total: ₹${getCartTotal()}*`;
+          orderItemsText += `\n*Taxes (5% GST Incl.): ₹${(Number(taxes) || 0).toFixed(2)}*`;
+          orderItemsText += `\n*Grand Total: ${formatBillAmount(getCartTotal())}*`;
           if (address) orderItemsText += `\n📍 *Deliver to:* ${address}`;
         } else {
-          orderItemsText += `\n*Taxes (5% GST Incl.): ₹${taxes}*`;
-          orderItemsText += `\n*Total: ₹${getCartTotal()}* (Self Pickup — Free)`;
+          orderItemsText += `\n*Taxes (5% GST Incl.): ₹${(Number(taxes) || 0).toFixed(2)}*`;
+          orderItemsText += `\n*Total: ${formatBillAmount(getCartTotal())}* (Self Pickup — Free)`;
         }
         orderItemsText += `\n💳 *Payment Mode:* ${payment}`;
         waMsg += orderItemsText + `\n\nMy order is successfully booked. Please confirm my order and contact me as soon as possible! Thank you! 🙏`;
@@ -3783,7 +3804,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const formattedPrice = totalVal < 0 ? `-Rs ${Math.abs(totalVal)}` : `Rs ${totalVal}`;
           emailBody += `• ${item.name} x${item.qty} = ${formattedPrice}\n`;
         });
-        emailBody += `\nSubtotal: Rs ${subtotal}\nTaxes (5% GST Incl.): Rs ${taxes}\nGrand Total: Rs ${getCartTotal()}\n---------------------------------------------\n\nMy order is successfully booked. Please contact me as soon as possible to confirm and deliver.\n\nBest regards,\n${name}`;
+        emailBody += `\nSubtotal: Rs ${subtotal}\nTaxes (5% GST Incl.): Rs ${(Number(taxes) || 0).toFixed(2)}\nGrand Total: Rs ${(Number(getCartTotal()) || 0).toFixed(2)}\n---------------------------------------------\n\nMy order is successfully booked. Please contact me as soon as possible to confirm and deliver.\n\nBest regards,\n${name}`;
         const emailUrl = `mailto:limrarestaurant99@gmail.com?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
 
         // Show Success Modal

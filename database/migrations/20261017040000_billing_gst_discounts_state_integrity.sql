@@ -148,6 +148,11 @@ BEGIN
     v_match := regexp_matches(v_raw_notes, '\[(?:DELIVERY_FEE|DELIVERY_CHARGE):\s*([0-9.]+)\]', 'i');
     IF v_match IS NOT NULL AND array_length(v_match, 1) > 0 THEN
       v_delivery_fee := GREATEST(0, v_match[1]::numeric);
+    ELSE
+      v_match := regexp_matches(v_raw_notes, 'Delivery\s*(?:charge|fee):\s*₹?\s*([0-9.]+)', 'i');
+      IF v_match IS NOT NULL AND array_length(v_match, 1) > 0 THEN
+        v_delivery_fee := GREATEST(0, v_match[1]::numeric);
+      END IF;
     END IF;
   ELSE
     v_delivery_fee := 0;

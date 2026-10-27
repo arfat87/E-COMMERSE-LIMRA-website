@@ -25,7 +25,9 @@ import {
   isValidPaymentTransition,
   isValidFulfillmentTransition,
   isValidTicketTransition,
-  round2
+  round2,
+  formatRupee,
+  formatBillAmount
 } from '../api/lib/billing-engine.js';
 
 import {
@@ -174,9 +176,10 @@ runTest('2.2 Section 15(3) Proportional Discount Allocation across Mixed-Tax Bas
   assert.equal(billing.cgstAmt, 11.25);
   assert.equal(billing.sgstAmt, 11.25);
   assert.equal(billing.totalGst, 22.50);
-  assert.equal(billing.grandTotal, 562.50);
-  assert.equal(billing.roundedGrandTotal, 563);
-  assert.equal(billing.roundOff, 0.50);
+  assert.equal(billing.unroundedGrandTotal, 562.50);
+  assert.equal(billing.grandTotal, 562.00);
+  assert.equal(billing.roundedGrandTotal, 562);
+  assert.equal(billing.roundOff, -0.50);
 });
 
 runTest('2.3 Coupon Min Bill Threshold & Max Discount Cap Enforced', () => {
@@ -214,6 +217,159 @@ runTest('3.1 Delivery fee included in grand total without taxing as restaurant f
   assert.equal(billing.roundedGrandTotal, 355);
 });
 
+runTest('3.2 Delivery order with delivery charge included exactly once in grand total and ESC/POS bill', () => {
+  const items = [
+    { name: 'Butter Chicken Half', price: 280, qty: 1, gst_applicable: true },
+    { name: 'Butter Naan', price: 40, qty: 3, gst_applicable: true }
+  ]; // subtotal = 280 + 120 = 400. GST 5% = 20. Delivery fee = 40. Grand total = 460
+  const billing = calculateOrderBilling({
+    items,
+    deliveryFee: 40
+  });
+
+  assert.equal(billing.subtotal, 400.00);
+  assert.equal(billing.taxableAmount, 400.00);
+  assert.equal(billing.totalGst, 20.00);
+  assert.equal(billing.deliveryFee, 40.00);
+  assert.equal(billing.grandTotal, 460.00);
+
+  // Check ESC/POS bill numerical parity
+  const order = {
+    id: 'test-del-1',
+    order_number: 104,
+    customer_name: 'Imran Khan',
+    customer_phone: '9876543210',
+    order_type: 'delivery',
+    total_amount: 460.00,
+    delivery_fee: 40,
+    notes: '[DELIVERY] Place: Saket | Address: Block A | Delivery charge: ₹40 [DELIVERY_FEE: 40]'
+  };
+  const billText = buildEscPosBill(order, items, { bill_paper_width: 80 });
+  assert.ok(billText.includes('Delivery Fee:'), 'Delivery Fee line must be present on bill');
+  assert.ok(billText.includes('₹40.00'), 'Delivery fee line must show ₹40.00');
+  assert.ok(billText.includes('GRAND TOTAL:'), 'Grand total line must be present');
+  assert.ok(billText.includes('₹460.00'), 'Grand total on ESC/POS bill must show ₹460.00');
+});
+
+runTest('3.3 Free delivery order (₹0 delivery charge) never defaults to ₹10 or ₹50', () => {
+  const items = [{ name: 'Chicken Biryani Large', price: 420, qty: 1, gst_applicable: true }];
+  // Subtotal = 420, GST 5% = 21, delivery fee = 0, Grand total = 441.00
+  const billing = calculateOrderBilling({
+    items,
+    deliveryFee: 0
+  });
+
+  assert.equal(billing.deliveryFee, 0.00);
+  assert.equal(billing.totalGst, 21.00);
+  assert.equal(billing.grandTotal, 441.00);
+
+  // ESC/POS receipt should omit Delivery Fee when ₹0
+  const order = {
+    id: 'test-del-zero',
+    order_number: 105,
+    customer_name: 'Free Delivery Cust',
+    order_type: 'delivery',
+    total_amount: 441.00,
+    delivery_fee: 0,
+    notes: '[DELIVERY] Place: Hauz Khas | Delivery charge: ₹0 [DELIVERY_FEE: 0]'
+  };
+  const billText = buildEscPosBill(order, items, { bill_paper_width: 80 });
+  assert.ok(!billText.includes('Delivery Fee:'), 'Delivery Fee line must be omitted when ₹0');
+  assert.ok(billText.includes('₹441.00'), 'Grand total must be ₹441.00 without stray fee');
+});
+
+runTest('3.4 Delivery order with discount + 5% GST + delivery fee matches exact formula', () => {
+  // Subtotal = ₹500. Discount 10% = ₹50. Net Taxable = ₹450. GST 5% = ₹22.50. Delivery fee = ₹30.
+  // Grand total = 450 + 22.50 + 30 = ₹502.50
+  const items = [{ name: 'Mutton Korma Full', price: 500, qty: 1, gst_applicable: true }];
+  const billing = calculateOrderBilling({
+    items,
+    deliveryFee: 30,
+    discountPct: 10
+  });
+
+  assert.equal(billing.subtotal, 500.00);
+  assert.equal(billing.discountAmount, 50.00);
+  assert.equal(billing.taxableAmount, 450.00);
+  assert.equal(billing.totalGst, 22.50);
+  assert.equal(billing.deliveryFee, 30.00);
+  assert.equal(billing.unroundedGrandTotal, 502.50);
+  assert.equal(billing.grandTotal, 502.00);
+  assert.equal(billing.roundOff, -0.50);
+});
+
+runTest('3.5 Notes metadata parser parses [DELIVERY_CHARGE: X], [DELIVERY_FEE: X], and plain text Delivery charge: ₹X', () => {
+  const metaBracketFee = parseNotesBillingMetadata('[DELIVERY] [DELIVERY_FEE: 35]');
+  assert.equal(metaBracketFee.deliveryFee, 35);
+
+  const metaBracketCharge = parseNotesBillingMetadata('[DELIVERY] [DELIVERY_CHARGE: 45]');
+  assert.equal(metaBracketCharge.deliveryFee, 45);
+
+  const metaPlainRupee = parseNotesBillingMetadata('[DELIVERY] Address: Saket | Delivery charge: ₹50');
+  assert.equal(metaPlainRupee.deliveryFee, 50);
+
+  const metaPlainNoRupee = parseNotesBillingMetadata('[DELIVERY] Address: Malviya Nagar | Delivery fee: 25');
+  assert.equal(metaPlainNoRupee.deliveryFee, 25);
+});
+
+runTest('3.6 Dine-in and Takeaway orders strictly maintain ₹0 delivery charge', () => {
+  const items = [{ name: 'Chicken Kebab', price: 200, qty: 1, gst_applicable: true }];
+  const tableBilling = calculateOrderBilling({
+    items,
+    deliveryFee: 0
+  });
+
+  assert.equal(tableBilling.deliveryFee, 0.00);
+  assert.equal(tableBilling.totalGst, 10.00);
+  assert.equal(tableBilling.grandTotal, 210.00);
+
+  // ESC/POS check for dine-in order
+  const tableOrder = {
+    id: 'test-tbl-1',
+    order_type: 'table',
+    table_number: 4,
+    notes: '[TABLE: 4] [ROUND: 1]'
+  };
+  const tableBillText = buildEscPosBill(tableOrder, items, { bill_paper_width: 80 });
+  assert.ok(!tableBillText.includes('Delivery Fee:'), 'Dine-in bill must not show delivery fee');
+  assert.ok(tableBillText.includes('₹210.00'), 'Dine-in bill total must be 210.00');
+
+  // ESC/POS check for pickup order
+  const pickupOrder = {
+    id: 'test-pku-1',
+    order_type: 'pickup',
+    notes: '[PICKUP]'
+  };
+  const pickupBillText = buildEscPosBill(pickupOrder, items, { bill_paper_width: 80 });
+  assert.ok(!pickupBillText.includes('Delivery Fee:'), 'Pickup bill must not show delivery fee');
+  assert.ok(pickupBillText.includes('₹210.00'), 'Pickup bill total must be 210.00');
+});
+
+runTest('3.7 Order recalculation on adding item preserves delivery charge without duplication', () => {
+  const initialItems = [{ name: 'Chicken Biryani', price: 200, qty: 1, gst_applicable: true }];
+  const initialBilling = calculateOrderBilling({
+    items: initialItems,
+    deliveryFee: 40
+  });
+  assert.equal(initialBilling.grandTotal, 250.00); // 200 + 10 GST + 40 = 250
+
+  // Order held and resumed / item added (e.g. extra Naan ₹40)
+  const updatedItems = [
+    ...initialItems,
+    { name: 'Butter Naan', price: 40, qty: 1, gst_applicable: true }
+  ];
+  // Subtotal = 240, GST = 12, Delivery fee = 40 (reused once, NOT added twice)
+  const updatedBilling = calculateOrderBilling({
+    items: updatedItems,
+    deliveryFee: initialBilling.deliveryFee
+  });
+
+  assert.equal(updatedBilling.subtotal, 240.00);
+  assert.equal(updatedBilling.totalGst, 12.00);
+  assert.equal(updatedBilling.deliveryFee, 40.00);
+  assert.equal(updatedBilling.grandTotal, 292.00); // 240 + 12 + 40 = 292.00
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. PRECISION, ROUNDING & BOUNDARY CASES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,9 +385,10 @@ runTest('4.1 Commercial Rounding and Round-off difference', () => {
   assert.equal(billing.cgstAmt, 3.33);
   assert.equal(billing.sgstAmt, 3.33);
   assert.equal(billing.totalGst, 6.66);
-  assert.equal(billing.grandTotal, 139.99);
-  assert.equal(billing.roundedGrandTotal, 140);
-  assert.equal(billing.roundOff, 0.01);
+  assert.equal(billing.unroundedGrandTotal, 139.99);
+  assert.equal(billing.grandTotal, 139.00);
+  assert.equal(billing.roundedGrandTotal, 139);
+  assert.equal(billing.roundOff, -0.99);
 });
 
 runTest('4.2 Zero-Value Complimentary Items Handle Gracefully (No Divide-by-Zero)', () => {
@@ -403,7 +560,7 @@ runTest('7.2 buildEscPosBill with Mixed-Tax & Proportional Discount displays Tax
     order_number: 102,
     customer_name: 'Sarah Khan',
     customer_phone: '9876543211',
-    total_amount: 562.50,
+    total_amount: 562.00,
     created_at: new Date().toISOString(),
     notes: '[DISCOUNT_PCT: 10%] [DISCOUNT_AMT: 60] [CGST: 2.5%] [SGST: 2.5%]'
   };
@@ -424,8 +581,10 @@ runTest('7.2 buildEscPosBill with Mixed-Tax & Proportional Discount displays Tax
   assert.ok(billText.includes('₹11.25'), 'CGST should show ₹11.25');
   assert.ok(billText.includes('SGST @ 2.5%:'), 'SGST line must be present');
   assert.ok(billText.includes('₹11.25'), 'SGST should show ₹11.25');
+  assert.ok(billText.includes('Round Off:'), 'Round Off line must be present');
+  assert.ok(billText.includes('-₹0.50'), 'Round Off should show -₹0.50');
   assert.ok(billText.includes('GRAND TOTAL:'), 'Grand Total line must be present');
-  assert.ok(billText.includes('₹562.50'), 'Grand Total should show ₹562.50');
+  assert.ok(billText.includes('₹562.00'), 'Grand Total should show ₹562.00');
 });
 
 runTest('7.3 ESC/POS string compiles successfully for 58mm without errors', () => {
@@ -442,6 +601,119 @@ runTest('7.3 ESC/POS string compiles successfully for 58mm without errors', () =
   const billText = buildEscPosBill(order, items, { bill_paper_width: 58 });
   assert.ok(typeof billText === 'string', 'Output must be an ESC/POS string');
   assert.ok(billText.length > 50, 'Stream must contain ESC/POS commands');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. WHOLE-RUPEE BILLING, FLOOR ROUNDING & CURRENCY FORMAT INTEGRITY
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n--- 8. Whole-Rupee Billing, Floor Rounding & Format Standards ---');
+
+runTest('8.1 Currency Format Utilities: formatBillAmount standardizes all amounts to whole rupees ending in .00', () => {
+  // Whole rupee format: ₹25.00
+  assert.equal(formatBillAmount(25.50), '₹25.00', '₹25.50 must format as ₹25.00');
+  assert.equal(formatBillAmount(25.25), '₹25.00', '₹25.25 must format as ₹25.00');
+  assert.equal(formatBillAmount(25.75), '₹25.00', '₹25.75 must format as ₹25.00');
+  assert.equal(formatBillAmount(25), '₹25.00', '₹25 must format as ₹25.00');
+  assert.equal(formatBillAmount(0), '₹0.00', '₹0 must format as ₹0.00');
+  assert.equal(formatBillAmount('180'), '₹180.00', 'String "180" must format as ₹180.00');
+  assert.equal(formatBillAmount(null), '₹0.00', 'Null must format as ₹0.00');
+
+  // Standard 2-decimal rupee utility: formatRupee
+  assert.equal(formatRupee(25.50), '₹25.50');
+  assert.equal(formatRupee(25.25), '₹25.25');
+  assert.equal(formatRupee(25), '₹25.00');
+});
+
+runTest('8.2 Fractional .25 case from 5% GST and delivery charge correctly floored to whole rupee', () => {
+  // Scenario: Item ₹50.00 -> 5% GST = ₹2.50 (CGST 1.25 + SGST 1.25).
+  // Delivery Fee = ₹10.75.
+  // Unrounded Grand Total = 50 + 2.50 + 10.75 = ₹63.25.
+  // Floored Grand Total = ₹63.00.
+  // Round Off = -₹0.25.
+  const items = [{ name: 'Starter Plate', price: 50, qty: 1, gst_applicable: true }];
+  const billing = calculateOrderBilling({
+    items,
+    deliveryFee: 10.75,
+    cgstRate: 2.5,
+    sgstRate: 2.5
+  });
+
+  assert.equal(billing.subtotal, 50.00);
+  assert.equal(billing.cgstAmt, 1.25);
+  assert.equal(billing.sgstAmt, 1.25);
+  assert.equal(billing.totalGst, 2.50);
+  assert.equal(billing.deliveryFee, 10.75);
+  assert.equal(billing.unroundedGrandTotal, 63.25);
+  assert.equal(billing.grandTotal, 63.00);
+  assert.equal(billing.roundOff, -0.25);
+  assert.equal(formatBillAmount(billing.grandTotal), '₹63.00');
+});
+
+runTest('8.3 Fractional .50 case from 5% GST correctly floored to whole rupee with explicit round-off', () => {
+  // Scenario: Item ₹170.00 -> 5% GST = ₹8.50 (CGST 4.25 + SGST 4.25).
+  // Unrounded Grand Total = 170 + 8.50 = ₹178.50.
+  // Floored Grand Total = ₹178.00.
+  // Round Off = -₹0.50.
+  const items = [{ name: 'Special Chicken Curry', price: 170, qty: 1, gst_applicable: true }];
+  const billing = calculateOrderBilling({ items });
+
+  assert.equal(billing.subtotal, 170.00);
+  assert.equal(billing.cgstAmt, 4.25);
+  assert.equal(billing.sgstAmt, 4.25);
+  assert.equal(billing.totalGst, 8.50);
+  assert.equal(billing.unroundedGrandTotal, 178.50);
+  assert.equal(billing.grandTotal, 178.00);
+  assert.equal(billing.roundOff, -0.50);
+  assert.equal(formatBillAmount(billing.grandTotal), '₹178.00');
+});
+
+runTest('8.4 Fractional .75 case from 5% GST and delivery correctly floored to whole rupee', () => {
+  // Scenario: Item ₹50 (GST 2.50) + delivery ₹35.25 -> unrounded total 87.75.
+  const items = [{ name: 'Snack Basket', price: 50, qty: 1, gst_applicable: true }];
+  const billing = calculateOrderBilling({
+    items,
+    deliveryFee: 35.25
+  });
+
+  assert.equal(billing.subtotal, 50.00);
+  assert.equal(billing.totalGst, 2.50);
+  assert.equal(billing.deliveryFee, 35.25);
+  assert.equal(billing.unroundedGrandTotal, 87.75);
+  assert.equal(billing.grandTotal, 87.00);
+  assert.equal(billing.roundOff, -0.75);
+  assert.equal(formatBillAmount(billing.grandTotal), '₹87.00');
+});
+
+runTest('8.5 Whole-rupee order without fractional taxes maintains zero round-off', () => {
+  // Subtotal = ₹200.00. 5% GST = ₹10.00. Delivery = ₹40.00.
+  // Grand total = 200 + 10 + 40 = ₹250.00.
+  const items = [{ name: 'Chicken Biryani Full', price: 200, qty: 1, gst_applicable: true }];
+  const billing = calculateOrderBilling({ items, deliveryFee: 40 });
+
+  assert.equal(billing.subtotal, 200.00);
+  assert.equal(billing.totalGst, 10.00);
+  assert.equal(billing.deliveryFee, 40.00);
+  assert.equal(billing.unroundedGrandTotal, 250.00);
+  assert.equal(billing.grandTotal, 250.00);
+  assert.equal(billing.roundOff, 0.00);
+  assert.equal(formatBillAmount(billing.grandTotal), '₹250.00');
+});
+
+runTest('8.6 Payment Settlement Parity: Display, Razorpay Paise, and Database agree on whole rupees', () => {
+  // Order with unrounded total ₹52.50 (₹50 item + ₹2.50 GST)
+  const items = [{ name: 'Mughlai Roll', price: 50, qty: 1, gst_applicable: true }];
+  const billing = calculateOrderBilling({ items });
+
+  const authoritativeTotal = billing.grandTotal; // 52.00
+  const razorpayPaise = Math.round(authoritativeTotal * 100); // 5200 paise
+  const displayedBill = formatBillAmount(authoritativeTotal); // "₹52.00"
+  const databaseAmount = Number(authoritativeTotal.toFixed(2)); // 52.00
+
+  assert.equal(authoritativeTotal, 52.00);
+  assert.equal(razorpayPaise, 5200);
+  assert.equal(razorpayPaise / 100, databaseAmount);
+  assert.equal(displayedBill, '₹52.00');
+  assert.ok(displayedBill.endsWith('.00'), 'Displayed bill must end in .00');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

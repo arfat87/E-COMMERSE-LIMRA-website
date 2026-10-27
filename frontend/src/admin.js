@@ -9,7 +9,7 @@ import { sendEmailNotification, generateOrderConfirmedHtml, generateOrderCancell
 import QRCode from 'qrcode';
 import { printQueue } from './lib/print-queue.js';
 import { buildEscPosBill, buildEscPosKOT, COMMANDS as ESC_COMMANDS } from './lib/escpos.js';
-import { calculateOrderBilling, parseNotesBillingMetadata, isValidPaymentTransition, isValidFulfillmentTransition, isValidTicketTransition } from './lib/billing-engine.js';
+import { calculateOrderBilling, parseNotesBillingMetadata, isValidPaymentTransition, isValidFulfillmentTransition, isValidTicketTransition, formatRupee, formatBillAmount } from './lib/billing-engine.js';
 import { initStockSummarySection } from './admin-stock.js';
 import { initSalesReportHub, loadSalesReportData } from './sales-report/sales-report.js';
 
@@ -852,6 +852,10 @@ function parseNotesMetadata(notes, order = null) {
     } else if (order.order_type === 'pickup') {
       result.type = 'pickup';
     }
+    if (order.delivery_fee !== undefined && order.delivery_fee !== null) {
+      const oFee = Number(order.delivery_fee);
+      if (!isNaN(oFee) && oFee >= 0) result.deliveryFee = oFee;
+    }
   }
   
   if (!notes) return result;
@@ -885,7 +889,7 @@ function parseNotesMetadata(notes, order = null) {
     const addrMatch = notes.match(/Address:\s*([^|\]]+)/i);
     const areaMatch = notes.match(/Selected Area:\s*([^|\]]+)/i);
     const distMatch = notes.match(/Distance:\s*([^|\]]+)/i);
-    const chargeMatch = notes.match(/Delivery charge:\s*([^|\]]+)/i);
+    const chargeMatch = notes.match(/Delivery\s+(?:charge|fee):\s*([^|\]]+)/i);
     
     if (addrMatch) result.address = addrMatch[1].trim();
     if (areaMatch) result.area = areaMatch[1].trim();
@@ -893,14 +897,14 @@ function parseNotesMetadata(notes, order = null) {
     if (chargeMatch) {
       result.charge = chargeMatch[1].trim();
       const parsedNum = parseFloat(result.charge.replace(/[^0-9.]/g, ''));
-      if (!isNaN(parsedNum)) result.deliveryFee = parsedNum;
+      if (!isNaN(parsedNum) && parsedNum >= 0) result.deliveryFee = parsedNum;
     }
   }
 
-  const deliveryFeeMatch = notes.match(/\[DELIVERY_FEE:\s*([^\]|]+)\]/i);
+  const deliveryFeeMatch = notes.match(/\[(?:DELIVERY_FEE|DELIVERY_CHARGE):\s*([^\]|]+)\]/i);
   if (deliveryFeeMatch) {
     const dNum = parseFloat(deliveryFeeMatch[1].replace(/[^0-9.]/g, ''));
-    if (!isNaN(dNum)) result.deliveryFee = dNum;
+    if (!isNaN(dNum) && dNum >= 0) result.deliveryFee = dNum;
   }
 
   const discPctMatch = notes.match(/\[(?:DISCOUNT_PCT|DISCOUNT):\s*([^\]|%]+)%?\]/i);
@@ -935,6 +939,7 @@ function parseNotesMetadata(notes, order = null) {
   if (statusMatch) {
     result.paymentStatus = statusMatch[1].trim();
   }
+  result.paymentMode = result.payment || (order ? (order.payment_method || order.payment_mode) : '') || 'cash';
   
   let cleanNote = notes
     .replace(/\[EMAIL:[^\]]+\]/gi, '')
@@ -1020,7 +1025,7 @@ function fmtDateShort(d) {
 }
 
 function fmtMoney(n) {
-  return `₹${Number(n || 0).toLocaleString('en-IN')}`;
+  return formatBillAmount(n);
 }
 
 function formatDailyOrderNumber(order, allOrders = orders) {
@@ -1259,7 +1264,19 @@ function computeOrderTaxDetails(order, optionalItemsList) {
   const cgstRate = billingMeta.cgstRate ?? parsed.cgstRate ?? (s.cgstRate ?? 2.5);
   const sgstRate = billingMeta.sgstRate ?? parsed.sgstRate ?? (s.sgstRate ?? 2.5);
   const isInterstate = billingMeta.isInterstate || false;
-  const deliveryFee = billingMeta.deliveryFee || (parsed.type === 'delivery' ? (parseFloat(parsed.deliveryFee) || 10) : 0);
+
+  const isDelivery = parsed.type === 'delivery' || order.order_type === 'delivery';
+  let deliveryFee = 0;
+  if (isDelivery) {
+    if (order.delivery_fee !== undefined && order.delivery_fee !== null && !isNaN(Number(order.delivery_fee))) {
+      deliveryFee = Math.max(0, Number(order.delivery_fee));
+    } else if (billingMeta.deliveryFee !== undefined && billingMeta.deliveryFee !== null && !isNaN(Number(billingMeta.deliveryFee))) {
+      deliveryFee = Math.max(0, Number(billingMeta.deliveryFee));
+    } else if (parsed.deliveryFee !== undefined && parsed.deliveryFee !== null && !isNaN(Number(parsed.deliveryFee))) {
+      deliveryFee = Math.max(0, Number(parsed.deliveryFee));
+    }
+  }
+
   const discountPct = billingMeta.discountPct || parsed.discountPct || 0;
   const discountAmt = billingMeta.discountAmt || parsed.discountAmt || 0;
 
@@ -1278,19 +1295,30 @@ function computeOrderTaxDetails(order, optionalItemsList) {
   let cgstAmt = billing.cgstAmt;
   let sgstAmt = billing.sgstAmt;
   let totalGst = billing.totalGst;
-  const orderTot = getEffectiveOrderTotal(order);
 
-  // If items subtotal is 0 but order has total_amount, back-calculate taxableValue
-  if (taxableValue <= 0 && orderTot > 0) {
+  const rawOrderTot = Number(order.total_amount) || 0;
+  let grandTotal = 0;
+
+  if (billing.grandTotal > 0) {
+    grandTotal = billing.grandTotal;
+    // If order.total_amount was explicitly stored in DB:
+    // If it already matches billing.grandTotal (with deliveryFee), floor to whole rupees
+    if (rawOrderTot > 0 && Math.abs(rawOrderTot - billing.grandTotal) <= 1) {
+      grandTotal = Math.floor(rawOrderTot);
+    }
+  } else if (rawOrderTot > 0) {
+    // If items subtotal is 0 or no items recorded, back-calculate from rawOrderTot
     const totalGstRate = billing.totalGstRate;
-    taxableValue = Math.max(0, (orderTot - deliveryFee) / (1 + totalGstRate / 100));
+    taxableValue = Math.max(0, (rawOrderTot - deliveryFee) / (1 + totalGstRate / 100));
     subtotal = taxableValue;
     cgstAmt = Math.round((taxableValue * (cgstRate / 100)) * 100) / 100;
     sgstAmt = Math.round((taxableValue * (sgstRate / 100)) * 100) / 100;
     totalGst = Math.round((cgstAmt + sgstAmt) * 100) / 100;
+    grandTotal = Math.floor(rawOrderTot);
   }
 
-  let grandTotal = orderTot > 0 ? orderTot : billing.grandTotal;
+  // Standardize grand total to whole rupees
+  grandTotal = Math.floor(Math.max(0, grandTotal));
 
   // Harmonize taxableValue and GST if grandTotal has discrepancy > ₹1
   if (grandTotal > 0 && Math.abs(taxableValue + totalGst + deliveryFee - grandTotal) > 1) {
@@ -1300,6 +1328,8 @@ function computeOrderTaxDetails(order, optionalItemsList) {
     cgstAmt = Math.round((totalGst / 2) * 100) / 100;
     sgstAmt = Math.round((totalGst - cgstAmt) * 100) / 100;
   }
+
+  const roundOff = billing.roundOff !== undefined ? billing.roundOff : Math.round((grandTotal - (taxableValue + totalGst + deliveryFee)) * 100) / 100;
 
   return {
     items,
@@ -1315,34 +1345,36 @@ function computeOrderTaxDetails(order, optionalItemsList) {
     totalGstRate: billing.totalGstRate,
     totalGst,
     deliveryFee,
-    grandTotal
+    grandTotal,
+    roundOff
   };
 }
 
 function getEffectiveOrderTotal(order) {
   if (!order) return 0;
-  const direct = Number(order.total_amount);
-  if (!isNaN(direct) && direct > 0) return direct;
 
-  // Fallback: calculate from line items and notes tax
+  // Prefer computeOrderTaxDetails authoritative grandTotal
   try {
     const td = computeOrderTaxDetails(order);
     if (td && td.grandTotal > 0) return td.grandTotal;
   } catch (e) {}
 
-  const items = getItemsForOrder(order.id);
-  if (items && items.length > 0) {
-    const sub = items.reduce((s, i) => s + Number(i.line_total || ((i.unit_price || i.price || 0) * (i.quantity || i.qty || 1)) || 0), 0);
-    const meta = parseNotesMetadata(order.notes, order);
-    const s = getBillSettings();
-    const cgstRate = meta.cgstRate ?? s.cgstRate ?? 2.5;
-    const sgstRate = meta.sgstRate ?? s.sgstRate ?? 2.5;
-    const delCharge = meta.deliveryFee || 0;
-    const discPct = meta.discountPct || 0;
-    const discAmt = meta.discountAmt || (sub * (discPct / 100));
-    const taxable = Math.max(0, sub - discAmt);
-    const tax = taxable * ((cgstRate + sgstRate) / 100);
-    return Math.round((taxable + tax + delCharge) * 100) / 100;
+  const direct = Number(order.total_amount);
+  const parsed = parseNotesMetadata(order.notes, order);
+  const isDelivery = parsed.type === 'delivery' || order.order_type === 'delivery';
+  const delFee = isDelivery ? Math.max(0, Number(order.delivery_fee ?? parsed.deliveryFee ?? 0)) : 0;
+
+  if (!isNaN(direct) && direct > 0) {
+    if (isDelivery && delFee > 0) {
+      const items = getItemsForOrder(order.id);
+      if (items && items.length > 0) {
+        const sub = items.reduce((s, i) => s + Number(i.line_total || ((i.unit_price || i.price || 0) * (i.quantity || i.qty || 1)) || 0), 0);
+        if (Math.abs(direct - sub) < 5 || Math.abs(direct - sub * 1.05) < 5) {
+          return Math.round((direct + delFee) * 100) / 100;
+        }
+      }
+    }
+    return direct;
   }
 
   return 0;
@@ -2204,37 +2236,8 @@ function renderStats() {
   if ($('stat-collected-revenue')) $('stat-collected-revenue').textContent = fmtMoney(collectedRev);
   if ($('stat-outstanding-revenue')) $('stat-outstanding-revenue').textContent = fmtMoney(outstandingRev);
 
-  // Calculate GST stats (5% included in subtotal: 2.5% CGST + 2.5% SGST)
-  let totalGst = 0;
-  let paidGst = 0;
-  let pendingGst = 0;
-
-  orders.filter(o => o.status !== 'cancelled').forEach(o => {
-    const meta = parseNotesMetadata(o.notes, o);
-    const deliveryCharge = meta.charge ? parseFloat(meta.charge.replace(/[^\d.]/g, '')) || 0 : (meta.deliveryFee || 0);
-    const totalAmt = getEffectiveOrderTotal(o);
-    const subtotal = Math.max(0, totalAmt - deliveryCharge) / 1.05;
-    const gst = subtotal * 0.05;
-
-    totalGst += gst;
-    if (o.payment_status === 'paid') {
-      paidGst += gst;
-    } else {
-      pendingGst += gst;
-    }
-  });
-
-  const cgst = totalGst / 2;
-  const sgst = totalGst / 2;
-
-  if ($('stat-gst-total')) $('stat-gst-total').textContent = fmtMoney(totalGst);
-  if ($('stat-gst-cgst')) $('stat-gst-cgst').textContent = fmtMoney(cgst);
-  if ($('stat-gst-sgst')) $('stat-gst-sgst').textContent = fmtMoney(sgst);
-  if ($('stat-gst-paid')) $('stat-gst-paid').textContent = fmtMoney(paidGst);
-  if ($('stat-gst-pending')) $('stat-gst-pending').textContent = fmtMoney(pendingGst);
-
-  // Populate dynamic month options in GST filing selector
-  renderGSTMonthlySelect();
+  // Render GST compliance & accounting section with active date filters
+  renderGSTSection();
 
   // Sidebar badges
   const orderBadge = $('pending-orders-badge');
@@ -2245,6 +2248,321 @@ function renderStats() {
   const pendingBook = bookings.filter(b => b.status === 'pending').length;
   if (pendingBook > 0) { bookBadge.textContent = pendingBook; show(bookBadge); }
   else hide(bookBadge);
+}
+
+// ── 📊 GST TAX ACCOUNTING & DATE-RANGE REPORTING HUB ─────────────
+let activeGstPreset = 'this_month';
+let gstCustomStart = '';
+let gstCustomEnd = '';
+const gstLoadedRanges = new Set();
+let isFetchingGstOrders = false;
+
+function formatGstDateLabel(date) {
+  if (!date) return '';
+  return date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+}
+
+function getGstDateRangeBounds(preset = activeGstPreset, customStart = gstCustomStart, customEnd = gstCustomEnd) {
+  const now = new Date();
+  const todayStr = getLocalDateString(now);
+
+  let startDate = null;
+  let endDate = null;
+  let label = '';
+  let rangeKey = '';
+
+  if (preset === 'today') {
+    const [y, m, d] = todayStr.split('-').map(Number);
+    startDate = new Date(y, m - 1, d, 0, 0, 0, 0);
+    endDate = new Date(y, m - 1, d, 23, 59, 59, 999);
+    label = `Today (${formatGstDateLabel(startDate)})`;
+    rangeKey = `gst_today_${todayStr}`;
+  } else if (preset === 'yesterday') {
+    const yDate = new Date(now);
+    yDate.setDate(yDate.getDate() - 1);
+    const yestStr = getLocalDateString(yDate);
+    const [y, m, d] = yestStr.split('-').map(Number);
+    startDate = new Date(y, m - 1, d, 0, 0, 0, 0);
+    endDate = new Date(y, m - 1, d, 23, 59, 59, 999);
+    label = `Yesterday (${formatGstDateLabel(startDate)})`;
+    rangeKey = `gst_yesterday_${yestStr}`;
+  } else if (preset === 'this_month') {
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    label = `This Month (${now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })})`;
+    rangeKey = `gst_month_${now.getFullYear()}_${now.getMonth() + 1}`;
+  } else if (preset === 'last_month') {
+    startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+    endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    label = `Last Month (${lastMonthDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })})`;
+    rangeKey = `gst_month_${startDate.getFullYear()}_${startDate.getMonth() + 1}`;
+  } else if (preset === '7d') {
+    const start7 = new Date(now);
+    start7.setDate(start7.getDate() - 6);
+    const start7Str = getLocalDateString(start7);
+    const [y, m, d] = start7Str.split('-').map(Number);
+    startDate = new Date(y, m - 1, d, 0, 0, 0, 0);
+    const [eY, eM, eD] = todayStr.split('-').map(Number);
+    endDate = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
+    label = `Last 7 Days (${formatGstDateLabel(startDate)} – ${formatGstDateLabel(endDate)})`;
+    rangeKey = `gst_7d_${start7Str}_${todayStr}`;
+  } else if (preset === '30d') {
+    const start30 = new Date(now);
+    start30.setDate(start30.getDate() - 29);
+    const start30Str = getLocalDateString(start30);
+    const [y, m, d] = start30Str.split('-').map(Number);
+    startDate = new Date(y, m - 1, d, 0, 0, 0, 0);
+    const [eY, eM, eD] = todayStr.split('-').map(Number);
+    endDate = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
+    label = `Last 30 Days (${formatGstDateLabel(startDate)} – ${formatGstDateLabel(endDate)})`;
+    rangeKey = `gst_30d_${start30Str}_${todayStr}`;
+  } else if (preset === 'custom') {
+    if (customStart) {
+      const [sY, sM, sD] = customStart.split('-').map(Number);
+      startDate = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+      const endStr = customEnd || customStart;
+      const [eY, eM, eD] = endStr.split('-').map(Number);
+      endDate = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
+      if (customStart === endStr) {
+        label = `${formatGstDateLabel(startDate)}`;
+      } else {
+        label = `${formatGstDateLabel(startDate)} – ${formatGstDateLabel(endDate)}`;
+      }
+      rangeKey = `gst_custom_${customStart}_${endStr}`;
+    } else {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      label = `This Month (${now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })})`;
+      rangeKey = `gst_month_${now.getFullYear()}_${now.getMonth() + 1}`;
+    }
+  }
+
+  return {
+    startDate,
+    endDate,
+    startIso: startDate ? startDate.toISOString() : null,
+    endIso: endDate ? endDate.toISOString() : null,
+    label,
+    rangeKey
+  };
+}
+
+async function ensureOrdersForGstRange(startIso, endIso, rangeKey, force = false) {
+  if (isFetchingGstOrders || !startIso || !endIso || !rangeKey) return;
+  if (!force && gstLoadedRanges.has(rangeKey)) return;
+
+  // Check if existing in-memory orders already cover prior to startIso
+  if (!force && orders.length > 0) {
+    const oldest = new Date(orders[orders.length - 1].created_at || Date.now());
+    if (oldest <= new Date(startIso)) {
+      gstLoadedRanges.add(rangeKey);
+      return;
+    }
+  }
+
+  isFetchingGstOrders = true;
+  try {
+    const pageSize = 1000;
+    let from = 0;
+    let fetched = [];
+
+    while (true) {
+      let q = insforge.database
+        .from('orders')
+        .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, created_at, updated_at')
+        .gte('created_at', startIso)
+        .lte('created_at', endIso)
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1);
+
+      const { data, error } = await q;
+      if (error) {
+        console.warn('[GST Hub] Error loading historical batch:', error);
+        break;
+      }
+      if (Array.isArray(data) && data.length > 0) {
+        fetched.push(...data);
+      }
+      if (!data || data.length < pageSize) break;
+      from += pageSize;
+    }
+
+    if (fetched.length > 0) {
+      const orderMap = new Map();
+      orders.forEach(o => orderMap.set(String(o.id), o));
+      fetched.forEach(o => orderMap.set(String(o.id), o));
+      orders = Array.from(orderMap.values()).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      persistOrdersCache();
+    }
+    gstLoadedRanges.add(rangeKey);
+  } catch (err) {
+    console.error('[GST Hub] Failed to ensure historical orders:', err);
+  } finally {
+    isFetchingGstOrders = false;
+  }
+}
+
+function getGstFilteredOrders(startDate, endDate) {
+  const nonCancelled = orders.filter(o => o.status !== 'cancelled');
+  let matched = nonCancelled;
+
+  if (startDate && endDate) {
+    matched = nonCancelled.filter(o => {
+      const t = new Date(o.created_at);
+      return t >= startDate && t <= endDate;
+    });
+  }
+
+  // Deduplicate and consolidate table sessions so individual KOT rounds are not double counted
+  return getConsolidatedClosedBills(matched);
+}
+
+async function renderGSTSection() {
+  const { startDate, endDate, startIso, endIso, label, rangeKey } = getGstDateRangeBounds();
+
+  // 1. Update period display banner
+  if ($('dash-gst-period-text')) {
+    $('dash-gst-period-text').textContent = `GST Report: ${label}`;
+  }
+
+  // 2. Fetch server-side historical data if needed
+  if (startIso && endIso) {
+    await ensureOrdersForGstRange(startIso, endIso, rangeKey);
+  }
+
+  // 3. Compute GST metrics on consolidated filtered orders
+  const filteredOrders = getGstFilteredOrders(startDate, endDate);
+
+  let sumGross = 0;
+  let sumTaxable = 0;
+  let sumCGST = 0;
+  let sumSGST = 0;
+  let sumIGST = 0;
+  let sumGST = 0;
+  let sumPaidGST = 0;
+  let sumPendingGST = 0;
+
+  filteredOrders.forEach(o => {
+    const td = computeOrderTaxDetails(o);
+    const taxable = td.taxableValue || 0;
+    const cgst = td.cgstAmt || 0;
+    const sgst = td.sgstAmt || 0;
+    const igst = (td.isInterstate ? td.totalGst : 0);
+    const totalGst = td.totalGst || (cgst + sgst + igst);
+    const gross = td.grandTotal || Number(o.total_amount || 0);
+
+    sumTaxable += taxable;
+    sumCGST += cgst;
+    sumSGST += sgst;
+    sumIGST += igst;
+    sumGST += totalGst;
+    sumGross += gross;
+
+    if (o.payment_status === 'paid') {
+      sumPaidGST += totalGst;
+    } else {
+      sumPendingGST += totalGst;
+    }
+  });
+
+  const orderCount = filteredOrders.length;
+
+  // 4. Update KPI card displays
+  if ($('stat-gst-gross')) $('stat-gst-gross').textContent = fmtMoney(sumGross);
+  if ($('stat-gst-taxable')) $('stat-gst-taxable').textContent = fmtMoney(sumTaxable);
+  if ($('stat-gst-total')) $('stat-gst-total').textContent = fmtMoney(sumGST);
+  if ($('stat-gst-cgst')) $('stat-gst-cgst').textContent = fmtMoney(sumCGST);
+  if ($('stat-gst-sgst')) $('stat-gst-sgst').textContent = fmtMoney(sumSGST);
+  if ($('stat-gst-igst')) $('stat-gst-igst').textContent = fmtMoney(sumIGST);
+  if ($('stat-gst-order-count')) $('stat-gst-order-count').textContent = `${orderCount} ${orderCount === 1 ? 'Order' : 'Orders'}`;
+  if ($('stat-gst-paid')) $('stat-gst-paid').textContent = fmtMoney(sumPaidGST);
+  if ($('stat-gst-pending')) $('stat-gst-pending').textContent = fmtMoney(sumPendingGST);
+
+  // 5. Empty State toggle
+  const emptyEl = $('dash-gst-empty-state');
+  if (emptyEl) {
+    emptyEl.style.display = orderCount === 0 ? 'block' : 'none';
+  }
+
+  // 6. Update Month select dropdown to match
+  renderGSTMonthlySelect();
+}
+
+function setGstDatePreset(preset) {
+  activeGstPreset = preset;
+
+  // Highlight active preset button
+  document.querySelectorAll('#dash-gst-presets .gst-preset-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.preset === preset);
+  });
+
+  const customWrap = $('dash-gst-custom-range-wrap');
+  if (preset === 'custom') {
+    if (customWrap) customWrap.style.display = 'flex';
+    if (gstCustomStart) {
+      renderGSTSection();
+    } else {
+      const todayStr = getLocalDateString(new Date());
+      if ($('dash-gst-start-date')) $('dash-gst-start-date').value = todayStr;
+      if ($('dash-gst-end-date')) $('dash-gst-end-date').value = todayStr;
+    }
+  } else {
+    if (customWrap) customWrap.style.display = 'none';
+    gstCustomStart = '';
+    gstCustomEnd = '';
+    if ($('dash-gst-start-date')) $('dash-gst-start-date').value = '';
+    if ($('dash-gst-end-date')) $('dash-gst-end-date').value = '';
+    renderGSTSection();
+  }
+}
+
+function applyGstCustomRange(startStr, endStr) {
+  if (!startStr) {
+    showAdminToast('Please select a start date.', 'warning');
+    return;
+  }
+  const finalEnd = endStr || startStr;
+  if (startStr > finalEnd) {
+    showAdminToast('Start date cannot be after end date.', 'warning');
+    return;
+  }
+
+  activeGstPreset = 'custom';
+  gstCustomStart = startStr;
+  gstCustomEnd = finalEnd;
+
+  document.querySelectorAll('#dash-gst-presets .gst-preset-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.preset === 'custom');
+  });
+
+  const customWrap = $('dash-gst-custom-range-wrap');
+  if (customWrap) customWrap.style.display = 'flex';
+
+  renderGSTSection();
+}
+
+function resetGstFilter() {
+  activeGstPreset = 'this_month';
+  gstCustomStart = '';
+  gstCustomEnd = '';
+
+  if ($('dash-gst-start-date')) $('dash-gst-start-date').value = '';
+  if ($('dash-gst-end-date')) $('dash-gst-end-date').value = '';
+
+  const customWrap = $('dash-gst-custom-range-wrap');
+  if (customWrap) customWrap.style.display = 'none';
+
+  document.querySelectorAll('#dash-gst-presets .gst-preset-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.preset === 'this_month');
+  });
+
+  renderGSTSection();
+  showAdminToast('GST filter reset to current month.', 'info');
 }
 
 function renderGSTMonthlySelect() {
@@ -2271,47 +2589,37 @@ function renderGSTMonthlySelect() {
 
   const prevVal = select.value;
   select.innerHTML = `
-    <option value="current">Current Month (${monthMap.get(currentKey) || 'This Month'})</option>
-    <option value="all">All Months Combined</option>
+    <option value="this_month">This Month (${monthMap.get(currentKey) || 'Current Month'})</option>
+    <option value="custom" ${activeGstPreset === 'custom' ? 'selected' : ''}>Custom Date Range</option>
     <optgroup label="Select Specific Month">
       ${sortedMonths.map(([k, label]) => `<option value="${k}">${label}</option>`).join('')}
     </optgroup>
   `;
 
-  if (prevVal && select.querySelector(`option[value="${prevVal}"]`)) {
+  if (activeGstPreset === 'custom') {
+    select.value = 'custom';
+  } else if (activeGstPreset === 'this_month') {
+    select.value = 'this_month';
+  } else if (prevVal && select.querySelector(`option[value="${prevVal}"]`)) {
     select.value = prevVal;
   }
 }
 
-function exportMonthlyGSTFilingCSV() {
-  const select = $('dash-gst-month-select');
-  const mode = select?.value || 'current';
-  const now = new Date();
-  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+async function exportMonthlyGSTFilingCSV() {
+  const { startDate, endDate, startIso, endIso, label } = getGstDateRangeBounds();
 
-  let targetOrders = orders.filter(o => o.status !== 'cancelled');
-  let filenameMonth = 'All_Months';
-
-  if (mode === 'current') {
-    targetOrders = targetOrders.filter(o => {
-      const d = new Date(o.created_at);
-      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      return k === currentMonthKey;
-    });
-    filenameMonth = currentMonthKey;
-  } else if (mode !== 'all') {
-    targetOrders = targetOrders.filter(o => {
-      const d = new Date(o.created_at);
-      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      return k === mode;
-    });
-    filenameMonth = mode;
+  if (startIso && endIso) {
+    await ensureOrdersForGstRange(startIso, endIso, `gst_export_${startIso}_${endIso}`);
   }
 
+  const targetOrders = getGstFilteredOrders(startDate, endDate);
   if (targetOrders.length === 0) {
-    showAdminToast('No orders found for the selected GST filing period.', 'error');
+    showAdminToast('No orders found for the selected GST reporting period.', 'error');
     return;
   }
+
+  // Ensure line items are loaded for accurate itemized GST computation
+  await ensureOrderItemsLoaded(targetOrders.map(o => o.id));
 
   const s = typeof getBillSettings === 'function' ? getBillSettings() : { restaurantName: 'LIMRA RESTAURANT', gstin: '' };
   const restaurantName = s.restaurantName || 'LIMRA RESTAURANT';
@@ -2344,13 +2652,13 @@ function exportMonthlyGSTFilingCSV() {
   let sumTotal = 0;
 
   const rows = targetOrders.map(o => {
+    const td = computeOrderTaxDetails(o);
     const meta = parseNotesMetadata(o.notes, o);
-    const deliveryCharge = meta.charge ? parseFloat(meta.charge.replace(/[^\d.]/g, '')) || 0 : 0;
-    const totalAmt = parseFloat(o.total_amount) || 0;
-    const taxable = Math.max(0, totalAmt - deliveryCharge) / 1.05;
-    const cgstAmt = taxable * 0.025;
-    const sgstAmt = taxable * 0.025;
-    const gstAmt = cgstAmt + sgstAmt;
+    const taxable = td.taxableValue;
+    const cgstAmt = td.cgstAmt;
+    const sgstAmt = td.sgstAmt;
+    const gstAmt = td.totalGst;
+    const totalAmt = td.grandTotal;
 
     sumTaxable += taxable;
     sumCGST += cgstAmt;
@@ -2363,7 +2671,7 @@ function exportMonthlyGSTFilingCSV() {
     });
 
     const orderType = meta.type === 'table' ? `Dine-In (Table ${meta.tableNumber || o.table_number || '—'})` : (meta.type === 'delivery' ? 'Online Delivery' : 'Pickup / Takeaway');
-    const paymentMode = (meta.paymentMode || o.payment_mode || meta.payment || (o.payment_status === 'paid' ? 'UPI/Online' : 'Cash/Pending')).toUpperCase();
+    const paymentMode = (o.payment_method || meta.paymentMode || o.payment_mode || meta.payment || (o.payment_status === 'paid' ? 'UPI/Online' : 'Cash/Pending')).toUpperCase();
 
     return [
       `"${o.order_number || o.id}"`,
@@ -2407,18 +2715,68 @@ function exportMonthlyGSTFilingCSV() {
     `"${gstin}"`
   ]);
 
+  const fileRangeStr = startDate && endDate
+    ? `${getLocalDateString(startDate)}_to_${getLocalDateString(endDate)}`
+    : 'All';
+
   const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.setAttribute('download', `LIMRA_Restaurant_Monthly_GST_Filing_${filenameMonth}.csv`);
+  link.setAttribute('download', `LIMRA_Restaurant_GST_Report_${fileRangeStr}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-  showAdminToast(`Monthly GST Filing CSV for ${filenameMonth} downloaded! 📥`, 'success');
+  showAdminToast(`GST Report CSV for ${label} downloaded! 📥`, 'success');
 }
+
+function initGSTSectionListeners() {
+  // Preset buttons
+  document.querySelectorAll('#dash-gst-presets .gst-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setGstDatePreset(btn.dataset.preset);
+    });
+  });
+
+  // Apply custom range button
+  $('dash-gst-apply-btn')?.addEventListener('click', () => {
+    const s = $('dash-gst-start-date')?.value;
+    const e = $('dash-gst-end-date')?.value;
+    applyGstCustomRange(s, e);
+  });
+
+  // Reset filter button
+  $('dash-gst-reset-btn')?.addEventListener('click', resetGstFilter);
+
+  // Month selector dropdown change
+  $('dash-gst-month-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (val === 'custom') {
+      setGstDatePreset('custom');
+    } else if (val === 'this_month') {
+      setGstDatePreset('this_month');
+    } else if (/^\d{4}-\d{2}$/.test(val)) {
+      const [y, m] = val.split('-').map(Number);
+      const startStr = `${y}-${String(m).padStart(2, '0')}-01`;
+      const lastDay = new Date(y, m, 0).getDate();
+      const endStr = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      applyGstCustomRange(startStr, endStr);
+    }
+  });
+
+  // Export CSV button
+  $('dash-export-gst-csv-btn')?.addEventListener('click', exportMonthlyGSTFilingCSV);
+}
+
+window.setGstDatePreset = setGstDatePreset;
+window.applyGstCustomRange = applyGstCustomRange;
+window.resetGstFilter = resetGstFilter;
+window.getGstDateRangeBounds = getGstDateRangeBounds;
+window.getGstFilteredOrders = getGstFilteredOrders;
+window.renderGSTSection = renderGSTSection;
+window.exportMonthlyGSTFilingCSV = exportMonthlyGSTFilingCSV;
 
 function exportTodaySummaryCSV() {
   const todayStr = new Date().toDateString();
@@ -2478,7 +2836,7 @@ function initDashboardQuickListeners() {
 
   $('dash-quick-export-today-btn')?.addEventListener('click', exportTodaySummaryCSV);
 
-  $('dash-export-gst-csv-btn')?.addEventListener('click', exportMonthlyGSTFilingCSV);
+  initGSTSectionListeners();
 
   $('btn-admin-header-sales-report')?.addEventListener('click', () => switchPanel('daily-sales-report'));
   $('dash-quick-daily-report-btn')?.addEventListener('click', () => switchPanel('daily-sales-report'));
@@ -4117,8 +4475,11 @@ function loadOrderIntoPos(order) {
       if ($('pos-delivery-address')) {
         $('pos-delivery-address').value = rawAddr;
       }
-      if (parsedMeta.deliveryFee && $('pos-delivery-fee')) {
-        $('pos-delivery-fee').value = parsedMeta.deliveryFee;
+      if ($('pos-delivery-fee')) {
+        const feeVal = (parsedMeta.deliveryFee !== undefined && parsedMeta.deliveryFee !== null)
+          ? parsedMeta.deliveryFee
+          : (order.delivery_fee ?? 0);
+        $('pos-delivery-fee').value = Number(feeVal) || 0;
       }
     }
 
@@ -4162,6 +4523,21 @@ function loadOrderIntoPos(order) {
     } else if ($('pos-discount-pct')) {
       $('pos-discount-pct').value = '0';
     }
+
+    // Restore and preserve Payment Method in POS workstation
+    const existingPay = (order.payment_method || parsedMeta.paymentMode || 'cash').toLowerCase().trim();
+    const validPosPay = ['cash', 'upi', 'card', 'pay_later'].includes(existingPay) ? existingPay : 'cash';
+    const paySel = $('pos-payment-mode');
+    if (paySel) paySel.value = validPosPay;
+    document.querySelectorAll('.pos-pay-mode-pill').forEach(b => {
+      const isThis = b.dataset.pay === validPosPay;
+      b.className = 'pos-pay-mode-pill adm-btn ' + (isThis ? 'adm-btn-primary' : 'adm-btn-outline');
+    });
+
+    const billBtnLabel = $('pos-bill-btn-label');
+    const billBtnIcon = $('pos-bill-btn-icon');
+    if (billBtnLabel) billBtnLabel.textContent = `Settle & Pay (${validPosPay.toUpperCase()})`;
+    if (billBtnIcon) billBtnIcon.textContent = validPosPay === 'upi' ? '📱' : '💵';
 
     updatePosCartUI();
     renderCategoryPills();
@@ -4715,21 +5091,30 @@ async function renderOrderDetail(orderId) {
               </tr>
               ${(() => {
                 const s = getBillSettings();
+                const isDelivery = order.order_type === 'delivery' || parsedMeta.type === 'delivery';
+                const delCharge = isDelivery ? Math.max(0, Number(order.delivery_fee ?? parsedMeta.deliveryFee ?? 0)) : 0;
                 const discPct = parsedMeta.discountPct || 0;
-                const discAmt = parsedMeta.discountAmt || (itemsSubtotal * (discPct / 100));
-                const taxableAmt = Math.max(0, itemsSubtotal - discAmt);
+                const discAmt = parsedMeta.discountAmt || 0;
                 const cgstRate = parsedMeta.cgstRate ?? s.cgstRate;
                 const sgstRate = parsedMeta.sgstRate ?? s.sgstRate;
-                const cgstAmt = taxableAmt * (cgstRate / 100);
-                const sgstAmt = taxableAmt * (sgstRate / 100);
-                const delCharge = parsedMeta.deliveryFee || 0;
-                const calcGrand = Math.round((taxableAmt + cgstAmt + sgstAmt + delCharge) * 100) / 100;
+                const billing = calculateOrderBilling({
+                  items,
+                  deliveryFee: delCharge,
+                  discountPct,
+                  discountAmt,
+                  cgstRate,
+                  sgstRate
+                });
+                const calcGrand = billing.grandTotal;
+                const cgstAmt = billing.cgstAmount;
+                const sgstAmt = billing.sgstAmount;
+                const finalDiscAmt = billing.discountAmount;
 
                 return `
-                  ${discAmt > 0 ? `
+                  ${finalDiscAmt > 0 ? `
                     <tr style="cursor:default;color:#ef4444;">
                       <td colspan="3" class="adm-table-total-label">Discount ${discPct > 0 ? `(${discPct}%)` : ''}</td>
-                      <td><strong>-${fmtMoney(discAmt)}</strong></td>
+                      <td><strong>-${fmtMoney(finalDiscAmt)}</strong></td>
                     </tr>
                   ` : ''}
                   <tr style="cursor:default;font-size:0.8rem;color:#64748b;">
@@ -5469,7 +5854,11 @@ function getActiveTableSessions() {
   }).sort((a, b) => a.tableNumber - b.tableNumber);
 }
 
-async function createFinalBillForTableSession(tableNum) {
+let currentHoldSettleTarget = null;
+let currentHoldSettleMethod = 'cash';
+let isHoldSettling = false;
+
+async function createFinalBillForTableSession(tableNum, paymentMethod = 'cash', txnRef = '', idempotencyKey = null, skipConfirm = false) {
   const sessions = getActiveTableSessions();
   const session = sessions.find(s => s.tableNumber === tableNum);
   if (!session || !session.orders.length) {
@@ -5483,12 +5872,17 @@ async function createFinalBillForTableSession(tableNum) {
     return;
   }
 
-  if (!confirm(`Generate Final Bill for Table ${tableNum} (${session.kots.length} KOTs · ₹${session.totalAmount.toFixed(2)}) and close session?`)) {
+  // If called directly without prior modal confirmation, open the Cash/UPI settlement modal
+  if (!skipConfirm) {
+    openHoldSettleModal({ type: 'table', tableNumber: tableNum, session });
     return;
   }
 
+  const validMethod = ['cash', 'upi', 'card', 'pay_later'].includes(paymentMethod) ? paymentMethod : 'cash';
+  const upiRefNote = (validMethod === 'upi' && txnRef) ? ` [UPI_REF: ${txnRef}]` : '';
+
   // 1. Consolidate all items across all KOTs in this session
-  const consolidatedItems = session.consolidatedItems;
+  const consolidatedItems = session.consolidatedItems || consolidateOrderItems(session.items);
   const s = getBillSettings();
   const billing = calculateOrderBilling({
     items: consolidatedItems,
@@ -5514,7 +5908,9 @@ async function createFinalBillForTableSession(tableNum) {
     status: 'delivered',
     payment_status: 'paid',
     ticket_status: 'CLOSED',
-    notes: `[TABLE: ${tableNum}] [FINAL_BILL] [KOTS: ${kotNumbersText}] [CGST: ${billing.cgstRate}%] [SGST: ${billing.sgstRate}%] [PAYMENT: cash]`
+    payment_method: validMethod,
+    payment_mode: validMethod,
+    notes: `[TABLE: ${tableNum}] [FINAL_BILL] [KOTS: ${kotNumbersText}] [CGST: ${billing.cgstRate}%] [SGST: ${billing.sgstRate}%] [PAYMENT: ${validMethod}]${upiRefNote}`
   };
 
   // 2. Concurrency Check: Check if table session was already closed
@@ -5526,9 +5922,9 @@ async function createFinalBillForTableSession(tableNum) {
 
   const siblingOrders = session.orders.slice(1);
   const siblingOrderIds = siblingOrders.map(o => o.id);
-  const settleIdempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
+  const settleIdempotencyKey = idempotencyKey || ((typeof crypto !== 'undefined' && crypto.randomUUID)
     ? crypto.randomUUID()
-    : `settle-table-${tableNum}-${Date.now()}`;
+    : `settle-table-${tableNum}-${Date.now()}`);
 
   // 3. Atomically commit database update first (Prevents double billing / double checkout)
   let cloudSettled = false;
@@ -5547,6 +5943,7 @@ async function createFinalBillForTableSession(tableNum) {
         status: 'delivered',
         payment_status: 'paid',
         ticket_status: 'CLOSED',
+        payment_method: validMethod,
         notes: finalBillOrder.notes,
         updated_at: new Date().toISOString()
       })
@@ -5561,6 +5958,7 @@ async function createFinalBillForTableSession(tableNum) {
           total_amount: grandTotal,
           status: 'delivered',
           payment_status: 'paid',
+          payment_method: validMethod,
           notes: finalBillOrder.notes,
           updated_at: new Date().toISOString()
         })
@@ -5577,12 +5975,12 @@ async function createFinalBillForTableSession(tableNum) {
     for (const ord of siblingOrders) {
       let sUpd = await insforge.database
         .from('orders')
-        .update({ status: 'delivered', payment_status: 'paid', ticket_status: 'CLOSED' })
+        .update({ status: 'delivered', payment_status: 'paid', ticket_status: 'CLOSED', payment_method: validMethod })
         .eq('id', ord.id);
       if (sUpd.error && (sUpd.error.message || '').includes('ticket_status')) {
         await insforge.database
           .from('orders')
-          .update({ status: 'delivered', payment_status: 'paid' })
+          .update({ status: 'delivered', payment_status: 'paid', payment_method: validMethod })
           .eq('id', ord.id);
       }
     }
@@ -5596,6 +5994,8 @@ async function createFinalBillForTableSession(tableNum) {
   localPrimary.status = 'delivered';
   localPrimary.payment_status = 'paid';
   localPrimary.ticket_status = 'CLOSED';
+  localPrimary.payment_method = validMethod;
+  localPrimary.payment_mode = validMethod;
   localPrimary.notes = finalBillOrder.notes;
 
   siblingOrders.forEach(ord => {
@@ -5603,6 +6003,8 @@ async function createFinalBillForTableSession(tableNum) {
     local.status = 'delivered';
     local.payment_status = 'paid';
     local.ticket_status = 'CLOSED';
+    local.payment_method = validMethod;
+    local.payment_mode = validMethod;
   });
 
   if (siblingOrderIds.length > 0) {
@@ -5625,7 +6027,7 @@ async function createFinalBillForTableSession(tableNum) {
     showAdminToast(`Table ${tableNum} session closed in DB, but printing failed: ${printErr.message}. Use Reprint button.`, 'warning');
   }
 
-  showAdminToast(`Table ${tableNum} Final Bill generated & session closed! ✅`, 'success');
+  showAdminToast(`Table ${tableNum} Final Bill generated (${validMethod.toUpperCase()}) & session closed! ✅`, 'success');
 
   // 6. EXTERNAL SIDE EFFECT 2: Google Sheets auto-sync (Decoupled)
   if (isGoogleSheetAutoSyncEnabled()) {
@@ -5641,6 +6043,377 @@ async function createFinalBillForTableSession(tableNum) {
   renderTablesPanel();
   renderKitchenPanel();
 }
+
+async function settleSingleHeldOrder(orderId, paymentMethod = 'cash', txnRef = '', idempotencyKey = null) {
+  const order = orders.find(o => String(o.id) === String(orderId));
+  if (!order) {
+    showAdminToast('Held order not found.', 'error');
+    return;
+  }
+
+  const validMethod = ['cash', 'upi', 'card', 'pay_later'].includes(paymentMethod) ? paymentMethod : 'cash';
+  const settleIdempotencyKey = idempotencyKey || ((typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `settle-${orderId}-${Date.now()}`);
+
+  const upiRefNote = (validMethod === 'upi' && txnRef) ? ` [UPI_REF: ${txnRef}]` : '';
+  const currentNotes = (order.notes || '');
+  let updatedNotes = currentNotes;
+  if (/\[PAYMENT:[^\]]*\]/i.test(updatedNotes)) {
+    updatedNotes = updatedNotes.replace(/\[PAYMENT:[^\]]*\]/i, `[PAYMENT: ${validMethod}]`);
+  } else {
+    updatedNotes = (updatedNotes ? updatedNotes + ' ' : '') + `[PAYMENT: ${validMethod}]`;
+  }
+  if (upiRefNote) {
+    if (/\[UPI_REF:[^\]]*\]/i.test(updatedNotes)) {
+      updatedNotes = updatedNotes.replace(/\[UPI_REF:[^\]]*\]/i, upiRefNote.trim());
+    } else {
+      updatedNotes = (updatedNotes ? updatedNotes + ' ' : '') + upiRefNote.trim();
+    }
+  }
+
+  // 1. ATOMIC SETTLEMENT IN DATABASE FIRST
+  let cloudSettled = false;
+  let settlementConflict = false;
+
+  try {
+    const res = await fetch('/api/orders', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-idempotency-key': settleIdempotencyKey
+      },
+      body: JSON.stringify({
+        id: orderId,
+        status: 'delivered',
+        payment_status: 'paid',
+        ticket_status: 'CLOSED',
+        payment_method: validMethod,
+        txn_ref: txnRef || undefined,
+        notes: updatedNotes,
+        idempotency_key: settleIdempotencyKey
+      })
+    });
+
+    if (res.status === 409) {
+      settlementConflict = true;
+      const conflictData = await res.json().catch(() => ({}));
+      showAdminToast(conflictData.error || `Order #${order.order_number} was already settled by another cashier.`, 'error');
+      await refreshDashboard(true);
+      return;
+    }
+
+    if (res.ok) {
+      cloudSettled = true;
+    }
+  } catch (fetchErr) {
+    console.warn('[Hold Settle API fallback to direct client]:', fetchErr);
+  }
+
+  if (!cloudSettled && !settlementConflict) {
+    try {
+      const { data: updatedRows, error: updErr } = await insforge.database
+        .from('orders')
+        .update({
+          status: 'delivered',
+          payment_status: 'paid',
+          ticket_status: 'CLOSED',
+          payment_method: validMethod,
+          notes: updatedNotes,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', orderId)
+        .neq('ticket_status', 'CLOSED')
+        .select();
+
+      if (updErr && (updErr.message || '').includes('ticket_status')) {
+        await insforge.database.from('orders').update({
+          status: 'delivered',
+          payment_status: 'paid',
+          payment_method: validMethod,
+          notes: updatedNotes,
+          updated_at: new Date().toISOString()
+        }).eq('id', orderId);
+        cloudSettled = true;
+      } else if (updatedRows && updatedRows.length > 0) {
+        cloudSettled = true;
+      } else if (!updErr) {
+        showAdminToast(`Order #${order.order_number} was already closed by another cashier.`, 'error');
+        await refreshDashboard(true);
+        return;
+      }
+    } catch (offlineErr) {
+      console.warn('[Hold Settle Offline]:', offlineErr);
+    }
+  }
+
+  // 2. Database committed! Now update local in-memory state
+  order.status = 'delivered';
+  order.payment_status = 'paid';
+  order.ticket_status = 'CLOSED';
+  order.payment_method = validMethod;
+  order.payment_mode = validMethod;
+  order.notes = updatedNotes;
+  order.updated_at = new Date().toISOString();
+  persistOrdersCache();
+
+  // 3. Print final customer bill
+  const items = getItemsForOrder(order.id);
+  try {
+    await printOrderReceiptWithTax(order, items);
+  } catch (printErr) {
+    console.error('[Hold Settle] Print failed:', printErr);
+    showAdminToast(`Bill settled in database, but printing encountered an issue: ${printErr.message}. Use Reprint button if needed.`, 'warning');
+  }
+
+  // 4. Notifications & UI Refresh
+  await markOrderNotificationsRead(orderId);
+  showAdminToast(`Order #${order.order_number} billed, settled (${validMethod.toUpperCase()}) & closed! ✅`, 'success');
+
+  // 5. Google Sheets Sync
+  if (isGoogleSheetAutoSyncEnabled()) {
+    syncOrderToGoogleSheet(order).catch(e => {
+      console.warn('[Google Sheet] Hold bill auto-sync error:', e);
+    });
+  }
+
+  renderOverview();
+  renderHoldOrdersPanel();
+  renderClosedOrdersPanel();
+  renderBillingQuickCards();
+  renderBillingTotalBills();
+  renderTablesPanel();
+  renderKitchenPanel();
+}
+
+function openHoldSettleModal(target) {
+  if (!target) return;
+  const modal = $('adm-hold-settle-modal');
+  if (!modal) return;
+
+  currentHoldSettleTarget = target;
+  let grandTotal = 0;
+  let subtotal = 0;
+  let cgst = 0;
+  let sgst = 0;
+  let itemsCount = 0;
+  let orderTitle = '';
+  let orderBadge = '';
+  let customerName = 'Walk-in Guest';
+  let initialPayMethod = 'cash';
+
+  const s = getBillSettings();
+
+  if (target.type === 'table') {
+    const sessions = getActiveTableSessions();
+    const session = target.session || sessions.find(sess => sess.tableNumber === target.tableNumber);
+    if (!session || !session.orders.length) {
+      showAdminToast(`No active session found for Table ${target.tableNumber}`, 'error');
+      return;
+    }
+    target.session = session;
+    const primaryOrder = session.orders[0];
+    const consolidatedItems = session.consolidatedItems || consolidateOrderItems(session.items);
+    itemsCount = consolidatedItems.length;
+
+    const billing = calculateOrderBilling({
+      items: consolidatedItems,
+      deliveryFee: 0,
+      cgstRate: s.cgstRate ?? 2.5,
+      sgstRate: s.sgstRate ?? 2.5
+    });
+
+    subtotal = billing.subtotal;
+    cgst = billing.cgstAmt;
+    sgst = billing.sgstAmt;
+    grandTotal = billing.grandTotal;
+    if (grandTotal <= 0 && Number(session.totalAmount || 0) > 0) {
+      grandTotal = Number(session.totalAmount);
+    }
+
+    orderTitle = `🪑 Table ${target.tableNumber < 10 ? '0' + target.tableNumber : target.tableNumber}`;
+    orderBadge = `Dine-In (${session.kots.length} KOT${session.kots.length > 1 ? 's' : ''})`;
+    customerName = session.customerName || 'Dine-in Guests';
+    initialPayMethod = (primaryOrder?.payment_method || primaryOrder?.payment_mode || 'cash').toLowerCase();
+
+  } else {
+    // Single order
+    const order = target.order || orders.find(o => String(o.id) === String(target.orderId));
+    if (!order) {
+      showAdminToast('Order not found.', 'error');
+      return;
+    }
+    target.order = order;
+    target.orderId = order.id;
+
+    const items = getItemsForOrder(order.id);
+    const parsedMeta = parseNotesMetadata(order.notes, order);
+    itemsCount = items.length;
+
+    const billing = calculateOrderBilling({
+      items,
+      deliveryFee: parsedMeta.deliveryFee || order.delivery_fee || 0,
+      discountPct: parsedMeta.discountPct || 0,
+      discountAmt: parsedMeta.discountAmt || 0,
+      cgstRate: parsedMeta.cgstRate ?? (s.cgstRate ?? 2.5),
+      sgstRate: parsedMeta.sgstRate ?? (s.sgstRate ?? 2.5)
+    });
+
+    subtotal = billing.subtotal;
+    cgst = billing.cgstAmt;
+    sgst = billing.sgstAmt;
+    grandTotal = billing.grandTotal || Number(order.total_amount || 0);
+
+    const typeLabel = parsedMeta.type === 'delivery' ? '🚗 Delivery' : (parsedMeta.type === 'pickup' ? '🥡 Pickup' : 'Order');
+    orderTitle = `#${formatDailyOrderNumber(order)} · ${escapeHtml(order.customer_name || 'Walk-in')}`;
+    orderBadge = typeLabel;
+    customerName = order.customer_name || 'Walk-in Guest';
+    initialPayMethod = (order.payment_method || order.payment_mode || parsedMeta.payment || parsedMeta.paymentMode || 'cash').toLowerCase();
+  }
+
+  // Populate Modal UI
+  if ($('hold-settle-order-title')) $('hold-settle-order-title').textContent = orderTitle;
+  if ($('hold-settle-order-badge')) $('hold-settle-order-badge').textContent = orderBadge;
+  if ($('hold-settle-customer-name')) $('hold-settle-customer-name').textContent = customerName;
+  if ($('hold-settle-items-count')) $('hold-settle-items-count').textContent = `${itemsCount} dish${itemsCount !== 1 ? 'es' : ''}`;
+
+  if ($('hold-settle-payable-amount')) $('hold-settle-payable-amount').textContent = formatBillAmount(grandTotal);
+  if ($('hold-settle-amount-breakdown')) {
+    $('hold-settle-amount-breakdown').innerHTML = `
+      <span>Subtotal: ${formatBillAmount(subtotal)}</span>
+      <span>•</span>
+      <span>GST (5%): ${formatBillAmount(cgst + sgst)}</span>
+    `;
+  }
+
+  // Clear UPI ref input
+  if ($('hold-settle-upi-ref')) $('hold-settle-upi-ref').value = '';
+
+  // Select initial payment method (Cash vs UPI)
+  selectHoldSettleMethod(initialPayMethod === 'upi' ? 'upi' : 'cash');
+
+  // Reset button state
+  const confirmBtn = $('hold-settle-confirm-btn');
+  if (confirmBtn) {
+    confirmBtn.disabled = false;
+    confirmBtn.style.opacity = '1';
+  }
+
+  modal.style.display = 'flex';
+}
+
+function selectHoldSettleMethod(method) {
+  const valid = (method === 'upi') ? 'upi' : 'cash';
+  currentHoldSettleMethod = valid;
+
+  const cashBtn = $('hold-settle-method-cash');
+  const upiBtn = $('hold-settle-method-upi');
+  const refWrap = $('hold-settle-upi-ref-wrap');
+  const confirmText = $('hold-settle-confirm-text');
+  const confirmIcon = $('hold-settle-confirm-icon');
+
+  if (cashBtn) {
+    const isCash = valid === 'cash';
+    cashBtn.classList.toggle('active', isCash);
+    cashBtn.style.borderColor = isCash ? '#d97706' : '#cbd5e1';
+    cashBtn.style.boxShadow = isCash ? '0 4px 12px rgba(217,119,6,0.15)' : 'none';
+    const pill = cashBtn.querySelector('.hold-settle-check-pill');
+    if (pill) pill.style.display = isCash ? 'inline-block' : 'none';
+  }
+
+  if (upiBtn) {
+    const isUpi = valid === 'upi';
+    upiBtn.classList.toggle('active', isUpi);
+    upiBtn.style.borderColor = isUpi ? '#d97706' : '#cbd5e1';
+    upiBtn.style.boxShadow = isUpi ? '0 4px 12px rgba(217,119,6,0.15)' : 'none';
+    const pill = upiBtn.querySelector('.hold-settle-check-pill');
+    if (pill) pill.style.display = isUpi ? 'inline-block' : 'none';
+  }
+
+  if (refWrap) {
+    refWrap.style.display = (valid === 'upi') ? 'flex' : 'none';
+  }
+
+  if (confirmText) {
+    confirmText.textContent = `Confirm ${valid.toUpperCase()} Payment & Settle`;
+  }
+  if (confirmIcon) {
+    confirmIcon.textContent = valid === 'upi' ? '📱' : '💵';
+  }
+}
+
+function closeHoldSettleModal() {
+  currentHoldSettleTarget = null;
+  const modal = $('adm-hold-settle-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function executeHoldSettlement() {
+  if (isHoldSettling || !currentHoldSettleTarget) return;
+  isHoldSettling = true;
+
+  const confirmBtn = $('hold-settle-confirm-btn');
+  const confirmText = $('hold-settle-confirm-text');
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.style.opacity = '0.6';
+  }
+  if (confirmText) {
+    confirmText.textContent = 'Processing Settlement...';
+  }
+
+  const selectedMethod = currentHoldSettleMethod || 'cash';
+  const txnRef = ($('hold-settle-upi-ref')?.value || '').trim();
+  const idempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `settle-${Date.now()}`;
+
+  try {
+    const target = currentHoldSettleTarget;
+    if (target.type === 'table') {
+      await createFinalBillForTableSession(target.tableNumber, selectedMethod, txnRef, idempotencyKey, true);
+    } else {
+      await settleSingleHeldOrder(target.orderId, selectedMethod, txnRef, idempotencyKey);
+    }
+    closeHoldSettleModal();
+  } catch (err) {
+    console.error('[Hold Settle Execute Error]:', err);
+    showAdminToast('Settlement failed: ' + (err.message || 'Unknown error'), 'error');
+  } finally {
+    isHoldSettling = false;
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.style.opacity = '1';
+    }
+    if (confirmText) {
+      confirmText.textContent = `Confirm ${selectedMethod.toUpperCase()} Payment & Settle`;
+    }
+  }
+}
+
+function initHoldSettleModalListeners() {
+  $('hold-settle-close-btn')?.addEventListener('click', closeHoldSettleModal);
+  $('hold-settle-cancel-btn')?.addEventListener('click', closeHoldSettleModal);
+
+  const modal = $('adm-hold-settle-modal');
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeHoldSettleModal();
+    });
+  }
+
+  $('hold-settle-method-cash')?.addEventListener('click', () => selectHoldSettleMethod('cash'));
+  $('hold-settle-method-upi')?.addEventListener('click', () => selectHoldSettleMethod('upi'));
+
+  $('hold-settle-confirm-btn')?.addEventListener('click', executeHoldSettlement);
+}
+
+window.openHoldSettleModal = openHoldSettleModal;
+window.selectHoldSettleMethod = selectHoldSettleMethod;
+window.closeHoldSettleModal = closeHoldSettleModal;
+window.executeHoldSettlement = executeHoldSettlement;
+window.settleSingleHeldOrder = settleSingleHeldOrder;
+window.createFinalBillForTableSession = createFinalBillForTableSession;
 
 function renderHoldOrdersPanel() {
   const search = ($('hold-orders-search')?.value || '').toLowerCase().trim();
@@ -5802,6 +6575,7 @@ function renderHoldOrdersPanel() {
           <div class="adm-hold-actions" style="flex-wrap:wrap;gap:.4rem;">
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-edit-items-btn" data-order-id="${order.id}" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;font-weight:700;" title="Edit items, change quantities or cancel dishes">✏️ Edit / Cancel Dishes</button>
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-add-items-btn" data-order-id="${order.id}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;font-weight:700;">➕ Add Dishes</button>
+            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-resume-pos-btn" data-order-id="${order.id}" style="background:#fef3c7;border-color:#f59e0b;color:#92400e;font-weight:700;" title="Resume this order in POS billing">▶️ Resume in POS</button>
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-print-kot-btn" data-order-id="${order.id}" style="background:#fff3e0;border-color:#f59e0b;color:#b45309;">🖨️ Repr. KOT</button>
             <button type="button" class="adm-btn adm-btn-primary adm-btn-sm hold-final-bill-btn" data-order-id="${order.id}" style="background:#10b981;border-color:#10b981;font-weight:700;">🧾 Final Bill</button>
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-cancel-btn" data-order-id="${order.id}" style="border-color:#cbd5e1;color:#64748b;font-weight:700;">✕ Cancel</button>
@@ -5832,7 +6606,7 @@ function renderHoldOrdersPanel() {
   container.querySelectorAll('.table-final-bill-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const tableNum = parseInt(btn.dataset.table, 10);
-      if (tableNum) createFinalBillForTableSession(tableNum);
+      if (tableNum) openHoldSettleModal({ type: 'table', tableNumber: tableNum });
     });
   });
 
@@ -5919,128 +6693,19 @@ function renderHoldOrdersPanel() {
     });
   });
 
-  container.querySelectorAll('.hold-final-bill-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
+  container.querySelectorAll('.hold-resume-pos-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
       const orderId = btn.dataset.orderId;
       const order = orders.find(o => String(o.id) === String(orderId));
-      if (!order) return;
-      if (!confirm(`Settle Order #${order.order_number} and print final customer bill?`)) return;
+      if (order) loadOrderIntoPos(order);
+    });
+  });
 
-      btn.disabled = true;
-      btn.style.opacity = '0.5';
-
-      try {
-        const settleIdempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : `settle-${orderId}-${Date.now()}`;
-
-        // 1. ATOMIC SETTLEMENT IN DATABASE FIRST
-        let cloudSettled = false;
-        let settlementConflict = false;
-
-        try {
-          const res = await fetch('/api/orders', {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-idempotency-key': settleIdempotencyKey
-            },
-            body: JSON.stringify({
-              id: orderId,
-              status: 'delivered',
-              payment_status: 'paid',
-              ticket_status: 'CLOSED',
-              idempotency_key: settleIdempotencyKey
-            })
-          });
-
-          if (res.status === 409) {
-            settlementConflict = true;
-            const conflictData = await res.json().catch(() => ({}));
-            showAdminToast(conflictData.error || `Order #${order.order_number} was already settled by another cashier.`, 'error');
-            await refreshDashboard(true);
-            return;
-          }
-
-          if (res.ok) {
-            cloudSettled = true;
-          }
-        } catch (fetchErr) {
-          console.warn('[Hold Settle API fallback to direct client]:', fetchErr);
-        }
-
-        if (!cloudSettled && !settlementConflict) {
-          try {
-            const { data: updatedRows, error: updErr } = await insforge.database
-              .from('orders')
-              .update({
-                status: 'delivered',
-                payment_status: 'paid',
-                ticket_status: 'CLOSED',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', orderId)
-              .neq('ticket_status', 'CLOSED')
-              .select();
-
-            if (updErr && (updErr.message || '').includes('ticket_status')) {
-              await insforge.database.from('orders').update({
-                status: 'delivered',
-                payment_status: 'paid',
-                updated_at: new Date().toISOString()
-              }).eq('id', orderId);
-              cloudSettled = true;
-            } else if (updatedRows && updatedRows.length > 0) {
-              cloudSettled = true;
-            } else if (!updErr) {
-              showAdminToast(`Order #${order.order_number} was already closed by another cashier.`, 'error');
-              await refreshDashboard(true);
-              return;
-            }
-          } catch (offlineErr) {
-            console.warn('[Hold Settle Offline]:', offlineErr);
-          }
-        }
-
-        // 2. Database committed! Now update local in-memory state
-        order.status = 'delivered';
-        order.payment_status = 'paid';
-        order.ticket_status = 'CLOSED';
-        order.updated_at = new Date().toISOString();
-        persistOrdersCache();
-
-        // 3. EXTERNAL SIDE EFFECT 1: Print final customer bill (Decoupled from DB commit)
-        // Table/hold KOT was already dispatched when order was placed. Final settlement prints customer bill only.
-        const items = getItemsForOrder(order.id);
-        try {
-          await printOrderReceiptWithTax(order, items);
-        } catch (printErr) {
-          console.error('[Hold Settle] Print failed:', printErr);
-          showAdminToast(`Bill settled in database, but printing encountered an issue: ${printErr.message}. Use Reprint button if needed.`, 'warning');
-        }
-
-        // 4. Notifications & UI Refresh
-        await markOrderNotificationsRead(orderId);
-        showAdminToast(`Order #${order.order_number} billed, settled & closed! ✅`, 'success');
-
-        // 5. EXTERNAL SIDE EFFECT 2: Google Sheets Sync (Decoupled from DB commit)
-        if (isGoogleSheetAutoSyncEnabled()) {
-          syncOrderToGoogleSheet(order).catch(e => {
-            console.warn('[Google Sheet] Hold bill auto-sync error:', e);
-          });
-        }
-
-        renderOverview();
-        renderHoldOrdersPanel();
-        renderClosedOrdersPanel();
-        renderBillingQuickCards();
-        renderBillingTotalBills();
-        renderTablesPanel();
-        renderKitchenPanel();
-      } finally {
-        btn.disabled = false;
-        btn.style.opacity = '1';
-      }
+  container.querySelectorAll('.hold-final-bill-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const orderId = btn.dataset.orderId;
+      const order = orders.find(o => String(o.id) === String(orderId));
+      if (order) openHoldSettleModal({ type: 'order', orderId, order });
     });
   });
 
@@ -6304,7 +6969,7 @@ function renderTablesPanel() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const tNum = parseInt(btn.dataset.table, 10);
-      if (tNum) createFinalBillForTableSession(tNum);
+      if (tNum) openHoldSettleModal({ type: 'table', tableNumber: tNum });
     });
   });
 
@@ -8061,12 +8726,221 @@ let closedCustomEnd = null;
 let closedEditingOrderId = null;
 let closedEditingCart = [];
 let closedEditingDeletedItemIds = [];
+let closedOrdersPage = 1;
+let closedOrdersPerPage = 25;
+let isFetchingClosedOrders = false;
+const closedLoadedRanges = new Set();
 
-function renderClosedOrdersPanel() {
+function getClosedDateRangeIso() {
+  const now = new Date();
+  const todayStr = getLocalDateString(now);
+  const yDate = new Date(now);
+  yDate.setDate(yDate.getDate() - 1);
+  const yestStr = getLocalDateString(yDate);
+
+  let startIso = null;
+  let endIso = null;
+  let rangeKey = '';
+
+  if (closedDateFilter === 'today') {
+    const [y, m, d] = todayStr.split('-').map(Number);
+    startIso = new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+    endIso = new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
+    rangeKey = `closed_today_${todayStr}`;
+  } else if (closedDateFilter === 'yesterday') {
+    const [y, m, d] = yestStr.split('-').map(Number);
+    startIso = new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+    endIso = new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
+    rangeKey = `closed_yesterday_${yestStr}`;
+  } else if (closedDateFilter === 'week') {
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - 6);
+    const startStr = getLocalDateString(weekStart);
+    const [y, m, d] = startStr.split('-').map(Number);
+    startIso = new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+    endIso = now.toISOString();
+    rangeKey = `closed_week_${startStr}`;
+  } else if (closedDateFilter === 'month') {
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    startIso = monthStart.toISOString();
+    endIso = now.toISOString();
+    rangeKey = `closed_month_${now.getFullYear()}_${now.getMonth() + 1}`;
+  } else if (closedDateFilter === 'custom' && closedCustomStart) {
+    const [sY, sM, sD] = closedCustomStart.split('-').map(Number);
+    const cStart = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+    const endStr = closedCustomEnd || closedCustomStart;
+    const [eY, eM, eD] = endStr.split('-').map(Number);
+    const cEnd = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
+    startIso = cStart.toISOString();
+    endIso = cEnd.toISOString();
+    rangeKey = `closed_custom_${closedCustomStart}_${endStr}`;
+  } else if (closedDateFilter === 'all') {
+    rangeKey = 'closed_all_orders';
+  }
+
+  return { startIso, endIso, rangeKey, todayStr, yestStr };
+}
+
+async function ensureHistoricalClosedOrders(force = false) {
+  if (isFetchingClosedOrders) return;
+
+  const { startIso, endIso, rangeKey } = getClosedDateRangeIso();
+  if (!rangeKey) return;
+
+  if (!force && closedLoadedRanges.has(rangeKey)) return;
+
+  // If today or yesterday, check if existing orders in memory already span before startIso
+  if (!force && orders.length > 0 && startIso && (closedDateFilter === 'today' || closedDateFilter === 'yesterday')) {
+    const oldest = new Date(orders[orders.length - 1].created_at || Date.now());
+    if (oldest <= new Date(startIso)) {
+      closedLoadedRanges.add(rangeKey);
+      return;
+    }
+  }
+
+  isFetchingClosedOrders = true;
+  const countEl = $('closed-orders-count');
+  if (countEl) countEl.innerHTML = '<span style="color:#6366f1;">Fetching history... ⏳</span>';
+
+  try {
+    const pageSize = 1000;
+    let from = 0;
+    let fetched = [];
+
+    while (true) {
+      let q = insforge.database
+        .from('orders')
+        .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, created_at, updated_at')
+        .or('status.in.(delivered,completed,closed,cancelled),payment_status.eq.paid')
+        .order('created_at', { ascending: false });
+
+      if (startIso) q = q.gte('created_at', startIso);
+      if (endIso) q = q.lte('created_at', endIso);
+
+      q = q.range(from, from + pageSize - 1);
+
+      const { data, error } = await q;
+      if (error) {
+        console.warn('[Closed Orders] Error loading historical batch:', error);
+        break;
+      }
+
+      if (Array.isArray(data) && data.length > 0) {
+        fetched.push(...data);
+      }
+
+      if (!data || data.length < pageSize) break;
+      from += pageSize;
+    }
+
+    if (fetched.length > 0) {
+      const orderMap = new Map();
+      orders.forEach(o => orderMap.set(String(o.id), o));
+      fetched.forEach(o => orderMap.set(String(o.id), o));
+      orders = Array.from(orderMap.values()).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+      closedLoadedRanges.add(rangeKey);
+      persistOrdersCache();
+    } else {
+      closedLoadedRanges.add(rangeKey);
+    }
+  } catch (err) {
+    console.error('[Closed Orders] Failed to ensure historical orders:', err);
+  } finally {
+    isFetchingClosedOrders = false;
+  }
+}
+
+function renderClosedPagination(totalCount, totalPages, currentPage) {
+  const pag = $('closed-orders-pagination');
+  const startNum = totalCount === 0 ? 0 : (currentPage - 1) * closedOrdersPerPage + 1;
+  const endNum = Math.min(currentPage * closedOrdersPerPage, totalCount);
+
+  if ($('closed-page-range')) $('closed-page-range').textContent = `${startNum}–${endNum}`;
+  if ($('closed-total-count')) $('closed-total-count').textContent = totalCount;
+
+  if (!pag) return;
+  if (totalPages <= 1) {
+    pag.innerHTML = '';
+    return;
+  }
+
+  let html = '';
+  // Prev button
+  html += `<button type="button" class="adm-page-btn closed-page-nav-btn" data-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''} title="Previous Page">«</button>`;
+
+  // Page numbers (sliding window of 7)
+  const maxButtons = 7;
+  let startP = Math.max(1, currentPage - 3);
+  let endP = Math.min(totalPages, startP + maxButtons - 1);
+  if (endP - startP + 1 < maxButtons) {
+    startP = Math.max(1, endP - maxButtons + 1);
+  }
+
+  if (startP > 1) {
+    html += `<button type="button" class="adm-page-btn closed-page-nav-btn" data-page="1">1</button>`;
+    if (startP > 2) html += `<span style="padding:0 4px;color:#94a3b8;align-self:center;user-select:none;">…</span>`;
+  }
+
+  for (let p = startP; p <= endP; p++) {
+    html += `<button type="button" class="adm-page-btn closed-page-nav-btn ${p === currentPage ? 'active' : ''}" data-page="${p}">${p}</button>`;
+  }
+
+  if (endP < totalPages) {
+    if (endP < totalPages - 1) html += `<span style="padding:0 4px;color:#94a3b8;align-self:center;user-select:none;">…</span>`;
+    html += `<button type="button" class="adm-page-btn closed-page-nav-btn" data-page="${totalPages}">${totalPages}</button>`;
+  }
+
+  // Next button
+  html += `<button type="button" class="adm-page-btn closed-page-nav-btn" data-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''} title="Next Page">»</button>`;
+
+  pag.innerHTML = html;
+  pag.querySelectorAll('.closed-page-nav-btn:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetPage = Number(btn.dataset.page);
+      if (targetPage >= 1 && targetPage <= totalPages && targetPage !== closedOrdersPage) {
+        closedOrdersPage = targetPage;
+        renderClosedOrdersPanel();
+        $('panel-closed-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+}
+
+async function ensureOrderItemsLoaded(orderIds) {
+  if (!Array.isArray(orderIds) || !orderIds.length) return;
+  const knownItemOrderIds = new Set(orderItems.map(i => String(i.order_id)));
+  const missingOrderIds = orderIds.map(String).filter(id => !knownItemOrderIds.has(id));
+  if (missingOrderIds.length === 0) return;
+
+  const batchSize = 100;
+  for (let i = 0; i < missingOrderIds.length; i += batchSize) {
+    const batch = missingOrderIds.slice(i, i + batchSize);
+    try {
+      const { data: batchItems, error: itemErr } = await insforge.database
+        .from('order_items')
+        .select('id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at')
+        .in('order_id', batch);
+      if (!itemErr && Array.isArray(batchItems) && batchItems.length > 0) {
+        const itemMap = new Map();
+        orderItems.forEach(item => itemMap.set(String(item.id), item));
+        batchItems.forEach(item => itemMap.set(String(item.id), item));
+        orderItems = Array.from(itemMap.values());
+      }
+    } catch (itemFetchErr) {
+      console.warn('[Closed Orders] Item fetch warning:', itemFetchErr);
+    }
+  }
+}
+
+async function renderClosedOrdersPanel() {
   const tbody = $('closed-orders-table-body');
   if (!tbody) return;
 
-  // 1. Consolidate Closed Orders to ensure merged orders display only the compiled single record
+  // 1. Ensure historical orders for active closedDateFilter are fetched
+  await ensureHistoricalClosedOrders();
+
+  // 2. Consolidate Closed Orders to ensure merged orders display only the compiled single record
   const allClosed = orders.filter(o =>
     o.status === 'delivered' ||
     o.status === 'completed' ||
@@ -8102,10 +8976,10 @@ function renderClosedOrdersPanel() {
   if ($('closed-kpi-cancel-loss')) $('closed-kpi-cancel-loss').textContent = `Cancelled: ₹${cancelledLoss.toFixed(2)}`;
   if ($('closed-kpi-aov')) $('closed-kpi-aov').textContent = `₹${aov.toFixed(2)}`;
 
-  // 2. Filter Table List from the Consolidated Closed Orders
+  // 3. Filter Table List from the Consolidated Closed Orders
   let list = [...consolidatedClosed];
 
-  // Date Filtering
+  // Date Filtering with timezone safety
   if (closedDateFilter === 'today') {
     list = list.filter(o => getLocalDateString(o.created_at) === todayStr);
   } else if (closedDateFilter === 'yesterday') {
@@ -8113,14 +8987,18 @@ function renderClosedOrdersPanel() {
   } else if (closedDateFilter === 'week') {
     const weekStart = new Date(now);
     weekStart.setDate(weekStart.getDate() - 6);
-    weekStart.setHours(0, 0, 0, 0);
-    list = list.filter(o => new Date(o.created_at) >= weekStart);
+    const [wY, wM, wD] = getLocalDateString(weekStart).split('-').map(Number);
+    const wStartDate = new Date(wY, wM - 1, wD, 0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= wStartDate);
   } else if (closedDateFilter === 'month') {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
     list = list.filter(o => new Date(o.created_at) >= monthStart);
   } else if (closedDateFilter === 'custom' && closedCustomStart) {
-    const cStart = new Date(closedCustomStart + 'T00:00:00');
-    const cEnd = closedCustomEnd ? new Date(closedCustomEnd + 'T23:59:59.999') : new Date(closedCustomStart + 'T23:59:59.999');
+    const [sY, sM, sD] = closedCustomStart.split('-').map(Number);
+    const cStart = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+    const endStr = closedCustomEnd || closedCustomStart;
+    const [eY, eM, eD] = endStr.split('-').map(Number);
+    const cEnd = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
     list = list.filter(o => {
       const t = new Date(o.created_at);
       return t >= cStart && t <= cEnd;
@@ -8186,10 +9064,20 @@ function renderClosedOrdersPanel() {
 
   if (!list.length) {
     tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:2.5rem;color:var(--adm-muted);">No closed orders match your selected filters.</td></tr>';
+    renderClosedPagination(0, 1, 1);
     return;
   }
 
-  tbody.innerHTML = list.map(o => {
+  // Pagination calculation
+  const totalPages = Math.max(1, Math.ceil(list.length / closedOrdersPerPage));
+  if (closedOrdersPage > totalPages) closedOrdersPage = totalPages;
+  const startIndex = (closedOrdersPage - 1) * closedOrdersPerPage;
+  const pageOrders = list.slice(startIndex, startIndex + closedOrdersPerPage);
+
+  // Fetch items for current page orders if missing
+  await ensureOrderItemsLoaded(pageOrders.map(o => o.id));
+
+  tbody.innerHTML = pageOrders.map(o => {
     const rawItems = getItemsForOrder(o.id);
     const taxDetails = computeOrderTaxDetails(o, rawItems);
     const items = taxDetails.items;
@@ -8239,7 +9127,7 @@ function renderClosedOrdersPanel() {
         <td style="text-align:right;" class="closed-num-cell closed-tax-muted">₹${taxDetails.sgstAmt.toFixed(2)}</td>
         <td style="text-align:right;" class="closed-num-cell closed-tax-highlight">₹${taxDetails.totalGst.toFixed(2)}</td>
         <td style="text-align:right;">
-          <strong class="closed-total-cell ${isCancelled ? 'cancelled' : ''}">₹${taxDetails.grandTotal.toFixed(2)}</strong>
+          <strong class="closed-total-cell ${isCancelled ? 'cancelled' : ''}">${formatBillAmount(taxDetails.grandTotal)}</strong>
         </td>
         <td>
           <div class="closed-status-wrap">
@@ -8616,13 +9504,31 @@ function renderClosedEditItems(filterText) {
 
   // Recalculate Totals
   const s = getBillSettings();
-  const subtotal = closedEditingCart.reduce((sum, i) => sum + i.price * i.qty, 0);
-  const tax = subtotal * (s.cgstRate + s.sgstRate) / 100;
-  const grandTotal = subtotal + tax;
+  const order = orders.find(o => String(o.id) === String(closedEditingOrderId));
+  const parsed = order ? parseNotesMetadata(order.notes, order) : {};
+  const billingMeta = order ? parseNotesBillingMetadata(order.notes) : {};
+  const currentType = $('closed-edit-type-select')?.value || order?.order_type || parsed.type || 'table';
+  const isDelivery = currentType === 'delivery';
+  const deliveryFee = isDelivery
+    ? Math.max(0, Number(order?.delivery_fee ?? billingMeta.deliveryFee ?? parsed.deliveryFee ?? 0))
+    : 0;
+
+  const billing = calculateOrderBilling({
+    items: closedEditingCart,
+    deliveryFee,
+    discountPct: billingMeta.discountPct || parsed.discountPct || 0,
+    discountAmt: billingMeta.discountAmt || parsed.discountAmt || 0,
+    cgstRate: billingMeta.cgstRate ?? parsed.cgstRate ?? (s.cgstRate ?? 2.5),
+    sgstRate: billingMeta.sgstRate ?? parsed.sgstRate ?? (s.sgstRate ?? 2.5)
+  });
+
+  const subtotal = billing.subtotal;
+  const tax = billing.totalGst;
+  const grandTotal = billing.grandTotal;
 
   if ($('closed-edit-subtotal')) $('closed-edit-subtotal').textContent = `₹${subtotal.toFixed(2)}`;
   if ($('closed-edit-tax')) $('closed-edit-tax').textContent = `₹${tax.toFixed(2)}`;
-  if ($('closed-edit-grand-total')) $('closed-edit-grand-total').textContent = `₹${grandTotal.toFixed(2)}`;
+  if ($('closed-edit-grand-total')) $('closed-edit-grand-total').textContent = formatBillAmount(grandTotal);
 }
 
 window.closedEditChangeQty = function(idx, delta) {
@@ -8687,9 +9593,8 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
 
     // 3. Recalculate order total & gather updated fields
     const s = getBillSettings();
-    const subtotal = closedEditingCart.reduce((sum, i) => sum + i.price * i.qty, 0);
-    const tax = subtotal * (s.cgstRate + s.sgstRate) / 100;
-    const newGrandTotal = subtotal + tax;
+    const parsed = parseNotesMetadata(order.notes, order);
+    const billingMeta = parseNotesBillingMetadata(order.notes);
 
     const custName = $('closed-edit-cust-name-input')?.value?.trim() || order.customer_name || 'Customer';
     const custPhone = $('closed-edit-cust-phone-input')?.value?.trim() || order.customer_phone || '';
@@ -8698,13 +9603,33 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
     const newPaymentStatus = $('closed-edit-payment-status-select')?.value || order.payment_status || 'paid';
     const newStatus = $('closed-edit-order-status-select')?.value || order.status || 'delivered';
 
-    // Update notes string with new type/table tag
+    const isDelivery = newType === 'delivery';
+    const deliveryFee = isDelivery
+      ? Math.max(0, Number(order.delivery_fee ?? billingMeta.deliveryFee ?? parsed.deliveryFee ?? 0))
+      : 0;
+
+    const billing = calculateOrderBilling({
+      items: closedEditingCart,
+      deliveryFee,
+      discountPct: billingMeta.discountPct || parsed.discountPct || 0,
+      discountAmt: billingMeta.discountAmt || parsed.discountAmt || 0,
+      cgstRate: billingMeta.cgstRate ?? parsed.cgstRate ?? (s.cgstRate ?? 2.5),
+      sgstRate: billingMeta.sgstRate ?? parsed.sgstRate ?? (s.sgstRate ?? 2.5)
+    });
+
+    const newGrandTotal = billing.grandTotal;
+
+    // Update notes string with new type/table tag and preserved delivery fee
     let updatedNotes = order.notes || '';
     updatedNotes = updatedNotes.replace(/\[TABLE:[^\]]*\]/gi, '').replace(/\[DELIVERY\]/gi, '').replace(/\[SELF PICKUP\]/gi, '').trim();
     if (newType === 'table') {
       updatedNotes = `[TABLE: ${newTableNum || '1'}] ${updatedNotes}`.trim();
     } else if (newType === 'delivery') {
-      updatedNotes = `[DELIVERY] ${updatedNotes}`.trim();
+      if (!updatedNotes.includes('[DELIVERY_FEE:')) {
+        updatedNotes = `[DELIVERY] [DELIVERY_FEE: ${deliveryFee}] ${updatedNotes}`.trim();
+      } else {
+        updatedNotes = `[DELIVERY] ${updatedNotes}`.trim();
+      }
     } else {
       updatedNotes = `[SELF PICKUP] ${updatedNotes}`.trim();
     }
@@ -8833,8 +9758,15 @@ window.deleteOrder = deleteUniversalOrder;
 
 window.saveClosedOrderCorrections = saveClosedOrderCorrections;
 
-function exportRestaurantGSTReportCSV() {
-  const allClosed = orders.filter(o => o.status === 'delivered' || o.status === 'cancelled' || o.payment_status === 'paid');
+async function exportRestaurantGSTReportCSV() {
+  await ensureHistoricalClosedOrders();
+  const allClosed = orders.filter(o =>
+    o.status === 'delivered' ||
+    o.status === 'completed' ||
+    o.status === 'closed' ||
+    o.status === 'cancelled' ||
+    o.payment_status === 'paid'
+  );
   const consolidatedClosed = getConsolidatedClosedBills(allClosed);
   if (!consolidatedClosed.length) {
     showAdminToast('No closed bills available to export.', 'error');
@@ -8856,14 +9788,18 @@ function exportRestaurantGSTReportCSV() {
   } else if (closedDateFilter === 'week') {
     const weekStart = new Date(now);
     weekStart.setDate(weekStart.getDate() - 6);
-    weekStart.setHours(0, 0, 0, 0);
-    list = list.filter(o => new Date(o.created_at) >= weekStart);
+    const [wY, wM, wD] = getLocalDateString(weekStart).split('-').map(Number);
+    const wStartDate = new Date(wY, wM - 1, wD, 0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= wStartDate);
   } else if (closedDateFilter === 'month') {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
     list = list.filter(o => new Date(o.created_at) >= monthStart);
   } else if (closedDateFilter === 'custom' && closedCustomStart) {
-    const cStart = new Date(closedCustomStart + 'T00:00:00');
-    const cEnd = closedCustomEnd ? new Date(closedCustomEnd + 'T23:59:59.999') : new Date(closedCustomStart + 'T23:59:59.999');
+    const [sY, sM, sD] = closedCustomStart.split('-').map(Number);
+    const cStart = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+    const endStr = closedCustomEnd || closedCustomStart;
+    const [eY, eM, eD] = endStr.split('-').map(Number);
+    const cEnd = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
     list = list.filter(o => {
       const t = new Date(o.created_at);
       return t >= cStart && t <= cEnd;
@@ -8902,6 +9838,9 @@ function exportRestaurantGSTReportCSV() {
 
   list.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
+  // Ensure line items for export orders are loaded
+  await ensureOrderItemsLoaded(list.map(o => o.id));
+
   const headers = [
     'Invoice / Bill No',
     'Invoice Date',
@@ -8927,7 +9866,8 @@ function exportRestaurantGSTReportCSV() {
   ];
 
   const rows = list.map(o => {
-    const td = computeOrderTaxDetails(o);
+    const rawItems = getItemsForOrder(o.id);
+    const td = computeOrderTaxDetails(o, rawItems);
     const parsed = parseNotesMetadata(o.notes, o);
     const d = new Date(o.created_at);
     const dateStr = d.toLocaleDateString('en-IN', { year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -8973,8 +9913,15 @@ function exportRestaurantGSTReportCSV() {
   showAdminToast('Standard Restaurant GST Report exported successfully! 🧾📥', 'success');
 }
 
-function exportClosedOrdersCSV() {
-  const allClosed = orders.filter(o => o.status === 'delivered' || o.status === 'cancelled' || o.payment_status === 'paid');
+async function exportClosedOrdersCSV() {
+  await ensureHistoricalClosedOrders();
+  const allClosed = orders.filter(o =>
+    o.status === 'delivered' ||
+    o.status === 'completed' ||
+    o.status === 'closed' ||
+    o.status === 'cancelled' ||
+    o.payment_status === 'paid'
+  );
   const consolidatedClosed = getConsolidatedClosedBills(allClosed);
   if (!consolidatedClosed.length) {
     showAdminToast('No closed orders available to export.', 'error');
@@ -8995,14 +9942,18 @@ function exportClosedOrdersCSV() {
   } else if (closedDateFilter === 'week') {
     const weekStart = new Date(now);
     weekStart.setDate(weekStart.getDate() - 6);
-    weekStart.setHours(0, 0, 0, 0);
-    list = list.filter(o => new Date(o.created_at) >= weekStart);
+    const [wY, wM, wD] = getLocalDateString(weekStart).split('-').map(Number);
+    const wStartDate = new Date(wY, wM - 1, wD, 0, 0, 0, 0);
+    list = list.filter(o => new Date(o.created_at) >= wStartDate);
   } else if (closedDateFilter === 'month') {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
     list = list.filter(o => new Date(o.created_at) >= monthStart);
   } else if (closedDateFilter === 'custom' && closedCustomStart) {
-    const cStart = new Date(closedCustomStart + 'T00:00:00');
-    const cEnd = closedCustomEnd ? new Date(closedCustomEnd + 'T23:59:59.999') : new Date(closedCustomStart + 'T23:59:59.999');
+    const [sY, sM, sD] = closedCustomStart.split('-').map(Number);
+    const cStart = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+    const endStr = closedCustomEnd || closedCustomStart;
+    const [eY, eM, eD] = endStr.split('-').map(Number);
+    const cEnd = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
     list = list.filter(o => {
       const t = new Date(o.created_at);
       return t >= cStart && t <= cEnd;
@@ -9039,6 +9990,9 @@ function exportClosedOrdersCSV() {
     });
   }
 
+  // Ensure line items for export orders are loaded
+  await ensureOrderItemsLoaded(list.map(o => o.id));
+
   const headers = [
     'Order Number',
     'Date & Time',
@@ -9058,7 +10012,8 @@ function exportClosedOrdersCSV() {
   ];
 
   const rows = list.map(o => {
-    const td = computeOrderTaxDetails(o);
+    const rawItems = getItemsForOrder(o.id);
+    const td = computeOrderTaxDetails(o, rawItems);
     const parsed = parseNotesMetadata(o.notes, o);
     const itemsStr = td.items.map(i => `${i.quantity || i.qty}x ${i.item_name || i.name}`).join('; ');
     return [
@@ -9100,6 +10055,7 @@ function initClosedOrdersListeners() {
       $('closed-date-presets').querySelectorAll('.pos-cat-pill').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       closedDateFilter = btn.dataset.range;
+      closedOrdersPage = 1;
       const customWrap = $('closed-custom-date-wrap');
       if (customWrap) customWrap.style.display = closedDateFilter === 'custom' ? 'flex' : 'none';
       if (closedDateFilter !== 'custom') renderClosedOrdersPanel();
@@ -9110,21 +10066,45 @@ function initClosedOrdersListeners() {
   $('closed-apply-custom-date')?.addEventListener('click', () => {
     closedCustomStart = $('closed-start-date')?.value || null;
     closedCustomEnd = $('closed-end-date')?.value || null;
+    closedOrdersPage = 1;
+    renderClosedOrdersPanel();
+  });
+
+  // Page Size Selector
+  $('closed-page-size-select')?.addEventListener('change', function() {
+    closedOrdersPerPage = parseInt(this.value, 10) || 25;
+    closedOrdersPage = 1;
     renderClosedOrdersPanel();
   });
 
   // Type & Status Dropdowns & Search
-  $('closed-orders-type-filter')?.addEventListener('change', renderClosedOrdersPanel);
-  $('closed-orders-status-filter')?.addEventListener('change', renderClosedOrdersPanel);
-  $('closed-orders-search')?.addEventListener('input', renderClosedOrdersPanel);
+  $('closed-orders-type-filter')?.addEventListener('change', () => {
+    closedOrdersPage = 1;
+    renderClosedOrdersPanel();
+  });
+  $('closed-orders-status-filter')?.addEventListener('change', () => {
+    closedOrdersPage = 1;
+    renderClosedOrdersPanel();
+  });
+  $('closed-orders-search')?.addEventListener('input', () => {
+    closedOrdersPage = 1;
+    renderClosedOrdersPanel();
+  });
   $('closed-orders-new-bill-btn')?.addEventListener('click', () => {
     switchPanel('order-detail');
     $('billing-new-btn')?.click();
   });
   $('closed-orders-gst-export-btn')?.addEventListener('click', exportRestaurantGSTReportCSV);
   $('closed-orders-export-btn')?.addEventListener('click', exportClosedOrdersCSV);
-  $('closed-orders-sheet-sync-btn')?.addEventListener('click', () => {
-    const allClosed = orders.filter(o => o.status === 'delivered' || o.status === 'cancelled' || o.payment_status === 'paid');
+  $('closed-orders-sheet-sync-btn')?.addEventListener('click', async () => {
+    await ensureHistoricalClosedOrders();
+    const allClosed = orders.filter(o =>
+      o.status === 'delivered' ||
+      o.status === 'completed' ||
+      o.status === 'closed' ||
+      o.status === 'cancelled' ||
+      o.payment_status === 'paid'
+    );
     bulkSyncClosedOrdersToGoogleSheet(allClosed);
   });
 
@@ -9856,6 +10836,7 @@ function initDashboardUI() {
   setupPlaceModalListeners();
   setupCouponShareModalListeners();
   initHoldModalListeners();
+  initHoldSettleModalListeners();
   initClosedOrdersListeners();
   initItemsReportListeners();
   initOrdersReportListeners();
@@ -9864,6 +10845,7 @@ function initDashboardUI() {
   initCombosListeners();
   initCouponsListeners();
   initDashboardQuickListeners();
+  initGSTSectionListeners();
   initQuickBillAdjusterListeners();
   initTablesAndKitchenUI();
   initPrintQueueUI();
@@ -10278,14 +11260,18 @@ function generateReceiptHtml(order) {
           <span>Items Subtotal:</span>
           <span>₹${Number(itemsSubtotal).toFixed(2)}</span>
         </div>
-        ${parsedMeta.type === 'delivery' && parsedMeta.charge ? `
-        <div style="display: flex; justify-content: space-between;">
-          <span>Delivery Charge:</span>
-          <span>₹${Number(parsedMeta.charge.replace(/[^0-9.]/g, '') || 0).toFixed(2)}</span>
-        </div>` : ''}
+        ${(() => {
+          const isDel = parsedMeta.type === 'delivery' || order.order_type === 'delivery';
+          const delFee = isDel ? Math.max(0, Number(order.delivery_fee ?? parsedMeta.deliveryFee ?? (parsedMeta.charge ? parsedMeta.charge.replace(/[^0-9.]/g, '') : 0))) : 0;
+          return delFee > 0 ? `
+          <div style="display: flex; justify-content: space-between;">
+            <span>Delivery Charge:</span>
+            <span>₹${Number(delFee).toFixed(2)}</span>
+          </div>` : '';
+        })()}
         <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; border-top: 1px dashed #000; padding-top: 4px; margin-top: 4px;">
           <span>NET AMOUNT:</span>
-          <span>₹${Number(order.total_amount).toFixed(2)}</span>
+          <span>₹${Number(computeOrderTaxDetails(order).grandTotal || order.total_amount).toFixed(2)}</span>
         </div>
       </div>
       
@@ -12653,7 +13639,9 @@ async function generateBillPreviewHtml(order, items) {
   const taxable = Math.max(0, subtotal - discountAmt);
   const cgst = taxable * (p.cgst_rate || 2.5) / 100;
   const sgst = taxable * (p.sgst_rate || 2.5) / 100;
-  const grandTotal = taxable + cgst + sgst;
+  const unroundedTotal = taxable + cgst + sgst;
+  const grandTotal = Math.floor(unroundedTotal);
+  const roundOff = Math.round((grandTotal - unroundedTotal) * 100) / 100;
   const timeStr = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
 
   const rows = foodItems.map(i => `
@@ -12722,8 +13710,11 @@ async function generateBillPreviewHtml(order, items) {
         ` : ''}
         <div style="display:flex;justify-content:space-between;font-weight:700;"><span>CGST @${p.cgst_rate}%:</span><span>₹${cgst.toFixed(2)}</span></div>
         <div style="display:flex;justify-content:space-between;font-weight:700;"><span>SGST @${p.sgst_rate}%:</span><span>₹${sgst.toFixed(2)}</span></div>
+        ${roundOff !== 0 ? `
+          <div style="display:flex;justify-content:space-between;font-weight:700;color:#000;"><span>Round Off:</span><span>${roundOff < 0 ? '-' : '+'}₹${Math.abs(roundOff).toFixed(2)}</span></div>
+        ` : ''}
         <div style="display:flex;justify-content:space-between;font-weight:${boldTotals ? '900' : '800'};font-size:${totalFontSize};border-top:1.5px solid #000;border-bottom:1.5px solid #000;margin-top:2px;padding:3px 0;color:#000;">
-          <span>GRAND TOTAL:</span><span>₹${grandTotal.toFixed(2)}</span>
+          <span>GRAND TOTAL:</span><span>${formatBillAmount(grandTotal)}</span>
         </div>
       </div>
 
@@ -12731,7 +13722,7 @@ async function generateBillPreviewHtml(order, items) {
         ${sep}
         <div style="text-align:center;padding:2px 0;color:#000;">
           <div style="font-size:${subFontSize};font-weight:900;letter-spacing:.5px;">📱 SCAN &amp; PAY VIA UPI</div>
-          <div style="font-size:${subFontSize};font-weight:700;margin:1px 0 2px 0;">Amount: <strong>₹${grandTotal.toFixed(2)}</strong></div>
+          <div style="font-size:${subFontSize};font-weight:700;margin:1px 0 2px 0;">Amount: <strong>${formatBillAmount(grandTotal)}</strong></div>
           <img src="${qrDataUrl}" alt="UPI QR" style="width:${qrDimension};height:${qrDimension};margin:2px auto;display:block;image-rendering:pixelated;" />
           <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">UPI: <strong>${escapeHtml(p.bill_upi_id)}</strong></div>
         </div>
@@ -12778,14 +13769,14 @@ function renderSampleItemsEditor() {
 
 async function initPrinterPanel() {
   const container = document.getElementById('settings-subtab-printer');
-  if (container && !document.getElementById('panel-printer')) {
+  if (container && !container.querySelector('#printer-model-select') && !document.getElementById('panel-printer')) {
     const tpl = document.getElementById('panel-printer-content');
     if (tpl) {
       container.appendChild(tpl.content.cloneNode(true));
       const p = document.getElementById('panel-printer');
       if (p) p.classList.add('active');
     }
-  } else if (!container && !document.getElementById('panel-printer')) {
+  } else if (!container && !document.getElementById('printer-model-select') && !document.getElementById('panel-printer')) {
     const admc = document.getElementById('adm-content');
     const tpl = document.getElementById('panel-printer-content');
     if (tpl && admc) admc.appendChild(tpl.content.cloneNode(true));
@@ -13364,15 +14355,15 @@ function renderProfileInfo(user) {
 }
 
 async function initProfilePanel() {
-  const container = document.getElementById('settings-subtab-profile');
-  if (container && !document.getElementById('panel-profile')) {
+  const container = document.getElementById('settings-subtab-profile') || document.getElementById('settings-subtab-integrations');
+  if (container && !container.querySelector('#gbiz-name') && !document.getElementById('gbiz-name') && !document.getElementById('panel-profile')) {
     const tpl = document.getElementById('panel-profile-content');
     if (tpl) {
       container.appendChild(tpl.content.cloneNode(true));
       const p = document.getElementById('panel-profile');
       if (p) p.classList.add('active');
     }
-  } else if (!container && !document.getElementById('panel-profile')) {
+  } else if (!container && !document.getElementById('gbiz-name') && !document.getElementById('panel-profile')) {
     const admc = document.getElementById('adm-content');
     const tpl = document.getElementById('panel-profile-content');
     if (tpl && admc) admc.appendChild(tpl.content.cloneNode(true));
@@ -13778,6 +14769,7 @@ function getPosCartTotals() {
     sgst: billing.sgstAmt, 
     deliveryFee: billing.deliveryFee, 
     grand: billing.grandTotal, 
+    roundOff: billing.roundOff,
     cgstRate: billing.cgstRate, 
     sgstRate: billing.sgstRate 
   };
@@ -13855,7 +14847,13 @@ function updatePosCartUI(shouldUpdateGrid = false) {
     if ($('pos-delivery-charge-show')) $('pos-delivery-charge-show').textContent = `₹${t.deliveryFee.toFixed(2)}`;
   }
 
-  if ($('pos-grand-total')) $('pos-grand-total').textContent = `₹${t.grand.toFixed(2)}`;
+  const roundOffRow = $('pos-round-off-row');
+  if (roundOffRow) {
+    roundOffRow.style.display = t.roundOff !== 0 ? 'flex' : 'none';
+    if ($('pos-round-off-amt')) $('pos-round-off-amt').textContent = `${t.roundOff < 0 ? '-' : '+'}₹${Math.abs(t.roundOff).toFixed(2)}`;
+  }
+
+  if ($('pos-grand-total')) $('pos-grand-total').textContent = formatBillAmount(t.grand);
 
   // Update item count badge & context badge
   const totalItemCount = posCart.reduce((sum, item) => sum + (item.qty || 1), 0);
@@ -14107,6 +15105,7 @@ async function buildOrderFromPos(action) {
         order_type: posOrderType,
         table_number: posOrderType === 'table' ? (parseInt(String(tableNum).replace(/\D/g, ''), 10) || null) : null,
         total_amount: t.grand,
+        payment_method: payMode,
         status: action === 'hold' ? 'hold' : (action === 'bill' ? 'delivered' : (action === 'kot' ? 'pending' : 'confirmed')),
         payment_status: (existingOrder.payment_status === 'paid' && (action === 'hold' || action === 'kot'))
           ? 'paid'
@@ -14206,6 +15205,7 @@ async function buildOrderFromPos(action) {
     order_type: posOrderType,
     table_number: posOrderType === 'table' ? (parseInt(String(tableNum).replace(/\D/g, ''), 10) || null) : null,
     total_amount: t.grand,
+    payment_method: payMode,
     status: action === 'hold' ? 'hold' : (action === 'bill' ? 'delivered' : (action === 'kot' ? 'pending' : 'confirmed')),
     payment_status: payMode === 'pay_later' ? 'unpaid' : ((action === 'hold' || action === 'kot') ? 'unpaid' : 'paid'),
     ticket_status: action === 'hold' ? 'HOLD' : (action === 'bill' ? 'CLOSED' : 'OPEN'),
@@ -14452,26 +15452,36 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
   const items = consolidateOrderItems(rawItems);
   const subtotal = items.reduce((sum, i) => sum + Number(i.line_total || (i.price * i.qty) || 0), 0);
   
-  // Parse discount, taxes, and delivery charges from metadata or calculate
+  // Parse discount, taxes, and delivery charges from metadata or calculate via central billing engine
+  const isDelivery = parsedMeta.type === 'delivery' || order.order_type === 'delivery';
+  const deliveryFee = isDelivery ? Math.max(0, Number(order.delivery_fee ?? parsedMeta.deliveryFee ?? 0)) : 0;
   const discountPct = parsedMeta.discountPct || 0;
-  const discountAmt = parsedMeta.discountAmt || (subtotal * (discountPct / 100));
+  const discountAmt = parsedMeta.discountAmt || 0;
+  const cgstRate = parsedMeta.cgstRate ?? (p.cgst_rate || 2.5);
+  const sgstRate = parsedMeta.sgstRate ?? (p.sgst_rate || 2.5);
+
+  const billing = calculateOrderBilling({
+    items,
+    deliveryFee,
+    discountPct,
+    discountAmt,
+    cgstRate,
+    sgstRate
+  });
+
   const taxableSubtotal = items.reduce((sum, i) => {
     if (i.gst_applicable === false || (typeof i.notes === 'string' && i.notes.includes('[NO_GST]'))) return sum;
     return sum + Number(i.line_total || (i.price * i.qty) || 0);
   }, 0);
-  const taxableDiscountAmt = subtotal > 0 ? (taxableSubtotal * (discountAmt / subtotal)) : 0;
-  const taxable = Math.max(0, taxableSubtotal - taxableDiscountAmt);
-  const nonTaxableSubtotal = Math.max(0, (subtotal - taxableSubtotal) - (subtotal > 0 ? ((subtotal - taxableSubtotal) * (discountAmt / subtotal)) : 0));
-  const cgstRate = parsedMeta.cgstRate ?? (p.cgst_rate || 2.5);
-  const sgstRate = parsedMeta.sgstRate ?? (p.sgst_rate || 2.5);
-  const cgst = taxable * (cgstRate / 100);
-  const sgst = taxable * (sgstRate / 100);
-  const deliveryFee = parsedMeta.deliveryFee || (parsedMeta.type === 'delivery' ? 50 : 0);
+  const taxable = billing.taxableAmount;
+  const nonTaxableSubtotal = billing.nonTaxableAmount;
+  const cgst = billing.cgstAmount;
+  const sgst = billing.sgstAmount;
   // Grand Total includes Taxable + NonTaxable + CGST + SGST + Delivery Fee
-  const grandTotal = Math.round((taxable + nonTaxableSubtotal + cgst + sgst + deliveryFee) * 100) / 100;
+  const grandTotal = billing.grandTotal;
   
   const formattedDate = new Date(order.created_at || Date.now()).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
-  const payMode = parsedMeta.payment ? parsedMeta.payment.toUpperCase() : 'CASH';
+  const payMode = (order.payment_method || order.payment_mode || parsedMeta.payment || parsedMeta.paymentMode || 'cash').toUpperCase();
   const tableInfo = parsedMeta.tableNumber || order.table_number || '';
   
   const itemRowsHtml = items.map(i => {
@@ -14575,8 +15585,11 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
         ${deliveryFee > 0 ? `
           <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Delivery Fee:</span><span>₹${deliveryFee.toFixed(2)}</span></div>
         ` : ''}
+        ${billing.roundOff !== 0 ? `
+          <div style="display:flex;justify-content:space-between;font-weight:700;color:#000;"><span>Round Off:</span><span>${billing.roundOff < 0 ? '-' : '+'}₹${Math.abs(billing.roundOff).toFixed(2)}</span></div>
+        ` : ''}
         <div style="display:flex;justify-content:space-between;font-weight:${boldTotals ? '900' : '800'};font-size:${totalFontSize};border-top:1.5px solid #000;border-bottom:1.5px solid #000;margin-top:2px;padding:3px 0;color:#000;">
-          <span>GRAND TOTAL:</span><span>₹${grandTotal.toFixed(2)}</span>
+          <span>GRAND TOTAL:</span><span>${formatBillAmount(grandTotal)}</span>
         </div>
       </div>
       
@@ -14590,7 +15603,7 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
         <div style="margin-top:3px;padding-top:2px;text-align:center;color:#000;">
           <div style="font-size:${subFontSize};font-weight:900;">📱 SCAN &amp; PAY VIA UPI</div>
           <img src="${qrDataUrl}" alt="UPI QR" style="width:${qrDimension};height:${qrDimension};margin:2px auto;display:block;image-rendering:pixelated;" />
-          <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">UPI: <strong>${escapeHtml(p.bill_upi_id)}</strong> (₹${grandTotal.toFixed(2)})</div>
+          <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">UPI: <strong>${escapeHtml(p.bill_upi_id)}</strong> (${formatBillAmount(grandTotal)})</div>
         </div>
       ` : ''}
 
@@ -15254,11 +16267,11 @@ function updateHoldModalCartUI() {
 
   const s = getBillSettings();
   const tax = netSubtotal * (s.cgstRate + s.sgstRate) / 100;
-  const grandTotal = netSubtotal + tax;
+  const grandTotal = Math.floor(netSubtotal + tax);
 
   if ($('hold-modal-orig-subtotal')) $('hold-modal-orig-subtotal').textContent = `₹${origSubtotal.toFixed(2)}`;
   if ($('hold-modal-tax-amt')) $('hold-modal-tax-amt').textContent = `₹${tax.toFixed(2)}`;
-  if ($('hold-modal-updated-total')) $('hold-modal-updated-total').textContent = `₹${grandTotal.toFixed(2)}`;
+  if ($('hold-modal-updated-total')) $('hold-modal-updated-total').textContent = formatBillAmount(grandTotal);
 
   if (rowCancelled) {
     rowCancelled.style.display = cancelledDeductions > 0 ? 'flex' : 'none';
@@ -15425,10 +16438,24 @@ async function saveHoldOrderCorrections(shouldPrintKitchenSlip = false) {
     // 4. Recalculate order totals for each order in session
     const s = getBillSettings();
     for (const ord of ordersInSession) {
-      const curOrdItems = orderItems.filter(i => String(i.order_id) === String(ord.id) && !/delivery|discount|tax|fee/i.test(i.item_name || i.name || ''));
-      const sub = curOrdItems.reduce((sum, i) => sum + Number(i.line_total || ((i.price || i.unit_price) * (i.qty || i.quantity)) || 0), 0);
-      const taxAmt = sub * (s.cgstRate + s.sgstRate) / 100;
-      let newTotal = sub + taxAmt;
+      const curOrdItems = orderItems.filter(i => String(i.order_id) === String(ord.id) && isFoodDishItem(i));
+      const parsed = parseNotesMetadata(ord.notes, ord);
+      const billingMeta = parseNotesBillingMetadata(ord.notes);
+      const isDelivery = parsed.type === 'delivery' || ord.order_type === 'delivery';
+      const deliveryFee = isDelivery
+        ? Math.max(0, Number(ord.delivery_fee ?? billingMeta.deliveryFee ?? parsed.deliveryFee ?? 0))
+        : 0;
+
+      const billing = calculateOrderBilling({
+        items: curOrdItems,
+        deliveryFee,
+        discountPct: billingMeta.discountPct || parsed.discountPct || 0,
+        discountAmt: billingMeta.discountAmt || parsed.discountAmt || 0,
+        cgstRate: billingMeta.cgstRate ?? parsed.cgstRate ?? (s.cgstRate ?? 2.5),
+        sgstRate: billingMeta.sgstRate ?? parsed.sgstRate ?? (s.sgstRate ?? 2.5)
+      });
+
+      let newTotal = billing.grandTotal;
       if (newTotal <= 0 && curOrdItems.length === 0 && Number(ord.total_amount || 0) > 0) {
         newTotal = Number(ord.total_amount);
       }
@@ -15513,6 +16540,9 @@ function initHoldModalListeners() {
   $('incoming-order-close-btn')?.addEventListener('click', closeIncomingOrderModal);
   $('incoming-order-accept-btn')?.addEventListener('click', acceptIncomingOnlineOrder);
   $('incoming-order-reject-btn')?.addEventListener('click', rejectIncomingOnlineOrder);
+
+  // Hold Order Payment & Settlement Modal Listeners
+  initHoldSettleModalListeners();
 }
 
 // ── Quick Cards & Total Bills Table Renderers ────────────────────
@@ -15656,127 +16686,10 @@ function renderBillingTotalBills() {
   });
 
   tbody.querySelectorAll('.billing-row-settle-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const orderId = btn.dataset.id;
       const order = orders.find(o => String(o.id) === String(orderId));
-      if (!order) return;
-      if (!confirm(`Print KOT + Final Bill for Order #${formatDailyOrderNumber(order)} and mark as completed / closed?`)) return;
-
-      btn.disabled = true;
-      btn.style.opacity = '0.5';
-
-      try {
-        const settleIdempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : `settle-${orderId}-${Date.now()}`;
-
-        // 1. ATOMIC SETTLEMENT IN DATABASE FIRST (Prevents two cashiers from settling the same order)
-        let cloudSettled = false;
-        let settlementConflict = false;
-
-        try {
-          const res = await fetch('/api/orders', {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-idempotency-key': settleIdempotencyKey
-            },
-            body: JSON.stringify({
-              id: orderId,
-              status: 'delivered',
-              payment_status: 'paid',
-              ticket_status: 'CLOSED',
-              idempotency_key: settleIdempotencyKey
-            })
-          });
-
-          if (res.status === 409) {
-            settlementConflict = true;
-            const conflictData = await res.json().catch(() => ({}));
-            showAdminToast(conflictData.error || `Order #${formatDailyOrderNumber(order)} was already settled by another cashier.`, 'error');
-            await refreshDashboard(true);
-            return;
-          }
-
-          if (res.ok) {
-            cloudSettled = true;
-          }
-        } catch (fetchErr) {
-          console.warn('[Billing Settle API fallback to direct client]:', fetchErr);
-        }
-
-        if (!cloudSettled && !settlementConflict) {
-          try {
-            const { data: updatedRows, error: updErr } = await insforge.database
-              .from('orders')
-              .update({
-                status: 'delivered',
-                payment_status: 'paid',
-                ticket_status: 'CLOSED',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', orderId)
-              .neq('ticket_status', 'CLOSED')
-              .select();
-
-            if (updErr && (updErr.message || '').includes('ticket_status')) {
-              await insforge.database.from('orders').update({
-                status: 'delivered',
-                payment_status: 'paid',
-                updated_at: new Date().toISOString()
-              }).eq('id', orderId);
-              cloudSettled = true;
-            } else if (updatedRows && updatedRows.length > 0) {
-              cloudSettled = true;
-            } else if (!updErr) {
-              showAdminToast(`Order #${formatDailyOrderNumber(order)} was already closed by another cashier.`, 'error');
-              await refreshDashboard(true);
-              return;
-            }
-          } catch (offlineErr) {
-            console.warn('[Billing Settle Offline]:', offlineErr);
-          }
-        }
-
-        // 2. Database committed! Now update local in-memory state
-        order.status = 'delivered';
-        order.payment_status = 'paid';
-        order.ticket_status = 'CLOSED';
-        order.updated_at = new Date().toISOString();
-        persistOrdersCache();
-
-        // 3. EXTERNAL SIDE EFFECT 1: Print final customer bill (Decoupled from DB commit)
-        // Settlement produces the final customer tax invoice without duplicating kitchen tickets.
-        const items = getItemsForOrder(order.id);
-        try {
-          await printOrderReceiptWithTax(order, items);
-        } catch (printErr) {
-          console.error('[Billing Settle] Print failed:', printErr);
-          showAdminToast(`Bill settled in database, but printing encountered an issue: ${printErr.message}. Use Reprint button if needed.`, 'warning');
-        }
-
-        // 4. Notifications & UI Refresh
-        await markOrderNotificationsRead(orderId);
-        showAdminToast(`Order #${formatDailyOrderNumber(order)} billed, settled & closed! ✅`, 'success');
-
-        // 5. EXTERNAL SIDE EFFECT 2: Google Sheets Sync (Decoupled from DB commit)
-        if (isGoogleSheetAutoSyncEnabled()) {
-          syncOrderToGoogleSheet(order).catch(e => {
-            console.warn('[Google Sheet] Billing settle auto-sync error:', e);
-          });
-        }
-
-        renderOverview();
-        renderHoldOrdersPanel();
-        renderClosedOrdersPanel();
-        renderBillingQuickCards();
-        renderBillingTotalBills();
-        renderTablesPanel();
-        renderKitchenPanel();
-      } finally {
-        btn.disabled = false;
-        btn.style.opacity = '1';
-      }
+      if (order) openHoldSettleModal({ type: 'order', orderId, order });
     });
   });
 
@@ -16426,40 +17339,149 @@ function updatePosTotals() { updatePosCartUI(); }
 // SETTINGS HUB, STAFF MANAGER & WHATSAPP MANAGER
 // ════════════════════════════════════════════════════════
 
-let settingsSubtab = 'staff';
+let settingsSubtab = 'restaurant';
 let settingsMounted = false;
 let staffEditingId = null;
+let isSettingsDirty = false;
 
-function initSettingsPanel() {
-  if (!settingsMounted) {
-    settingsMounted = true;
-    setupSettingsNavListeners();
-    setupStaffManagerListeners();
-    setupWhatsAppManagerListeners();
+function setSettingsDirtyState(dirty) {
+  isSettingsDirty = dirty;
+  const badges = [document.getElementById('stg-dirty-badge'), document.getElementById('stg-bottom-dirty-badge')];
+  const texts = [document.getElementById('stg-dirty-text'), document.getElementById('stg-bottom-dirty-text')];
+
+  badges.forEach(b => {
+    if (!b) return;
+    b.className = dirty ? 'stg-dirty-badge dirty' : 'stg-dirty-badge saved';
+  });
+
+  texts.forEach(t => {
+    if (!t) return;
+    t.textContent = dirty ? 'Unsaved changes' : 'All changes saved';
+  });
+}
+
+function setupSettingsDirtyTracking() {
+  const panel = document.getElementById('panel-settings');
+  if (!panel) return;
+
+  panel.addEventListener('input', (e) => {
+    if (e.target.id === 'staff-search') return;
+    setSettingsDirtyState(true);
+  });
+
+  panel.addEventListener('change', (e) => {
+    if (e.target.id === 'staff-role-filter' || e.target.id === 'staff-status-filter') return;
+    setSettingsDirtyState(true);
+  });
+
+  window.addEventListener('beforeunload', (e) => {
+    if (isSettingsDirty) {
+      e.preventDefault();
+      e.returnValue = 'You have unsaved changes in Settings. Are you sure you want to leave?';
+      return e.returnValue;
+    }
+  });
+}
+
+async function saveAllRestaurantSettings() {
+  const saveBtns = [document.getElementById('stg-save-btn'), document.getElementById('stg-top-save-btn')];
+  saveBtns.forEach(btn => {
+    if (!btn) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳</span> Saving...';
+  });
+
+  try {
+    // 1. Save Printer, Restaurant Identity, GST, Billing & KOT Settings to DB
+    await savePrinterSettingsToDB();
+
+    // 2. Save Google Business Profile settings if present
+    const gbizName = document.getElementById('gbiz-name');
+    if (gbizName) {
+      const updatedGbiz = {
+        name: document.getElementById('gbiz-name')?.value?.trim() || 'LIMRA RESTAURANT',
+        category: document.getElementById('gbiz-category')?.value?.trim() || 'Mughlai & Biryani Restaurant',
+        reviewUrl: document.getElementById('gbiz-review-url')?.value?.trim() || 'https://g.page/r/CcrqEfWap5zfEBE/review',
+        mapsUrl: document.getElementById('gbiz-maps-url')?.value?.trim() || 'https://maps.google.com/?q=LIMRA+Restaurant',
+        hours: document.getElementById('gbiz-hours')?.value?.trim() || '11:00 AM – 11:30 PM (Daily)',
+        phone: document.getElementById('gbiz-phone')?.value?.trim() || '+91 99999 88888',
+        address: document.getElementById('gbiz-address')?.value?.trim() || 'Main Road, Near Bus Stand, Egra, West Bengal',
+        rating: '4.8',
+        reviewsCount: '348',
+        viewsCount: '12.4k',
+        status: 'Verified ✓'
+      };
+      localStorage.setItem('limra_google_business_profile', JSON.stringify(updatedGbiz));
+      renderGoogleBusinessProfileUI();
+    }
+
+    // 3. Save WhatsApp automated triggers if present
+    const waBizPhone = document.getElementById('wa-biz-phone');
+    if (waBizPhone) {
+      const updatedWa = {
+        businessPhone: $('wa-biz-phone')?.value?.trim() || '+91 99999 88888',
+        businessName: $('wa-biz-name')?.value?.trim() || 'LIMRA RESTAURANT',
+        autoOrderConfirm: $('wa-auto-confirm')?.checked ?? true,
+        autoOutForDelivery: $('wa-auto-delivery')?.checked ?? true,
+        autoTableBill: $('wa-auto-table')?.checked ?? true,
+        autoReviewBooster: $('wa-auto-review')?.checked ?? true,
+        autoPromoCoupons: $('wa-auto-promo')?.checked ?? true
+      };
+      localStorage.setItem('limra_whatsapp_settings', JSON.stringify(updatedWa));
+    }
+
+    setSettingsDirtyState(false);
+    showAdminToast('All restaurant settings successfully saved and synced! ⚙️✨', 'success');
+  } catch (err) {
+    console.error('[Settings] Error saving settings:', err);
+    showAdminToast('Error saving settings: ' + (err.message || err), 'error');
+  } finally {
+    saveBtns.forEach(btn => {
+      if (!btn) return;
+      btn.disabled = false;
+      btn.innerHTML = btn.id === 'stg-top-save-btn' ? '<span>💾</span> Save Settings' : '<span>💾</span> Save All Settings';
+    });
+  }
+}
+
+async function resetAllRestaurantSettings() {
+  const resetBtn = document.getElementById('stg-reset-btn');
+  if (resetBtn) {
+    resetBtn.disabled = true;
+    resetBtn.innerHTML = '<span>⏳</span> Reverting...';
   }
 
-  // Populate printer and profile panes inside settings if empty
-  const printerContainer = $('settings-subtab-printer');
-  if (printerContainer && !printerContainer.querySelector('#panel-printer')) {
-    const tpl = document.getElementById('panel-printer-content');
-    if (tpl) {
-      printerContainer.appendChild(tpl.content.cloneNode(true));
-      const p = document.getElementById('panel-printer');
-      if (p) p.classList.add('active');
+  try {
+    await loadPrinterSettingsFromDB();
+    syncPrinterSettingsToUI();
+    if (typeof renderThermalLivePreview === 'function') {
+      await renderThermalLivePreview();
+    }
+    if (settingsSubtab === 'staff') {
+      renderStaffList();
+    } else if (settingsSubtab === 'whatsapp') {
+      renderWhatsAppManagerUI();
+    } else if (settingsSubtab === 'integrations') {
+      renderGoogleBusinessProfileUI();
+      renderGoogleSheetsSettingsUI();
+    }
+    setSettingsDirtyState(false);
+    showAdminToast('Settings reverted to saved values. ↺', 'info');
+  } catch (err) {
+    console.error('[Settings] Revert error:', err);
+    showAdminToast('Could not revert settings: ' + (err.message || err), 'error');
+  } finally {
+    if (resetBtn) {
+      resetBtn.disabled = false;
+      resetBtn.innerHTML = '<span>↺</span> Discard Changes';
     }
   }
+}
 
-  const profileContainer = $('settings-subtab-profile');
-  if (profileContainer && !profileContainer.querySelector('#panel-profile')) {
-    const tpl = document.getElementById('panel-profile-content');
-    if (tpl) {
-      profileContainer.appendChild(tpl.content.cloneNode(true));
-      const p = document.getElementById('panel-profile');
-      if (p) p.classList.add('active');
-    }
-  }
-
-  switchSettingsSubtab(settingsSubtab || 'staff');
+function setupSettingsGlobalActionListeners() {
+  document.getElementById('stg-save-btn')?.addEventListener('click', saveAllRestaurantSettings);
+  document.getElementById('stg-top-save-btn')?.addEventListener('click', saveAllRestaurantSettings);
+  document.getElementById('stg-reset-btn')?.addEventListener('click', resetAllRestaurantSettings);
 }
 
 function setupSettingsNavListeners() {
@@ -16472,21 +17494,58 @@ function setupSettingsNavListeners() {
 }
 
 function switchSettingsSubtab(tabName) {
-  settingsSubtab = tabName;
+  let targetTab = tabName;
+  if (targetTab === 'profile' || targetTab === 'sheets') {
+    targetTab = 'integrations';
+  }
+  if (!targetTab) targetTab = 'restaurant';
+  settingsSubtab = targetTab;
+
   document.querySelectorAll('#settings-nav-tabs .settings-nav-tab').forEach(btn => {
-    const isActive = btn.dataset.subtab === tabName;
+    const isActive = btn.dataset.subtab === targetTab;
     btn.classList.toggle('active', isActive);
   });
 
-  document.querySelectorAll('.settings-subtab-pane').forEach(pane => {
-    pane.style.display = pane.id === `settings-subtab-${tabName}` ? 'block' : 'none';
+  document.querySelectorAll('#panel-settings .stg-pane').forEach(pane => {
+    pane.style.display = pane.id === `settings-subtab-${targetTab}` ? 'block' : 'none';
   });
 
-  if (tabName === 'staff') renderStaffList();
-  if (tabName === 'whatsapp') renderWhatsAppManagerUI();
-  if (tabName === 'printer') initPrinterPanel();
-  if (tabName === 'profile') initProfilePanel();
-  if (tabName === 'sheets') renderGoogleSheetsSettingsUI();
+  if (targetTab === 'restaurant' || targetTab === 'billing' || targetTab === 'payments' || targetTab === 'kitchen') {
+    syncPrinterSettingsToUI();
+  }
+  if (targetTab === 'printer') {
+    initPrinterPanel();
+  }
+  if (targetTab === 'staff') {
+    renderStaffList();
+  }
+  if (targetTab === 'whatsapp') {
+    renderWhatsAppManagerUI();
+  }
+  if (targetTab === 'integrations') {
+    initProfilePanel();
+    renderGoogleSheetsSettingsUI();
+  }
+}
+
+function initSettingsPanel() {
+  if (!settingsMounted) {
+    settingsMounted = true;
+    setupSettingsNavListeners();
+    setupStaffManagerListeners();
+    setupWhatsAppManagerListeners();
+    setupSettingsGlobalActionListeners();
+    setupSettingsDirtyTracking();
+  }
+
+  loadPrinterSettingsFromDB().then(() => {
+    syncPrinterSettingsToUI();
+    if (typeof renderThermalLivePreview === 'function') {
+      renderThermalLivePreview();
+    }
+  });
+
+  switchSettingsSubtab(settingsSubtab || 'restaurant');
 }
 
 // ────────────────────────────────────────────────────────
@@ -16529,6 +17588,7 @@ function renderStaffList() {
   if ($('staff-kpi-onduty')) $('staff-kpi-onduty').textContent = `${onDutyCount} Active`;
   if ($('staff-kpi-kitchen')) $('staff-kpi-kitchen').textContent = `${kitchenCount} Chef${kitchenCount === 1 ? '' : 's'}`;
   if ($('staff-kpi-riders')) $('staff-kpi-riders').textContent = `${riderCount} Rider${riderCount === 1 ? '' : 's'}`;
+  if ($('stg-nav-staff-count')) $('stg-nav-staff-count').textContent = `${totalCount} Team`;
 
   // 2. Filter Staff
   let filtered = staff;
@@ -17065,7 +18125,7 @@ async function bulkSyncClosedOrdersToGoogleSheet(ordersList = null) {
     localStorage.setItem('limra_sheet_last_sync_time', new Date().toISOString());
 
     showAdminToast(`Successfully synced ${consolidated.length} orders (${totalItems} items) to Google Sheets! 📊✅`, 'success');
-    if (typeof settingsSubtab !== 'undefined' && settingsSubtab === 'sheets') renderGoogleSheetsSettingsUI();
+    if (typeof settingsSubtab !== 'undefined' && (settingsSubtab === 'sheets' || settingsSubtab === 'integrations')) renderGoogleSheetsSettingsUI();
   } catch (err) {
     console.error('[Google Sheet] Bulk sync error:', err);
     showAdminToast('Bulk Google Sheet sync failed: ' + err.message, 'error');
@@ -17111,7 +18171,7 @@ async function testGoogleSheetConnection() {
 
     localStorage.setItem('limra_sheet_last_sync_time', new Date().toISOString());
     showAdminToast('Connection test sent! Please check your Google Sheet for the test row. 📊🎉', 'success');
-    if (typeof settingsSubtab !== 'undefined' && settingsSubtab === 'sheets') renderGoogleSheetsSettingsUI();
+    if (typeof settingsSubtab !== 'undefined' && (settingsSubtab === 'sheets' || settingsSubtab === 'integrations')) renderGoogleSheetsSettingsUI();
   } catch (err) {
     console.error('[Google Sheet] Test error:', err);
     showAdminToast('Connection test failed: ' + err.message, 'error');

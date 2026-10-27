@@ -571,52 +571,134 @@
           </div>
         </div>
 
-        <!-- 4. 📊 GST Tax Accounting & Monthly GST Filing CSV Hub -->
-        <div class="adm-card mb-6" style="border:1px solid var(--adm-border);padding:1.5rem;">
-          <div class="adm-card-head" style="flex-wrap: wrap; gap: 0.75rem; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
+        <!-- 4. 📊 GST Tax Accounting & Compliance Hub -->
+        <div class="adm-card mb-6" style="border:1px solid var(--adm-border);padding:1.5rem;background:#fff;">
+          
+          <!-- Header with Title, Period Banner & Action Buttons -->
+          <div class="adm-card-head" style="flex-wrap: wrap; gap: 0.75rem; justify-content:space-between; align-items:center; margin-bottom:1rem; border-bottom:1px solid #f1f5f9; padding-bottom:1rem;">
             <div>
-              <h3 class="adm-card-title" style="margin:0;display:flex;align-items:center;gap:.5rem;">
-                <span>📊 GST Tax Accounting &amp; Monthly GSTR Filing</span>
-              </h3>
-              <p style="font-size:.8rem;color:var(--adm-muted);margin:2px 0 0 0;">Standard Restaurant 5.0% GST (2.5% CGST + 2.5% SGST · SAC 996331)</p>
+              <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">
+                <h3 class="adm-card-title" style="margin:0;display:flex;align-items:center;gap:.5rem;font-size:1.15rem;font-weight:800;color:#0f172a;">
+                  <span>📊 GST Tax Accounting &amp; Compliance Hub</span>
+                </h3>
+                <span id="dash-gst-period-display" style="font-size:0.8rem;font-weight:800;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;padding:3px 10px;border-radius:8px;display:inline-flex;align-items:center;gap:0.35rem;">
+                  <span>📅</span> <span id="dash-gst-period-text">GST Report: This Month</span>
+                </span>
+              </div>
+              <p style="font-size:.8rem;color:var(--adm-muted);margin:3px 0 0 0;">
+                Standard Restaurant 5.0% Food GST (2.5% CGST + 2.5% SGST · SAC 996331)
+              </p>
             </div>
 
-            <!-- Month Selector & Export Action -->
+            <!-- Header Action Controls -->
             <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
-              <select id="dash-gst-month-select" class="adm-select" style="font-weight:600;font-size:.85rem;min-width:180px;">
+              <select id="dash-gst-month-select" class="adm-select" style="font-weight:600;font-size:.82rem;min-width:160px;padding:.4rem .6rem;" title="Quick Select Past Month">
                 <option value="current">Current Month</option>
               </select>
-              <button type="button" id="dash-export-gst-csv-btn" class="adm-btn adm-btn-primary" style="background:#6366f1;border-color:#6366f1;display:inline-flex;align-items:center;gap:.35rem;font-weight:700;white-space:nowrap;">
-                <span>📥</span> Export Monthly GST Filing (.csv)
+              <button type="button" id="dash-export-gst-csv-btn" class="adm-btn adm-btn-primary" style="background:#10b981;border-color:#10b981;display:inline-flex;align-items:center;gap:.35rem;font-weight:700;white-space:nowrap;padding:.4rem .75rem;font-size:.82rem;" title="Download CSV tax audit report for the selected date range">
+                <span>📥</span> Export GST Report (.csv)
               </button>
             </div>
           </div>
 
-          <!-- GST Breakdown KPI Cards -->
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.25rem; margin-bottom:1rem;">
-            <div style="background: #f8fafc; padding: 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.4rem; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-              <p style="margin:0; font-size: 0.8rem; color: var(--adm-muted); font-weight: 600; text-transform:uppercase;">Total GST Tax (5.0%)</p>
-              <p id="stat-gst-total" style="margin:0; font-size: 1.65rem; font-weight: 800; color: var(--adm-green);">₹0.00</p>
+          <!-- Date Filters Bar (Presets + Custom Range Pickers) -->
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem 1rem;margin-bottom:1.25rem;">
+            
+            <!-- Quick Preset Buttons -->
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.6rem;margin-bottom:0.75rem;">
+              <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;" id="dash-gst-presets">
+                <button type="button" class="gst-preset-btn" data-preset="today">Today</button>
+                <button type="button" class="gst-preset-btn" data-preset="yesterday">Yesterday</button>
+                <button type="button" class="gst-preset-btn active" data-preset="this_month">This Month</button>
+                <button type="button" class="gst-preset-btn" data-preset="last_month">Last Month</button>
+                <button type="button" class="gst-preset-btn" data-preset="7d">Last 7 Days</button>
+                <button type="button" class="gst-preset-btn" data-preset="30d">Last 30 Days</button>
+                <button type="button" class="gst-preset-btn" data-preset="custom">Custom Range</button>
+              </div>
+              <button type="button" id="dash-gst-reset-btn" class="adm-btn adm-btn-outline" style="padding:0.35rem 0.65rem;font-size:0.78rem;font-weight:700;border-color:#cbd5e1;color:#64748b;background:#fff;" title="Restore default reporting period (This Month)">
+                ↺ Reset
+              </button>
+            </div>
+
+            <!-- Custom Date Range Controls (From Date / To Date / Apply) -->
+            <div id="dash-gst-custom-range-wrap" style="display:none;align-items:center;gap:0.6rem;flex-wrap:wrap;padding-top:0.6rem;border-top:1px dashed #cbd5e1;">
+              <div style="display:flex;align-items:center;gap:0.35rem;">
+                <label for="dash-gst-start-date" style="font-size:0.78rem;font-weight:700;color:#475569;white-space:nowrap;">From Date:</label>
+                <input type="date" id="dash-gst-start-date" class="adm-input" style="padding:0.3rem 0.5rem;font-size:0.82rem;width:145px;background:#fff;" />
+              </div>
+              <div style="display:flex;align-items:center;gap:0.35rem;">
+                <label for="dash-gst-end-date" style="font-size:0.78rem;font-weight:700;color:#475569;white-space:nowrap;">To Date:</label>
+                <input type="date" id="dash-gst-end-date" class="adm-input" style="padding:0.3rem 0.5rem;font-size:0.82rem;width:145px;background:#fff;" />
+              </div>
+              <button type="button" id="dash-gst-apply-btn" class="adm-btn adm-btn-primary" style="padding:0.35rem 0.85rem;font-size:0.8rem;font-weight:800;background:#d97706;border-color:#d97706;color:#fff;">
+                Apply Filter
+              </button>
+            </div>
+
+          </div>
+
+          <!-- Empty State Container (Displayed when 0 orders match) -->
+          <div id="dash-gst-empty-state" style="display:none;padding:1.5rem;text-align:center;background:#fffbeb;border:1px dashed #f59e0b;border-radius:12px;margin-bottom:1.25rem;">
+            <div style="font-size:1.8rem;line-height:1;margin-bottom:0.35rem;">🧾</div>
+            <strong style="font-size:0.95rem;color:#92400e;display:block;">No Tax-Eligible Orders Found</strong>
+            <p style="font-size:0.8rem;color:#b45309;margin:3px 0 0 0;">There are no settled or billable transactions within the selected date period.</p>
+          </div>
+
+          <!-- GST Breakdown KPI Cards (7 Cards) -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;" id="dash-gst-kpi-grid">
+            
+            <!-- Card 1: Total Sales (Gross Total) -->
+            <div style="background: #f8fafc; padding: 1rem 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.35rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <p style="margin:0; font-size: 0.75rem; color: var(--adm-muted); font-weight: 700; text-transform:uppercase; letter-spacing:0.3px;">Total Sales (Gross)</p>
+              <p id="stat-gst-gross" style="margin:0; font-size: 1.5rem; font-weight: 800; color: #1e293b;">₹0.00</p>
+              <p style="font-size:.72rem;color:var(--adm-muted);margin:0;">Taxable + GST + Delivery</p>
+            </div>
+
+            <!-- Card 2: Total Taxable Sales -->
+            <div style="background: #f8fafc; padding: 1rem 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.35rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <p style="margin:0; font-size: 0.75rem; color: var(--adm-muted); font-weight: 700; text-transform:uppercase; letter-spacing:0.3px;">Total Taxable Sales</p>
+              <p id="stat-gst-taxable" style="margin:0; font-size: 1.5rem; font-weight: 800; color: #d97706;">₹0.00</p>
+              <p style="font-size:.72rem;color:var(--adm-muted);margin:0;">Food Revenue (SAC 996331)</p>
+            </div>
+
+            <!-- Card 3: Total GST Tax (5.0%) -->
+            <div style="background: #f8fafc; padding: 1rem 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.35rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <p style="margin:0; font-size: 0.75rem; color: var(--adm-muted); font-weight: 700; text-transform:uppercase; letter-spacing:0.3px;">Total GST Tax (5.0%)</p>
+              <p id="stat-gst-total" style="margin:0; font-size: 1.5rem; font-weight: 800; color: var(--adm-green);">₹0.00</p>
               <p style="font-size:.72rem;color:var(--adm-muted);margin:0;">CGST + SGST Combined</p>
             </div>
-            <div style="background: #f8fafc; padding: 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.4rem; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-              <p style="margin:0; font-size: 0.8rem; color: var(--adm-muted); font-weight: 600; text-transform:uppercase;">CGST Component (2.5%)</p>
-              <p id="stat-gst-cgst" style="margin:0; font-size: 1.65rem; font-weight: 800; color: #6366f1;">₹0.00</p>
+
+            <!-- Card 4: CGST Component (2.5%) -->
+            <div style="background: #f8fafc; padding: 1rem 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.35rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <p style="margin:0; font-size: 0.75rem; color: var(--adm-muted); font-weight: 700; text-transform:uppercase; letter-spacing:0.3px;">CGST Component (2.5%)</p>
+              <p id="stat-gst-cgst" style="margin:0; font-size: 1.5rem; font-weight: 800; color: #6366f1;">₹0.00</p>
               <p style="font-size:.72rem;color:var(--adm-muted);margin:0;">Central Tax Portion</p>
             </div>
-            <div style="background: #f8fafc; padding: 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.4rem; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-              <p style="margin:0; font-size: 0.8rem; color: var(--adm-muted); font-weight: 600; text-transform:uppercase;">SGST Component (2.5%)</p>
-              <p id="stat-gst-sgst" style="margin:0; font-size: 1.65rem; font-weight: 800; color: #06b6d4;">₹0.00</p>
+
+            <!-- Card 5: SGST Component (2.5%) -->
+            <div style="background: #f8fafc; padding: 1rem 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.35rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <p style="margin:0; font-size: 0.75rem; color: var(--adm-muted); font-weight: 700; text-transform:uppercase; letter-spacing:0.3px;">SGST Component (2.5%)</p>
+              <p id="stat-gst-sgst" style="margin:0; font-size: 1.5rem; font-weight: 800; color: #06b6d4;">₹0.00</p>
               <p style="font-size:.72rem;color:var(--adm-muted);margin:0;">State Tax Portion</p>
             </div>
-            <div style="background: #f8fafc; padding: 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.4rem; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-              <p style="margin:0; font-size: 0.8rem; color: var(--adm-muted); font-weight: 600; text-transform:uppercase;">GST Collection Status</p>
-              <div style="display:flex;justify-content:space-between;margin-top:.2rem;">
-                <span style="font-size:.85rem;color:#059669;font-weight:700;">Paid: <span id="stat-gst-paid">₹0</span></span>
-                <span style="font-size:.85rem;color:#f97316;font-weight:700;">Unpaid: <span id="stat-gst-pending">₹0</span></span>
-              </div>
-              <p style="font-size:.72rem;color:var(--adm-muted);margin:0;">Settled vs Outstanding</p>
+
+            <!-- Card 6: IGST Component (0%) -->
+            <div style="background: #f8fafc; padding: 1rem 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.35rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <p style="margin:0; font-size: 0.75rem; color: var(--adm-muted); font-weight: 700; text-transform:uppercase; letter-spacing:0.3px;">IGST Component (0%)</p>
+              <p id="stat-gst-igst" style="margin:0; font-size: 1.5rem; font-weight: 800; color: #8b5cf6;">₹0.00</p>
+              <p style="font-size:.72rem;color:var(--adm-muted);margin:0;">Interstate Supplies</p>
             </div>
+
+            <!-- Card 7: Order Count & Collection Breakdown -->
+            <div style="background: #f8fafc; padding: 1rem 1.15rem; border-radius: 12px; border: 1px solid var(--adm-border); display: flex; flex-direction: column; gap: 0.35rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <p style="margin:0; font-size: 0.75rem; color: var(--adm-muted); font-weight: 700; text-transform:uppercase; letter-spacing:0.3px;">Order Volume &amp; Status</p>
+              <p id="stat-gst-order-count" style="margin:0; font-size: 1.35rem; font-weight: 800; color: #0f172a;">0 Orders</p>
+              <div style="display:flex;justify-content:space-between;margin-top:auto;padding-top:.2rem;font-size:.75rem;">
+                <span style="color:#059669;font-weight:700;">Paid: <span id="stat-gst-paid">₹0.00</span></span>
+                <span style="color:#f97316;font-weight:700;">Unpaid: <span id="stat-gst-pending">₹0.00</span></span>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -1134,6 +1216,24 @@
               <tbody id="closed-orders-table-body"></tbody>
             </table>
           </div>
+
+          <!-- Professional Closed Orders Pagination Controls -->
+          <div id="closed-orders-pagination-wrap" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-top:1rem;padding:0.6rem 0.25rem;">
+            <div id="closed-orders-page-info" style="font-size:0.84rem;color:#64748b;font-weight:500;">
+              Showing <span id="closed-page-range" style="font-weight:700;color:#0f172a;">0–0</span> of <span id="closed-total-count" style="font-weight:700;color:#0f172a;">0</span> bills
+            </div>
+            <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:0.35rem;font-size:0.8rem;color:#64748b;">
+                <span>Bills per page:</span>
+                <select id="closed-page-size-select" class="adm-select" style="padding:0.25rem 0.5rem;font-size:0.8rem;border-radius:6px;border-color:#e2e8f0;">
+                  <option value="25" selected>25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+              <div id="closed-orders-pagination" class="adm-pagination" style="margin-top:0;"></div>
+            </div>
+          </div>
         </section>
 
       <!-- Order Detail / Billing -->
@@ -1410,6 +1510,11 @@
                   <div id="pos-delivery-charge-row" class="pos-summary-row" style="display:none;">
                     <span class="pos-summary-label">Delivery Charge</span>
                     <span id="pos-delivery-charge-show" class="pos-summary-val">₹0.00</span>
+                  </div>
+
+                  <div id="pos-round-off-row" class="pos-summary-row" style="display:none;color:#64748b;font-size:0.8rem;">
+                    <span class="pos-summary-label">Round Off</span>
+                    <span id="pos-round-off-amt" class="pos-summary-val">-₹0.00</span>
                   </div>
 
                   <div class="pos-canva-divider"></div>
@@ -2536,318 +2641,1088 @@
 
       <!-- Settings Hub -->
       <section id="panel-settings" class="adm-panel">
-        <div class="adm-page-head">
-          <div>
-            <h1 class="adm-page-title">⚙️ Settings &amp; Administration Hub</h1>
-            <p class="adm-page-sub">Manage Restaurant Staff, WhatsApp Business Automated Dispatch, Thermal Printers, and Google Business Profile</p>
-          </div>
-        </div>
-
-        <!-- Settings Sub-Tabs Navigation Bar -->
-        <div class="adm-filters" style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-bottom:1.5rem;border-bottom:1px solid var(--adm-border);padding-bottom:0.75rem;" id="settings-nav-tabs">
-          <button type="button" class="pos-cat-pill active settings-nav-tab" data-subtab="staff">
-            👥 Staff Manager
-          </button>
-          <button type="button" class="pos-cat-pill settings-nav-tab" data-subtab="whatsapp">
-            💬 WhatsApp Manager
-          </button>
-          <button type="button" class="pos-cat-pill settings-nav-tab" data-subtab="printer">
-            🖨️ Thermal Printer &amp; KOT
-          </button>
-          <button type="button" class="pos-cat-pill settings-nav-tab" data-subtab="profile">
-            🌐 Google Profile &amp; Reviews
-          </button>
-          <button type="button" class="pos-cat-pill settings-nav-tab" data-subtab="sheets">
-            📊 Google Sheets Sync
-          </button>
-        </div>
-
-        <!-- 1. STAFF MANAGER SUBTAB -->
-        <div id="settings-subtab-staff" class="settings-subtab-pane" style="display:block;">
-          <!-- 4 KPI Stat Cards -->
-          <div class="adm-stats" style="grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));margin-bottom:1.25rem;">
-            <div class="adm-stat" style="border-left:4px solid #6366f1;">
+        <div class="stg-hub">
+          <!-- Page Header -->
+          <div class="stg-head">
+            <div class="stg-head-title-wrap">
+              <div class="stg-head-icon">⚙️</div>
               <div>
-                <p class="adm-stat-label">Total Staff Members</p>
-                <p class="adm-stat-value" id="staff-kpi-total" style="color:#4f46e5;">5 Staff</p>
-                <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Registered team</p>
-              </div>
-              <div class="adm-stat-icon indigo" style="background:#eef2ff;color:#6366f1;">
-                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                <h1 class="stg-title">Restaurant Settings &amp; Configuration</h1>
+                <p class="stg-subtitle">Configure restaurant branding, GST taxation, thermal printer hardware, staff roles, WhatsApp automation, and cloud integrations.</p>
               </div>
             </div>
-
-            <div class="adm-stat" style="border-left:4px solid #10b981;">
-              <div>
-                <p class="adm-stat-label">Active On-Duty Today</p>
-                <p class="adm-stat-value" id="staff-kpi-onduty" style="color:#059669;">4 Active</p>
-                <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Currently working</p>
-              </div>
-              <div class="adm-stat-icon green">
-                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-              </div>
-            </div>
-
-            <div class="adm-stat" style="border-left:4px solid #f59e0b;">
-              <div>
-                <p class="adm-stat-label">Kitchen &amp; Chefs</p>
-                <p class="adm-stat-value" id="staff-kpi-kitchen" style="color:#d97706;">1 Chef</p>
-                <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Kitchen staff</p>
-              </div>
-              <div class="adm-stat-icon orange">
-                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-              </div>
-            </div>
-
-            <div class="adm-stat" style="border-left:4px solid #06b6d4;">
-              <div>
-                <p class="adm-stat-label">Delivery Riders</p>
-                <p class="adm-stat-value" id="staff-kpi-riders" style="color:#0891b2;">1 Rider</p>
-                <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Active dispatch fleet</p>
-              </div>
-              <div class="adm-stat-icon blue" style="background:#ecfeff;color:#06b6d4;">
-                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-              </div>
-            </div>
-          </div>
-
-          <!-- Staff Toolbar -->
-          <div class="adm-filters" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem;margin-bottom:1.25rem;">
-            <div style="display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;">
-              <select id="staff-role-filter" class="adm-select" style="font-weight:600;font-size:.85rem;">
-                <option value="all">All Roles</option>
-                <option value="Store Manager">Store Manager</option>
-                <option value="POS Cashier">POS Cashier</option>
-                <option value="Head Chef / Kitchen">Head Chef / Kitchen</option>
-                <option value="Service Captain">Service Captain / Waiter</option>
-                <option value="Delivery Rider">Delivery Rider</option>
-              </select>
-              <select id="staff-status-filter" class="adm-select" style="font-weight:600;font-size:.85rem;">
-                <option value="all">All Statuses</option>
-                <option value="on_duty">🟢 On-Duty</option>
-                <option value="off_duty">⚪ Off-Duty</option>
-                <option value="on_leave">🏖️ On Leave</option>
-              </select>
-              <input type="search" id="staff-search" class="adm-input" placeholder="Search staff name, phone, role..." style="min-width:220px;" />
-            </div>
-            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
-              <button type="button" id="staff-export-csv-btn" class="adm-btn adm-btn-outline" style="background:#f0fdf4;border-color:#bbf7d0;color:#15803d;display:inline-flex;align-items:center;gap:.35rem;font-weight:700;">
-                <span>📥</span> Export Staff (.csv)
-              </button>
-              <button type="button" id="staff-add-btn" class="adm-btn adm-btn-primary" style="display:inline-flex;align-items:center;gap:.35rem;font-weight:700;">
-                <span>➕</span> Add Staff Member
+            <div class="stg-head-actions">
+              <span class="stg-dirty-badge saved" id="stg-dirty-badge">
+                <span class="stg-dirty-dot"></span>
+                <span id="stg-dirty-text">All changes saved</span>
+              </span>
+              <button type="button" id="stg-top-save-btn" class="stg-btn-gold" style="padding:0.45rem 1.15rem;font-size:0.82rem;">
+                <span>💾</span> Save Settings
               </button>
             </div>
           </div>
 
-          <!-- Staff Cards Grid -->
-          <div id="staff-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));gap:1.25rem;margin-bottom:1.5rem;"></div>
+          <!-- 2-Column Responsive Layout -->
+          <div class="stg-layout">
+            <!-- Left Sidebar Navigation -->
+            <nav class="stg-nav" id="settings-nav-tabs">
+              <button type="button" class="stg-nav-btn active settings-nav-tab" data-subtab="restaurant">
+                <div class="stg-nav-btn-inner">
+                  <span class="stg-nav-icon">🏢</span>
+                  <span>Restaurant Profile</span>
+                </div>
+                <span class="stg-nav-badge">Identity</span>
+              </button>
 
-          <!-- Staff Detailed Table -->
-          <div class="adm-card adm-table-wrap" style="border:1px solid var(--adm-border);box-shadow:0 1px 3px rgba(0,0,0,.04);">
-            <table class="adm-table">
-              <thead>
-                <tr>
-                  <th style="padding-left:1.25rem;">Staff Member</th>
-                  <th>Role</th>
-                  <th>Phone</th>
-                  <th>Shift Hours</th>
-                  <th>Status</th>
-                  <th style="text-align:right;padding-right:1.25rem;">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="staff-table-body"></tbody>
-            </table>
+              <button type="button" class="stg-nav-btn settings-nav-tab" data-subtab="billing">
+                <div class="stg-nav-btn-inner">
+                  <span class="stg-nav-icon">🧾</span>
+                  <span>Billing &amp; GST</span>
+                </div>
+                <span class="stg-nav-badge">5% GST</span>
+              </button>
+
+              <button type="button" class="stg-nav-btn settings-nav-tab" data-subtab="payments">
+                <div class="stg-nav-btn-inner">
+                  <span class="stg-nav-icon">💳</span>
+                  <span>Payments &amp; Delivery</span>
+                </div>
+                <span class="stg-nav-badge">UPI / Area</span>
+              </button>
+
+              <button type="button" class="stg-nav-btn settings-nav-tab" data-subtab="printer">
+                <div class="stg-nav-btn-inner">
+                  <span class="stg-nav-icon">🖨️</span>
+                  <span>Thermal Printer</span>
+                </div>
+                <span class="stg-nav-badge">TVS RP3200</span>
+              </button>
+
+              <button type="button" class="stg-nav-btn settings-nav-tab" data-subtab="kitchen">
+                <div class="stg-nav-btn-inner">
+                  <span class="stg-nav-icon">🍳</span>
+                  <span>Kitchen &amp; KOT</span>
+                </div>
+                <span class="stg-nav-badge">KDS Studio</span>
+              </button>
+
+              <button type="button" class="stg-nav-btn settings-nav-tab" data-subtab="staff">
+                <div class="stg-nav-btn-inner">
+                  <span class="stg-nav-icon">👥</span>
+                  <span>Staff &amp; Permissions</span>
+                </div>
+                <span class="stg-nav-badge" id="stg-nav-staff-count">5 Team</span>
+              </button>
+
+              <button type="button" class="stg-nav-btn settings-nav-tab" data-subtab="whatsapp">
+                <div class="stg-nav-btn-inner">
+                  <span class="stg-nav-icon">💬</span>
+                  <span>WhatsApp &amp; Audio</span>
+                </div>
+                <span class="stg-nav-badge">Auto Alerts</span>
+              </button>
+
+              <button type="button" class="stg-nav-btn settings-nav-tab" data-subtab="integrations">
+                <div class="stg-nav-btn-inner">
+                  <span class="stg-nav-icon">🌐</span>
+                  <span>Cloud Integrations</span>
+                </div>
+                <span class="stg-nav-badge">Google Sync</span>
+              </button>
+            </nav>
+
+            <!-- Right Content Area -->
+            <div class="stg-content">
+
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <!-- 1. RESTAURANT PROFILE SUBTAB -->
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <div id="settings-subtab-restaurant" class="stg-pane settings-subtab-pane" style="display:block;">
+                <div class="stg-card stg-card-gold-accent">
+                  <div class="stg-section-head">
+                    <div>
+                      <h2 class="stg-section-title"><span>🏢</span> Restaurant Profile &amp; Contact Details</h2>
+                      <p class="stg-section-desc">Core restaurant identity displayed on customer receipts, delivery bills, and public menus.</p>
+                    </div>
+                    <span class="stg-dirty-badge saved" style="background:#fef3c7;color:#92400e;border-color:#fde68a;">Official Business Identity</span>
+                  </div>
+
+                  <div class="stg-grid-2">
+                    <div class="stg-field">
+                      <label class="stg-label" for="bill-restaurant-name">Restaurant Legal / Trade Name <span style="color:#ef4444;">*</span></label>
+                      <input type="text" id="bill-restaurant-name" class="stg-input" placeholder="LIMRA RESTAURANT" value="LIMRA RESTAURANT" />
+                      <span class="stg-help">Printed at the very top of thermal receipts and KOTs.</span>
+                    </div>
+
+                    <div class="stg-field">
+                      <label class="stg-label" for="gbiz-category">Cuisine Tagline / Category</label>
+                      <input type="text" id="gbiz-category" class="stg-input" placeholder="Authentic Mughlai &amp; Biryani Speciality" value="Mughlai &amp; Biryani Speciality" />
+                      <span class="stg-help">Displayed under the restaurant name on digital menus.</span>
+                    </div>
+
+                    <div class="stg-field">
+                      <label class="stg-label" for="bill-phone">Official Phone / Hotline <span style="color:#ef4444;">*</span></label>
+                      <input type="tel" id="bill-phone" class="stg-input" placeholder="+91 99999 88888" value="+91 99999 88888" />
+                      <span class="stg-help">Customer service and order inquiry contact number.</span>
+                    </div>
+
+                    <div class="stg-field">
+                      <label class="stg-label" for="gbiz-hours">Operating Business Hours</label>
+                      <input type="text" id="gbiz-hours" class="stg-input" placeholder="11:00 AM – 11:30 PM (Daily)" value="11:00 AM – 11:30 PM (Daily)" />
+                      <span class="stg-help">Store opening and kitchen closing timings.</span>
+                    </div>
+
+                    <div class="stg-field stg-field-full">
+                      <label class="stg-label" for="bill-address">Physical Restaurant Address <span style="color:#ef4444;">*</span></label>
+                      <input type="text" id="bill-address" class="stg-input" placeholder="Main Road, Near Bus Stand, Egra, West Bengal" value="Main Road, Near Bus Stand, Egra, West Bengal" />
+                      <span class="stg-help">Full registered physical address printed on tax invoices and receipts.</span>
+                    </div>
+
+                    <div class="stg-field">
+                      <label class="stg-label" for="bill-fssai">FSSAI License Number <span class="stg-label-hint">(Mandatory for Food Safety)</span></label>
+                      <input type="text" id="bill-fssai" class="stg-input" placeholder="e.g. 12823001000123" />
+                      <span class="stg-help">Food Safety and Standards Authority of India 14-digit registration number.</span>
+                    </div>
+                  </div>
+
+                  <!-- Brand Logo Sub-Section -->
+                  <div style="margin-top:1.25rem;padding:1.15rem;background:#fbfaf8;border:1px solid #e8e3dc;border-radius:12px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:0.75rem;">
+                      <div>
+                        <strong style="font-size:0.86rem;color:#1e293b;">🖼️ Thermal Receipt Header Logo</strong>
+                        <p style="margin:2px 0 0 0;font-size:0.75rem;color:#64748b;">Monochrome thermal graphic printed in bill header (ESC/POS bit-image).</p>
+                      </div>
+                      <label class="switch" style="margin:0;">
+                        <input type="checkbox" id="bill-show-logo" checked />
+                        <span class="slider round"></span>
+                      </label>
+                    </div>
+                    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                      <input type="text" id="bill-logo-url" class="stg-input" placeholder="/images/logo.png" value="/images/logo.png" style="flex:1;min-width:240px;" />
+                      <button type="button" class="stg-btn-outline" onclick="document.getElementById('bill-logo-url').value='/images/logo.png';document.getElementById('bill-logo-url').dispatchEvent(new Event('input'));">
+                        Default Logo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <!-- 2. BILLING & GST SUBTAB -->
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <div id="settings-subtab-billing" class="stg-pane settings-subtab-pane" style="display:none;">
+                <div class="stg-card stg-card-gold-accent">
+                  <div class="stg-section-head">
+                    <div>
+                      <h2 class="stg-section-title"><span>🧾</span> Billing, GST &amp; Invoice Configuration</h2>
+                      <p class="stg-section-desc">Indian GST compliance rates, invoice numbering parameters, layout toggles, and customer thank you messages.</p>
+                    </div>
+                    <span class="stg-dirty-badge saved" style="background:#f0fdf4;color:#15803d;border-color:#bbf7d0;">CGST &amp; SGST Invariant Active</span>
+                  </div>
+
+                  <div class="stg-callout gold">
+                    <span style="font-size:1.2rem;">⚖️</span>
+                    <div>
+                      <strong>Statutory Tax Compliance Notice:</strong>
+                      Restaurant dining and food takeaway are classified under SAC 996331 at a composite 5% GST rate (split into 2.5% CGST + 2.5% SGST for intrastate supply). Delivery charges are treated as non-food delivery fees.
+                    </div>
+                  </div>
+
+                  <div class="stg-grid-3">
+                    <div class="stg-field">
+                      <label class="stg-label" for="bill-gstin">Restaurant GSTIN <span class="stg-label-hint">(15-Digit Tax ID)</span></label>
+                      <input type="text" id="bill-gstin" class="stg-input font-mono" placeholder="19ABCDE1234F1Z5" style="text-transform:uppercase;" />
+                      <span class="stg-help">Displayed on all B2C tax invoices and monthly GST export reports.</span>
+                    </div>
+
+                    <div class="stg-field">
+                      <label class="stg-label" for="bill-cgst-rate">CGST Rate (%) <span style="color:#ef4444;">*</span></label>
+                      <input type="number" id="bill-cgst-rate" class="stg-input" value="2.5" step="0.5" min="0" max="14" />
+                      <span class="stg-help">Central Goods and Services Tax percentage (Standard: 2.5%).</span>
+                    </div>
+
+                    <div class="stg-field">
+                      <label class="stg-label" for="bill-sgst-rate">SGST Rate (%) <span style="color:#ef4444;">*</span></label>
+                      <input type="number" id="bill-sgst-rate" class="stg-input" value="2.5" step="0.5" min="0" max="14" />
+                      <span class="stg-help">State Goods and Services Tax percentage (Standard: 2.5%).</span>
+                    </div>
+                  </div>
+
+                  <!-- Header & Badges Toggles -->
+                  <div style="margin-top:1rem;margin-bottom:1.25rem;">
+                    <h3 style="font-size:0.9rem;font-weight:700;color:#1e293b;margin:0 0 0.75rem 0;">Invoice Badges &amp; Space Optimizations</h3>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:0.75rem;">
+                      <div class="stg-toggle-card">
+                        <div class="stg-toggle-info">
+                          <strong>📍 Delivery Place &amp; Area Badge</strong>
+                          <p>Print delivery locality (e.g. Egra Bus Stand) prominently on receipt</p>
+                        </div>
+                        <label class="switch" style="margin:0;">
+                          <input type="checkbox" id="bill-toggle-show-place" checked />
+                          <span class="slider round"></span>
+                        </label>
+                      </div>
+
+                      <div class="stg-toggle-card">
+                        <div class="stg-toggle-info">
+                          <strong>🪑 Dining Table Number Badge</strong>
+                          <p>Print prominent table indicator (e.g. Table 04 - Indoor) on bill</p>
+                        </div>
+                        <label class="switch" style="margin:0;">
+                          <input type="checkbox" id="bill-toggle-show-table" checked />
+                          <span class="slider round"></span>
+                        </label>
+                      </div>
+
+                      <div class="stg-toggle-card">
+                        <div class="stg-toggle-info">
+                          <strong>🌿 Compact Header (Paper Saver)</strong>
+                          <p>Condense phone, address, and header margins to save 2-3 cm thermal paper</p>
+                        </div>
+                        <label class="switch" style="margin:0;">
+                          <input type="checkbox" id="bill-toggle-compact-header" />
+                          <span class="slider round"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="stg-field stg-field-full">
+                    <label class="stg-label" for="bill-footer-msg">Receipt Footer &amp; Thank You Note</label>
+                    <textarea id="bill-footer-msg" class="stg-textarea" rows="2" placeholder="Thank you for dining with us! Please visit again.">Thank you for dining with us! Please visit again.</textarea>
+                    <span class="stg-help">Printed at the very bottom of the receipt right before the tear/cutter feed.</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <!-- 3. PAYMENTS & DELIVERY SUBTAB -->
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <div id="settings-subtab-payments" class="stg-pane settings-subtab-pane" style="display:none;">
+                <div class="stg-card stg-card-gold-accent">
+                  <div class="stg-section-head">
+                    <div>
+                      <h2 class="stg-section-title"><span>💳</span> Payment Methods &amp; Delivery Charges</h2>
+                      <p class="stg-section-desc">Manage merchant UPI scan-and-pay details, cashier payment methods, and delivery logistics geofencing.</p>
+                    </div>
+                    <span class="stg-dirty-badge saved" style="background:#ecfeff;color:#0891b2;border-color:#a5f3fc;">Instant UPI QR Auto-Fill</span>
+                  </div>
+
+                  <!-- Dynamic UPI Section -->
+                  <div style="background:#fbfaf8;border:1px solid #e8e3dc;border-radius:14px;padding:1.35rem;margin-bottom:1.5rem;">
+                    <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.75rem;">
+                      <span style="font-size:1.3rem;">📱</span>
+                      <div>
+                        <h3 style="margin:0;font-size:0.95rem;font-weight:800;color:#1e293b;">Dynamic Merchant UPI QR Code (Auto-Amounts)</h3>
+                        <p style="margin:2px 0 0 0;font-size:0.76rem;color:#64748b;">Automatically embeds the exact payable bill amount in the QR code for GPay, PhonePe, and Paytm.</p>
+                      </div>
+                    </div>
+
+                    <div class="stg-grid-3">
+                      <div class="stg-field">
+                        <label class="stg-label" for="bill-upi-id">Merchant UPI ID / VPA <span style="color:#ef4444;">*</span></label>
+                        <input type="text" id="bill-upi-id" class="stg-input font-mono" placeholder="e.g. limra@upi or 9876543210@paytm" />
+                        <span class="stg-help">Primary Virtual Payment Address receiving settlements.</span>
+                      </div>
+
+                      <div class="stg-field">
+                        <label class="stg-label" for="bill-upi-payee-name">Registered Business Payee Name</label>
+                        <input type="text" id="bill-upi-payee-name" class="stg-input" placeholder="LIMRA RESTAURANT" value="LIMRA RESTAURANT" />
+                        <span class="stg-help">Displayed in customer's banking app upon scan.</span>
+                      </div>
+
+                      <div class="stg-field">
+                        <label class="stg-label" for="bill-qr-size-select">Receipt QR Code Size</label>
+                        <select id="bill-qr-size-select" class="stg-input" style="font-weight:600;">
+                          <option value="none">❌ Hide QR Code (Saves Paper)</option>
+                          <option value="small">🔹 Small QR (60x60 px - Super Compact)</option>
+                          <option value="medium" selected>🔷 Medium QR (80x80 px - Recommended)</option>
+                          <option value="large">🔳 Large QR (110x110 px - High Contrast)</option>
+                        </select>
+                        <span class="stg-help">Controls QR dimension printed on thermal bills.</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Delivery Places & Charges Section -->
+                  <div style="background:#ffffff;border:1px solid #e8e3dc;border-radius:14px;padding:1.35rem;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:1rem;border-bottom:1px solid #f1f5f9;padding-bottom:0.75rem;">
+                      <div>
+                        <h3 style="margin:0;font-size:0.95rem;font-weight:800;color:#1e293b;">🛵 Delivery Logistics &amp; Geofenced Area Charges</h3>
+                        <p style="margin:2px 0 0 0;font-size:0.76rem;color:#64748b;">Delivery fees are calculated by delivery area zones and added exactly once to delivery orders.</p>
+                      </div>
+                      <button type="button" class="stg-btn-outline" onclick="switchPanel('places')" style="font-weight:700;">
+                        <span>📍</span> Open Places &amp; Delivery Editor →
+                      </button>
+                    </div>
+
+                    <div class="stg-callout green" style="margin-bottom:0;">
+                      <span style="font-size:1.2rem;">✅</span>
+                      <div>
+                        <strong>Strict Non-Food Delivery Fee Rule:</strong>
+                        Delivery charges (e.g. ₹30, ₹40) are strictly logistics fees and are never taxed under food GST. Dine-in and Takeaway orders automatically enforce a ₹0 delivery fee.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <!-- 4. THERMAL PRINTER SUBTAB -->
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <div id="settings-subtab-printer" class="stg-pane settings-subtab-pane" style="display:none;">
+                <div class="stg-card stg-card-gold-accent">
+                  <div class="stg-section-head">
+                    <div>
+                      <h2 class="stg-section-title"><span>🖨️</span> Thermal Printer &amp; Hardware Configuration</h2>
+                      <p class="stg-section-desc">Connect TVS RP3200 Plus, customize bill layouts, adjust dimensions, and preview in real time.</p>
+                    </div>
+                    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+                      <button type="button" id="printer-save-db-btn" class="stg-btn-gold">💾 Save Printer Settings</button>
+                      <button type="button" id="printer-test-hardware-btn" class="stg-btn-outline">🖨️ Print Test Receipt</button>
+                    </div>
+                  </div>
+
+                  <!-- Hardware Connection Banner -->
+                  <div style="margin-bottom:1.5rem;padding:1.15rem;background:#fbfaf8;border:1px solid #e8e3dc;border-radius:14px;border-left:4px solid #10b981;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+                      <div style="display:flex;align-items:center;gap:.75rem;">
+                        <div style="width:44px;height:44px;border-radius:12px;background:#ecfdf5;display:flex;align-items:center;justify-content:center;font-size:1.4rem;">
+                          🖨️
+                        </div>
+                        <div>
+                          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+                            <h3 style="font-size:1rem;font-weight:800;color:var(--adm-text);margin:0;">TVS RP3200 Plus Thermal Driver</h3>
+                            <span id="printer-studio-status-badge" style="background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;font-size:.7rem;font-weight:700;padding:.15rem .55rem;border-radius:999px;">🟢 Native Driver Active</span>
+                          </div>
+                          <p id="printer-panel-status-msg" style="font-size:.8rem;color:var(--adm-muted);margin:3px 0 0 0;">Direct Windows Driver Spooler · 80mm Roll (72mm Printable) · Vector Sharp Output</p>
+                        </div>
+                      </div>
+
+                      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+                        <label style="font-size:.8rem;font-weight:700;color:#334155;">Model:</label>
+                        <select id="printer-model-select" class="stg-input" style="min-width:180px;height:38px;font-size:.82rem;font-weight:600;">
+                          <option value="TVS RP3200 Plus" selected>🖨️ TVS RP3200 Plus (Default)</option>
+                          <option value="TVS RP 3160 STAR">🖨️ TVS RP 3160 STAR</option>
+                          <option value="TVS RP 3220 Star">🖨️ TVS RP 3220 Star</option>
+                          <option value="TVS BS-C101 Star">🖨️ TVS BS-C101 Star</option>
+                          <option value="TVS Generic Thermal 80mm">🖨️ TVS Generic 80mm ESC/POS</option>
+                        </select>
+                        <label style="font-size:.8rem;font-weight:700;color:#334155;">Method:</label>
+                        <select id="printer-connection-mode" class="stg-input" style="min-width:210px;height:38px;font-size:.82rem;font-weight:600;">
+                          <option value="driver" selected>🖨️ Windows TVS Driver (Recommended)</option>
+                          <option value="qz_tray">📡 QZ Tray (WebSocket)</option>
+                        </select>
+                        <div id="qz-controls-wrap" style="display:none;align-items:center;gap:.4rem;">
+                          <button id="printer-connect-btn" class="adm-btn adm-btn-primary adm-btn-sm">🔌 Connect QZ</button>
+                          <select id="printer-list-select" class="stg-input" style="max-width:140px;height:36px;font-size:.8rem;"></select>
+                          <button id="printer-select-btn" class="adm-btn adm-btn-outline adm-btn-sm">🔍 Detect</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 2-Column Studio Grid: Left Controls, Right Preview -->
+                  <div style="display:grid;grid-template-columns:1fr 420px;gap:1.5rem;align-items:start;">
+                    <!-- Left: Dimensions & Typography Controls -->
+                    <div style="display:flex;flex-direction:column;gap:1.25rem;">
+                      <!-- Bill Dimensions -->
+                      <div style="padding:1.25rem;background:#fbfaf8;border:1px solid #e8e3dc;border-radius:12px;">
+                        <h4 style="font-size:.9rem;font-weight:700;margin:0 0 .75rem 0;color:#1e293b;">📏 Bill Roll Dimensions &amp; Cutter</h4>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
+                          <div>
+                            <label class="stg-label">Paper Width (mm)</label>
+                            <div style="display:flex;gap:.35rem;margin-top:.3rem;flex-wrap:wrap;">
+                              <button type="button" class="bill-w-preset adm-btn adm-btn-primary adm-btn-sm" data-width="80">80 mm (TVS 3-inch)</button>
+                              <button type="button" class="bill-w-preset adm-btn adm-btn-outline adm-btn-sm" data-width="72">72 mm</button>
+                              <button type="button" class="bill-w-preset adm-btn adm-btn-outline adm-btn-sm" data-width="58">58 mm (Compact)</button>
+                              <button type="button" class="bill-w-preset adm-btn adm-btn-outline adm-btn-sm" data-width="A4">A4</button>
+                            </div>
+                            <input type="number" id="bill-custom-width" class="stg-input" placeholder="Custom width (mm)" min="40" max="220" style="width:100%;margin-top:.5rem;" />
+                          </div>
+                          <div>
+                            <label class="stg-label">Auto-Cutter Action</label>
+                            <select id="bill-auto-cut" class="stg-input" style="width:100%;margin-top:.3rem;">
+                              <option value="full" selected>✂️ Full Cut</option>
+                              <option value="partial">✂️ Partial Cut</option>
+                              <option value="none">📜 No Cut</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <!-- Bill Gap Controls: Side Gap & Down Gap -->
+                        <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--adm-border);display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
+                          <div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                              <label class="stg-label" style="font-weight:700;margin:0;">↔️ Side Margin Gap</label>
+                              <span id="bill-side-gap-label" style="font-size:.78rem;font-weight:800;color:#d97706;">2 mm</span>
+                            </div>
+                            <div style="display:flex;gap:.5rem;align-items:center;margin-top:.25rem;">
+                              <input type="range" id="bill-side-gap-slider" min="0" max="12" step="0.5" value="2" style="flex:1;" class="accent-amber-600" />
+                              <input type="number" id="bill-side-gap" class="stg-input" min="0" max="12" step="0.5" value="2" style="width:65px;" />
+                            </div>
+                          </div>
+                          <div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                              <label class="stg-label" style="font-weight:700;margin:0;">↕️ Bottom Feed Lines</label>
+                              <span id="bill-down-gap-label" style="font-size:.78rem;font-weight:800;color:#d97706;">2 lines</span>
+                            </div>
+                            <div style="display:flex;gap:.5rem;align-items:center;margin-top:.25rem;">
+                              <input type="range" id="bill-bottom-feed-slider" min="1" max="10" step="1" value="2" style="flex:1;" class="accent-amber-600" />
+                              <input type="number" id="bill-bottom-feed" class="stg-input" min="1" max="10" value="2" style="width:65px;" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- High Contrast Typography & Boldness -->
+                      <div style="padding:1.25rem;background:#fbfaf8;border:1px solid #e8e3dc;border-radius:12px;">
+                        <h4 style="font-size:.9rem;font-weight:700;margin:0 0 .75rem 0;color:#1e293b;">🔤 Receipt Typography &amp; Boldness</h4>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.85rem;">
+                          <div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                              <label class="stg-label" style="margin:0;">Bill Font Size</label>
+                              <span id="bill-font-size-label" style="font-size:.8rem;font-weight:800;color:#d97706;">10.0 px</span>
+                            </div>
+                            <div style="display:flex;gap:.5rem;align-items:center;margin-top:.35rem;">
+                              <input type="range" id="bill-font-size-slider" min="7.5" max="15" step="0.5" value="10" style="flex:1;" class="accent-amber-600" />
+                              <input type="number" id="bill-font-size-input" class="stg-input" min="7.5" max="16" step="0.5" value="10" style="width:65px;font-weight:700;" />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label class="stg-label">Text Boldness (Weight)</label>
+                            <select id="bill-font-weight-select" class="stg-input" style="font-weight:700;">
+                              <option value="600">Medium Semi-Bold (600)</option>
+                              <option value="700">Bold (700)</option>
+                              <option value="800" selected>Extra Bold (800) - Recommended</option>
+                              <option value="900">Black / Heavy (900)</option>
+                            </select>
+                          </div>
+
+                          <div class="stg-field-full" style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-top:.5rem;">
+                            <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.8rem;font-weight:600;">
+                              <input type="checkbox" id="bill-toggle-bold-items" checked class="accent-amber-600" />
+                              <span>Bold Dish Names</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.8rem;font-weight:600;">
+                              <input type="checkbox" id="bill-toggle-bold-headers" checked class="accent-amber-600" />
+                              <span>Bold Table Headers</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.8rem;font-weight:600;">
+                              <input type="checkbox" id="bill-toggle-bold-totals" checked class="accent-amber-600" />
+                              <span>Extra Bold Grand Total</span>
+                            </label>
+                          </div>
+
+                          <div class="stg-field-full">
+                            <label class="stg-label">Bill Height Spacing Density (Paper Saver)</label>
+                            <select id="bill-density-select" class="stg-input" style="font-weight:700;">
+                              <option value="ultra-compact">🌿 Ultra-Compact (Cuts 40% Paper)</option>
+                              <option value="compact" selected>⚡ Compact (Cuts 25% Paper - Recommended)</option>
+                              <option value="normal">📜 Normal (Standard Spacing)</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Right: Live Interactive Thermal Receipt Preview -->
+                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;">
+                      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
+                        <h4 style="margin:0;font-size:0.9rem;font-weight:800;color:#1e293b;">📄 Live Thermal Preview</h4>
+                        <span id="preview-paper-spec-badge" style="font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#4f46e5;">80mm Roll</span>
+                      </div>
+                      <div id="thermal-live-preview-container" style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:1rem;margin-bottom:1rem;box-shadow:0 2px 8px rgba(0,0,0,0.06);min-height:380px;display:flex;justify-content:center;">
+                        <!-- Generated by renderThermalLivePreview() -->
+                      </div>
+                      <div id="sample-items-editor-wrap" style="border-top:1px solid #e2e8f0;padding-top:.75rem;">
+                        <!-- Generated by renderSampleItemsEditor() -->
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <!-- 5. KITCHEN & KOT SUBTAB -->
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <div id="settings-subtab-kitchen" class="stg-pane settings-subtab-pane" style="display:none;">
+                <div class="stg-card stg-card-gold-accent">
+                  <div class="stg-section-head">
+                    <div>
+                      <h2 class="stg-section-title"><span>🍳</span> Kitchen Display &amp; KOT Settings</h2>
+                      <p class="stg-section-desc">Configure Kitchen Order Ticket (KOT) paper dimensions, chef readability font sizes, and item details.</p>
+                    </div>
+                    <span class="stg-dirty-badge saved" style="background:#fffbeb;color:#b45309;border-color:#fde68a;">Kitchen Display System</span>
+                  </div>
+
+                  <div class="stg-grid-2">
+                    <!-- KOT Sizing -->
+                    <div style="padding:1.25rem;background:#fbfaf8;border:1px solid #e8e3dc;border-radius:12px;">
+                      <h4 style="font-size:.9rem;font-weight:700;margin:0 0 .75rem 0;color:#1e293b;">📏 KOT Roll Dimensions &amp; Cutter</h4>
+                      <div style="margin-bottom:.75rem;">
+                        <label class="stg-label">Paper Width (mm)</label>
+                        <div style="display:flex;gap:.35rem;margin-top:.3rem;flex-wrap:wrap;">
+                          <button type="button" class="kot-w-preset adm-btn adm-btn-primary adm-btn-sm" data-width="80">80 mm (TVS Standard)</button>
+                          <button type="button" class="kot-w-preset adm-btn adm-btn-outline adm-btn-sm" data-width="72">72 mm (Print Area)</button>
+                          <button type="button" class="kot-w-preset adm-btn adm-btn-outline adm-btn-sm" data-width="58">58 mm (Compact)</button>
+                        </div>
+                        <input type="number" id="kot-custom-width" class="stg-input" placeholder="Custom width (mm)" min="40" max="120" style="width:100%;margin-top:.5rem;" />
+                      </div>
+
+                      <div style="margin-bottom:.75rem;">
+                        <label class="stg-label">Auto-Cutter Action</label>
+                        <select id="kot-auto-cut" class="stg-input" style="width:100%;margin-top:.3rem;">
+                          <option value="partial">✂️ Partial Cut (Recommended)</option>
+                          <option value="full">✂️ Full Cut</option>
+                          <option value="none">📜 No Cut (Manual Tear)</option>
+                        </select>
+                      </div>
+
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.75rem;padding-top:.75rem;border-top:1px solid #e8e3dc;">
+                        <div>
+                          <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <label class="stg-label" style="margin:0;">Side Gap</label>
+                            <span id="kot-side-gap-label" style="font-size:.78rem;font-weight:800;color:#d97706;">2 mm</span>
+                          </div>
+                          <div style="display:flex;gap:.5rem;align-items:center;margin-top:.25rem;">
+                            <input type="range" id="kot-side-gap-slider" min="0" max="12" step="0.5" value="2" style="flex:1;" class="accent-amber-600" />
+                            <input type="number" id="kot-side-gap" class="stg-input" min="0" max="12" step="0.5" value="2" style="width:65px;" />
+                          </div>
+                        </div>
+                        <div>
+                          <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <label class="stg-label" style="margin:0;">Bottom Feed</label>
+                            <span id="kot-down-gap-label" style="font-size:.78rem;font-weight:800;color:#d97706;">3 lines</span>
+                          </div>
+                          <div style="display:flex;gap:.5rem;align-items:center;margin-top:.25rem;">
+                            <input type="range" id="kot-bottom-feed-slider" min="1" max="10" step="1" value="3" style="flex:1;" class="accent-amber-600" />
+                            <input type="number" id="kot-bottom-feed" class="stg-input" min="1" max="10" value="3" style="width:65px;" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- KOT Typography & Field Toggles -->
+                    <div style="padding:1.25rem;background:#fbfaf8;border:1px solid #e8e3dc;border-radius:12px;">
+                      <h4 style="font-size:.9rem;font-weight:700;margin:0 0 .75rem 0;color:#1e293b;">📋 Chef Ticket Visibility Toggles</h4>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;font-size:.82rem;margin-bottom:1rem;">
+                        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                          <input type="checkbox" id="kot-toggle-table" checked class="accent-amber-600" />
+                          <span>Show Table Number</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                          <input type="checkbox" id="kot-toggle-order-type" checked class="accent-amber-600" />
+                          <span>Show Order Type</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                          <input type="checkbox" id="kot-toggle-customer" checked class="accent-amber-600" />
+                          <span>Show Customer Name</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                          <input type="checkbox" id="kot-toggle-time" checked class="accent-amber-600" />
+                          <span>Show Date &amp; Time</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                          <input type="checkbox" id="kot-toggle-notes" checked class="accent-amber-600" />
+                          <span>Show Chef Instructions</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                          <input type="checkbox" id="kot-toggle-highlight-qty" checked class="accent-amber-600" />
+                          <span>Enlarge &amp; Bold Qty</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                          <input type="checkbox" id="kot-toggle-category" class="accent-amber-600" />
+                          <span>Group by Category</span>
+                        </label>
+                      </div>
+
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding-top:.75rem;border-top:1px solid #e8e3dc;">
+                        <div>
+                          <label class="stg-label">Kitchen Font Size</label>
+                          <select id="kot-font-size" class="stg-input">
+                            <option value="medium">Medium (13px)</option>
+                            <option value="large" selected>Large (15px - Recommended)</option>
+                            <option value="xlarge">Extra Large (17px)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="stg-label">Divider Line Style</label>
+                          <select id="kot-item-separator" class="stg-input">
+                            <option value="dashed">Dashed ( - - - - - )</option>
+                            <option value="solid">Solid ( ───────── )</option>
+                            <option value="double">Double ( ═════════ )</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <!-- 6. STAFF & ROLES SUBTAB -->
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <div id="settings-subtab-staff" class="stg-pane settings-subtab-pane" style="display:none;">
+                <div class="stg-card stg-card-gold-accent">
+                  <div class="stg-section-head">
+                    <div>
+                      <h2 class="stg-section-title"><span>👥</span> Staff, Roles &amp; Permissions</h2>
+                      <p class="stg-section-desc">Manage registered team members, work shifts, operational roles, and permission levels.</p>
+                    </div>
+                    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+                      <button type="button" id="staff-export-csv-btn" class="stg-btn-outline" style="background:#f0fdf4;border-color:#bbf7d0;color:#15803d;font-weight:700;">
+                        <span>📥</span> Export Staff (.csv)
+                      </button>
+                      <button type="button" id="staff-add-btn" class="stg-btn-gold">
+                        <span>➕</span> Add Staff Member
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 4 KPI Stat Cards -->
+                  <div class="adm-stats" style="grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));margin-bottom:1.25rem;">
+                    <div class="adm-stat" style="border-left:4px solid #6366f1;">
+                      <div>
+                        <p class="adm-stat-label">Total Staff Members</p>
+                        <p class="adm-stat-value" id="staff-kpi-total" style="color:#4f46e5;">5 Staff</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Registered team</p>
+                      </div>
+                      <div class="adm-stat-icon indigo" style="background:#eef2ff;color:#6366f1;">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                      </div>
+                    </div>
+
+                    <div class="adm-stat" style="border-left:4px solid #10b981;">
+                      <div>
+                        <p class="adm-stat-label">Active On-Duty Today</p>
+                        <p class="adm-stat-value" id="staff-kpi-onduty" style="color:#059669;">4 Active</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Currently working</p>
+                      </div>
+                      <div class="adm-stat-icon green">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                      </div>
+                    </div>
+
+                    <div class="adm-stat" style="border-left:4px solid #f59e0b;">
+                      <div>
+                        <p class="adm-stat-label">Kitchen &amp; Chefs</p>
+                        <p class="adm-stat-value" id="staff-kpi-kitchen" style="color:#d97706;">1 Chef</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Kitchen staff</p>
+                      </div>
+                      <div class="adm-stat-icon orange">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                      </div>
+                    </div>
+
+                    <div class="adm-stat" style="border-left:4px solid #06b6d4;">
+                      <div>
+                        <p class="adm-stat-label">Delivery Riders</p>
+                        <p class="adm-stat-value" id="staff-kpi-riders" style="color:#0891b2;">1 Rider</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Active dispatch fleet</p>
+                      </div>
+                      <div class="adm-stat-icon blue" style="background:#ecfeff;color:#06b6d4;">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Staff Filters Toolbar -->
+                  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem;margin-bottom:1.25rem;">
+                    <div style="display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;">
+                      <select id="staff-role-filter" class="stg-input" style="font-weight:600;font-size:.82rem;width:auto;">
+                        <option value="all">All Roles</option>
+                        <option value="Store Manager">Store Manager</option>
+                        <option value="POS Cashier">POS Cashier</option>
+                        <option value="Head Chef / Kitchen">Head Chef / Kitchen</option>
+                        <option value="Service Captain">Service Captain / Waiter</option>
+                        <option value="Delivery Rider">Delivery Rider</option>
+                      </select>
+                      <select id="staff-status-filter" class="stg-input" style="font-weight:600;font-size:.82rem;width:auto;">
+                        <option value="all">All Statuses</option>
+                        <option value="on_duty">🟢 On-Duty</option>
+                        <option value="off_duty">⚪ Off-Duty</option>
+                        <option value="on_leave">🏖️ On Leave</option>
+                      </select>
+                      <input type="search" id="staff-search" class="stg-input" placeholder="Search staff name, phone, role..." style="min-width:220px;" />
+                    </div>
+                  </div>
+
+                  <!-- Staff Cards Grid -->
+                  <div id="staff-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));gap:1.25rem;margin-bottom:1.5rem;"></div>
+
+                  <!-- Staff Detailed Table -->
+                  <div class="adm-card adm-table-wrap" style="border:1px solid #e8e3dc;box-shadow:0 1px 3px rgba(0,0,0,.04);">
+                    <table class="adm-table">
+                      <thead>
+                        <tr>
+                          <th style="padding-left:1.25rem;">Staff Member</th>
+                          <th>Role</th>
+                          <th>Phone</th>
+                          <th>Shift Hours</th>
+                          <th>Status</th>
+                          <th style="text-align:right;padding-right:1.25rem;">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody id="staff-table-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <!-- 7. WHATSAPP & AUDIO SUBTAB -->
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <div id="settings-subtab-whatsapp" class="stg-pane settings-subtab-pane" style="display:none;">
+                <div class="stg-card stg-card-gold-accent">
+                  <div class="stg-section-head">
+                    <div>
+                      <h2 class="stg-section-title"><span>💬</span> WhatsApp Automation &amp; Audio Notifications</h2>
+                      <p class="stg-section-desc">Automated customer notifications for order dispatch, digital receipts, review booster, and POS audio chime tests.</p>
+                    </div>
+                    <button type="button" id="wa-save-settings-btn" class="stg-btn-gold">
+                      💾 Save WhatsApp Settings
+                    </button>
+                  </div>
+
+                  <!-- WhatsApp KPI Cards -->
+                  <div class="adm-stats" style="grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));margin-bottom:1.25rem;">
+                    <div class="adm-stat" style="border-left:4px solid #25D366;">
+                      <div>
+                        <p class="adm-stat-label">WhatsApp Integration</p>
+                        <p class="adm-stat-value" id="wa-kpi-status" style="color:#15803d;font-size:1.3rem;">🟢 Connected &amp; Live</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Direct API &amp; wa.me link</p>
+                      </div>
+                      <div class="adm-stat-icon green" style="background:#ecfdf5;color:#15803d;">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.664-.699c.97.53 1.77.814 2.795.814 3.179 0 5.766-2.587 5.766-5.766 0-3.18-2.587-5.766-5.765-5.766zm9.969 5.766c0 5.518-4.482 10-10 10-1.748 0-3.385-.45-4.819-1.238l-5.181 1.36 1.385-5.056c-.86-1.488-1.385-3.218-1.385-5.066 0-5.518 4.482-10 10-10s10 4.482 10 10z"/></svg>
+                      </div>
+                    </div>
+
+                    <div class="adm-stat" style="border-left:4px solid #6366f1;">
+                      <div>
+                        <p class="adm-stat-label">Automated Triggers</p>
+                        <p class="adm-stat-value" id="wa-kpi-triggers" style="color:#4f46e5;">5 Auto Triggers</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Order, delivery, review, deal</p>
+                      </div>
+                      <div class="adm-stat-icon indigo" style="background:#eef2ff;color:#6366f1;">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                      </div>
+                    </div>
+
+                    <div class="adm-stat" style="border-left:4px solid #06b6d4;">
+                      <div>
+                        <p class="adm-stat-label">1-Click Direct Messenger</p>
+                        <p class="adm-stat-value" id="wa-kpi-direct" style="color:#0891b2;font-size:1.3rem;">Instant Chat 💬</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Direct wa.me protocol</p>
+                      </div>
+                      <div class="adm-stat-icon blue" style="background:#ecfeff;color:#06b6d4;">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                      </div>
+                    </div>
+
+                    <div class="adm-stat" style="border-left:4px solid #f59e0b;">
+                      <div>
+                        <p class="adm-stat-label">Review Booster</p>
+                        <p class="adm-stat-value" id="wa-kpi-reviews" style="color:#d97706;">Google 5-Star ⭐</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Auto feedback requests</p>
+                      </div>
+                      <div class="adm-stat-icon orange">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 2-Column Grid: Automation Engine & Direct Messenger -->
+                  <div style="display:grid;grid-template-columns:1.2fr 0.8fr;gap:1.5rem;align-items:start;">
+                    <!-- Left: Automation Settings -->
+                    <div style="display:flex;flex-direction:column;gap:1.25rem;">
+                      <div class="stg-grid-2">
+                        <div class="stg-field">
+                          <label class="stg-label" for="wa-biz-phone">WhatsApp Business Phone</label>
+                          <input type="tel" id="wa-biz-phone" class="stg-input" value="+91 99999 88888" />
+                          <span class="stg-help">Connected business WhatsApp account.</span>
+                        </div>
+                        <div class="stg-field">
+                          <label class="stg-label" for="wa-biz-name">Sender Display Name</label>
+                          <input type="text" id="wa-biz-name" class="stg-input" value="LIMRA RESTAURANT" />
+                          <span class="stg-help">Header identity in messages.</span>
+                        </div>
+                      </div>
+
+                      <div style="display:flex;flex-direction:column;gap:.75rem;">
+                        <div class="stg-toggle-card">
+                          <div class="stg-toggle-info">
+                            <strong>🔔 Order Confirmation Notification</strong>
+                            <p>Auto-send WhatsApp confirmation when order is placed or confirmed</p>
+                          </div>
+                          <label class="switch" style="margin:0;">
+                            <input type="checkbox" id="wa-auto-confirm" checked />
+                            <span class="slider round"></span>
+                          </label>
+                        </div>
+
+                        <div class="stg-toggle-card">
+                          <div class="stg-toggle-info">
+                            <strong>🚗 Out for Delivery &amp; Live Tracking Link</strong>
+                            <p>Send rider details &amp; live Google Maps ETA route to the customer</p>
+                          </div>
+                          <label class="switch" style="margin:0;">
+                            <input type="checkbox" id="wa-auto-delivery" checked />
+                            <span class="slider round"></span>
+                          </label>
+                        </div>
+
+                        <div class="stg-toggle-card">
+                          <div class="stg-toggle-info">
+                            <strong>🍽️ Table QR Order &amp; Digital Bill Ready</strong>
+                            <p>Send instant digital receipt &amp; UPI payment link to dining table guests</p>
+                          </div>
+                          <label class="switch" style="margin:0;">
+                            <input type="checkbox" id="wa-auto-table" checked />
+                            <span class="slider round"></span>
+                          </label>
+                        </div>
+
+                        <div class="stg-toggle-card">
+                          <div class="stg-toggle-info">
+                            <strong>⭐ Google 5-Star Review Booster Invite</strong>
+                            <p>Send polite Google review invite 15 minutes after food delivery</p>
+                          </div>
+                          <label class="switch" style="margin:0;">
+                            <input type="checkbox" id="wa-auto-review" checked />
+                            <span class="slider round"></span>
+                          </label>
+                        </div>
+
+                        <div class="stg-toggle-card">
+                          <div class="stg-toggle-info">
+                            <strong>🎁 Promo Coupon &amp; VIP Deal Alerts</strong>
+                            <p>Auto-attach active promo coupons (e.g. WELCOME10) in greeting messages</p>
+                          </div>
+                          <label class="switch" style="margin:0;">
+                            <input type="checkbox" id="wa-auto-promo" checked />
+                            <span class="slider round"></span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <!-- Audio Notifications Card -->
+                      <div style="margin-top:0.5rem;padding:1.15rem;background:#fbfaf8;border:1px solid #e8e3dc;border-radius:12px;">
+                        <h4 style="margin:0 0 0.5rem 0;font-size:0.9rem;font-weight:700;color:#1e293b;">🔊 POS Audio &amp; Voice Announcements</h4>
+                        <p style="margin:0 0 0.75rem 0;font-size:0.75rem;color:#64748b;">Audible sound alerts when new customer orders or Table round additions arrive.</p>
+                        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+                          <div style="display:flex;gap:0.4rem;align-items:center;">
+                            <button type="button" onclick="testNotificationSound()" class="stg-btn-outline" style="padding:0.35rem 0.75rem;font-size:0.75rem;">
+                              🔊 Test Chime
+                            </button>
+                            <button type="button" onclick="testTableRoundSound(2, '04')" class="stg-btn-gold" style="padding:0.35rem 0.75rem;font-size:0.75rem;">
+                              🔔 Test Round 2+ Sound
+                            </button>
+                          </div>
+                          <label style="font-size:0.8rem;font-weight:700;display:flex;align-items:center;gap:0.45rem;cursor:pointer;color:#334155;">
+                            <input type="checkbox" id="toggle-voice-announcements" checked onchange="setVoiceAnnouncementEnabled(this.checked); showAdminToast(this.checked ? 'Voice announcements ON 📣' : 'Voice announcements OFF 🔇', 'info');" style="cursor:pointer;accent-color:#d97706;" />
+                            <span>📣 Voice Announcements</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Right: Direct WhatsApp Chat -->
+                    <div style="padding:1.25rem;background:#ffffff;border:1px solid #e8e3dc;border-radius:14px;border-top:3.5px solid #25D366;">
+                      <h3 style="font-size:1rem;font-weight:800;margin:0 0 1rem 0;color:#1e293b;display:flex;align-items:center;gap:.5rem;">
+                        <span>💬 1-Click WhatsApp Direct Chat</span>
+                      </h3>
+
+                      <div style="margin-bottom:.85rem;">
+                        <label class="stg-label">Customer Phone Number</label>
+                        <input type="tel" id="wa-direct-phone" class="stg-input" placeholder="+91 98765 43210" />
+                      </div>
+
+                      <div style="margin-bottom:.85rem;">
+                        <label class="stg-label">Select Quick Template</label>
+                        <select id="wa-direct-template-select" class="stg-input">
+                          <option value="confirm">✅ Order Confirmation &amp; Greeting</option>
+                          <option value="delivery">🚗 Food Dispatched / Out for Delivery</option>
+                          <option value="review">⭐ Google 5-Star Review Request</option>
+                          <option value="coupon">🎁 20% OFF Promo Coupon Code</option>
+                          <option value="table">🍽️ Table Reservation Confirmed</option>
+                          <option value="custom">✏️ Custom Message</option>
+                        </select>
+                      </div>
+
+                      <div style="margin-bottom:1rem;">
+                        <label class="stg-label">Message Preview</label>
+                        <textarea id="wa-direct-msg" class="stg-textarea" rows="5"></textarea>
+                      </div>
+
+                      <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                        <button type="button" id="wa-send-direct-btn" class="stg-btn-gold" style="flex:1;background:#25D366;border-color:#25D366;justify-content:center;">
+                          <span>💬</span> Send WhatsApp
+                        </button>
+                        <button type="button" id="wa-copy-direct-btn" class="stg-btn-outline" title="Copy text">
+                          📋 Copy
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <!-- 8. CLOUD INTEGRATIONS SUBTAB -->
+              <!-- ═══════════════════════════════════════════════════════════ -->
+              <div id="settings-subtab-integrations" class="stg-pane settings-subtab-pane" style="display:none;">
+                <!-- Google Business Profile Card -->
+                <div class="stg-card stg-card-gold-accent">
+                  <div class="stg-section-head">
+                    <div>
+                      <h2 class="stg-section-title"><span>🌐</span> Google Business Profile &amp; 5-Star Review Booster</h2>
+                      <p class="stg-section-desc">Manage verified Google Maps listing and automated review booster QR on thermal bills.</p>
+                    </div>
+                    <button type="button" id="gprofile-save-biz-btn" class="stg-btn-gold">
+                      💾 Save Profile Details
+                    </button>
+                  </div>
+
+                  <!-- Profile KPIs -->
+                  <div class="adm-stats" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));margin-bottom:1.25rem;">
+                    <div class="adm-stat" style="border-left:4px solid #f59e0b;">
+                      <div>
+                        <p class="adm-stat-label">Google Rating</p>
+                        <p class="adm-stat-value" id="gprofile-kpi-rating" style="color:#d97706;font-size:1.3rem;">4.8 ⭐</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Live rating</p>
+                      </div>
+                      <div class="adm-stat-icon orange">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                      </div>
+                    </div>
+
+                    <div class="adm-stat" style="border-left:4px solid #10b981;">
+                      <div>
+                        <p class="adm-stat-label">Verified Reviews</p>
+                        <p class="adm-stat-value" id="gprofile-kpi-reviews" style="color:#059669;font-size:1.3rem;">348 Reviews</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Happy diners</p>
+                      </div>
+                      <div class="adm-stat-icon green">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                      </div>
+                    </div>
+
+                    <div class="adm-stat" style="border-left:4px solid #06b6d4;">
+                      <div>
+                        <p class="adm-stat-label">Monthly Views</p>
+                        <p class="adm-stat-value" id="gprofile-kpi-views" style="color:#0891b2;font-size:1.3rem;">12.4k Views/mo</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Google search &amp; maps</p>
+                      </div>
+                      <div class="adm-stat-icon blue">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                      </div>
+                    </div>
+
+                    <div class="adm-stat" style="border-left:4px solid #22c55e;">
+                      <div>
+                        <p class="adm-stat-label">Google Status</p>
+                        <p class="adm-stat-value" id="gprofile-kpi-status" style="color:#16a34a;font-size:1.25rem;">Verified ✓</p>
+                        <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Verified listing</p>
+                      </div>
+                      <div class="adm-stat-icon green">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Google Profile Grid -->
+                  <div class="stg-grid-2">
+                    <div class="stg-field">
+                      <label class="stg-label" for="gbiz-name">Google Listing Name</label>
+                      <input type="text" id="gbiz-name" class="stg-input" value="LIMRA RESTAURANT" />
+                    </div>
+
+                    <div class="stg-field">
+                      <label class="stg-label" for="gbiz-phone">Public Google Phone</label>
+                      <input type="text" id="gbiz-phone" class="stg-input" value="+91 99999 88888" />
+                    </div>
+
+                    <div class="stg-field stg-field-full">
+                      <label class="stg-label" for="gbiz-address">Public Google Maps Address</label>
+                      <input type="text" id="gbiz-address" class="stg-input" value="Main Road, Near Bus Stand, Egra, West Bengal" />
+                    </div>
+
+                    <div class="stg-field">
+                      <label class="stg-label" for="gbiz-review-url">Google Review URL</label>
+                      <div style="display:flex;gap:.5rem;">
+                        <input type="url" id="gbiz-review-url" class="stg-input" value="https://g.page/r/CcrqEfWap5zfEBE/review" style="flex:1;" />
+                        <button type="button" id="gbiz-copy-review-link" class="stg-btn-outline" title="Copy review link">📋</button>
+                      </div>
+                    </div>
+
+                    <div class="stg-field">
+                      <label class="stg-label" for="gbiz-maps-url">Google Maps Location Link</label>
+                      <div style="display:flex;gap:.5rem;">
+                        <input type="url" id="gbiz-maps-url" class="stg-input" value="https://maps.google.com/?q=LIMRA+Restaurant" style="flex:1;" />
+                        <button type="button" id="gprofile-open-maps-btn" class="stg-btn-outline" title="Open Google Maps">🗺️</button>
+                      </div>
+                    </div>
+
+                    <!-- Thermal Receipt Review QR Toggles -->
+                    <div class="stg-field-full" style="padding:1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;margin-top:.5rem;">
+                      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;">
+                        <div>
+                          <strong style="font-size:0.86rem;color:#92400e;">⭐ Print Google Review QR on Bill Receipts</strong>
+                          <p style="margin:2px 0 0 0;font-size:0.75rem;color:#b45309;">Invites happy customers to scan the bill and rate you on Google immediately.</p>
+                        </div>
+                        <label class="switch" style="margin:0;">
+                          <input type="checkbox" id="bill-toggle-review-qr" checked />
+                          <span class="slider round"></span>
+                        </label>
+                      </div>
+                      <div class="stg-grid-2" style="margin-bottom:0;">
+                        <div>
+                          <label class="stg-label" style="color:#92400e;">QR Review Target URL</label>
+                          <input type="url" id="bill-review-url" class="stg-input" value="https://g.page/r/CcrqEfWap5zfEBE/review" />
+                        </div>
+                        <div>
+                          <label class="stg-label" style="color:#92400e;">Review Prompt Heading</label>
+                          <input type="text" id="bill-review-heading" class="stg-input" value="LOVE YOUR EXPERIENCE?" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Google Sheets Real-Time Sync Container -->
+                <div id="settings-subtab-sheets" class="stg-sheets-wrapper" style="display:block;margin-top:1.5rem;">
+                  <!-- Rendered dynamically by renderGoogleSheetsSettingsUI() -->
+                </div>
+              </div>
+
+            </div>
           </div>
+
+          <!-- Sticky Action Bar -->
+          <div class="stg-action-bar">
+            <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+              <span class="stg-dirty-badge saved" id="stg-bottom-dirty-badge">
+                <span class="stg-dirty-dot"></span>
+                <span id="stg-bottom-dirty-text">All changes saved</span>
+              </span>
+              <span style="font-size:0.75rem;color:#64748b;">Instant sync with Supabase Cloud Database &amp; Local Storage</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.65rem;">
+              <button type="button" id="stg-reset-btn" class="stg-btn-outline">
+                <span>↺</span> Discard Changes
+              </button>
+              <button type="button" id="stg-save-btn" class="stg-btn-gold">
+                <span>💾</span> Save All Settings
+              </button>
+            </div>
+          </div>
+
         </div>
 
-        <!-- 2. WHATSAPP MANAGER SUBTAB -->
-        <div id="settings-subtab-whatsapp" class="settings-subtab-pane" style="display:none;">
-          <!-- 4 KPI Stat Cards -->
-          <div class="adm-stats" style="grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));margin-bottom:1.25rem;">
-            <div class="adm-stat" style="border-left:4px solid #25D366;">
-              <div>
-                <p class="adm-stat-label">WhatsApp Integration</p>
-                <p class="adm-stat-value" id="wa-kpi-status" style="color:#15803d;font-size:1.3rem;">🟢 Connected &amp; Live</p>
-                <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Direct API &amp; wa.me link</p>
-              </div>
-              <div class="adm-stat-icon green" style="background:#ecfdf5;color:#15803d;">
-                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.664-.699c.97.53 1.77.814 2.795.814 3.179 0 5.766-2.587 5.766-5.766 0-3.18-2.587-5.766-5.765-5.766zm9.969 5.766c0 5.518-4.482 10-10 10-1.748 0-3.385-.45-4.819-1.238l-5.181 1.36 1.385-5.056c-.86-1.488-1.385-3.218-1.385-5.066 0-5.518 4.482-10 10-10s10 4.482 10 10z"/></svg>
-              </div>
-            </div>
-
-            <div class="adm-stat" style="border-left:4px solid #6366f1;">
-              <div>
-                <p class="adm-stat-label">Automated Triggers</p>
-                <p class="adm-stat-value" id="wa-kpi-triggers" style="color:#4f46e5;">5 Auto Triggers</p>
-                <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Order, delivery, review, deal</p>
-              </div>
-              <div class="adm-stat-icon indigo" style="background:#eef2ff;color:#6366f1;">
-                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-              </div>
-            </div>
-
-            <div class="adm-stat" style="border-left:4px solid #06b6d4;">
-              <div>
-                <p class="adm-stat-label">1-Click Direct Messenger</p>
-                <p class="adm-stat-value" id="wa-kpi-direct" style="color:#0891b2;font-size:1.3rem;">Instant Chat 💬</p>
-                <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Direct wa.me protocol</p>
-              </div>
-              <div class="adm-stat-icon blue" style="background:#ecfeff;color:#06b6d4;">
-                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-              </div>
-            </div>
-
-            <div class="adm-stat" style="border-left:4px solid #f59e0b;">
-              <div>
-                <p class="adm-stat-label">Review Booster</p>
-                <p class="adm-stat-value" id="wa-kpi-reviews" style="color:#d97706;">Google 5-Star ⭐</p>
-                <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Auto feedback requests</p>
-              </div>
-              <div class="adm-stat-icon orange">
-                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-              </div>
-            </div>
-          </div>
-
-          <!-- Main 2-Column Grid: Automation Engine & Direct Messenger -->
-          <div style="display:grid;grid-template-columns:1.2fr 0.8fr;gap:1.5rem;align-items:start;">
-            <!-- Left: Automation Engine -->
-            <div style="display:flex;flex-direction:column;gap:1.25rem;">
-              <div class="adm-card" style="padding:1.5rem;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
-                  <div>
-                    <h3 style="font-size:1.05rem;font-weight:800;margin:0;color:#1e293b;display:flex;align-items:center;gap:.5rem;">
-                      <span>🤖 WhatsApp Business Automated Triggers</span>
-                    </h3>
-                    <p style="font-size:.8rem;color:var(--adm-muted);margin:2px 0 0 0;">Automatic WhatsApp messages sent during customer lifecycle events</p>
-                  </div>
-                  <button type="button" id="wa-save-settings-btn" class="adm-btn adm-btn-primary" style="font-weight:700;">
-                    💾 Save WhatsApp Settings
-                  </button>
-                </div>
-
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem;">
-                  <div>
-                    <label class="adm-label" style="font-weight:700;">Restaurant WhatsApp Number</label>
-                    <input type="tel" id="wa-biz-phone" class="adm-input" value="+91 99999 88888" style="width:100%;margin-top:.3rem;" />
-                  </div>
-                  <div>
-                    <label class="adm-label" style="font-weight:700;">WhatsApp Sender Display Name</label>
-                    <input type="text" id="wa-biz-name" class="adm-input" value="LIMRA RESTAURANT" style="width:100%;margin-top:.3rem;" />
-                  </div>
-                </div>
-
-                <!-- 5 Automation Feature Rows -->
-                <div style="display:flex;flex-direction:column;gap:.75rem;">
-                  <div style="display:flex;justify-content:space-between;align-items:center;padding:.85rem;background:#f8fafc;border:1px solid var(--adm-border);border-radius:10px;">
-                    <div>
-                      <strong style="font-size:.9rem;color:#1e293b;">🔔 Order Confirmation Notification</strong>
-                      <p style="font-size:.78rem;color:var(--adm-muted);margin:2px 0 0 0;">Auto-send WhatsApp confirmation when order is placed or confirmed</p>
-                    </div>
-                    <label class="switch" style="margin:0;">
-                      <input type="checkbox" id="wa-auto-confirm" checked />
-                      <span class="slider round"></span>
-                    </label>
-                  </div>
-
-                  <div style="display:flex;justify-content:space-between;align-items:center;padding:.85rem;background:#f8fafc;border:1px solid var(--adm-border);border-radius:10px;">
-                    <div>
-                      <strong style="font-size:.9rem;color:#1e293b;">🚗 Out for Delivery &amp; Live Tracking Link</strong>
-                      <p style="font-size:.78rem;color:var(--adm-muted);margin:2px 0 0 0;">Send rider details &amp; live Google Maps ETA route to the customer</p>
-                    </div>
-                    <label class="switch" style="margin:0;">
-                      <input type="checkbox" id="wa-auto-delivery" checked />
-                      <span class="slider round"></span>
-                    </label>
-                  </div>
-
-                  <div style="display:flex;justify-content:space-between;align-items:center;padding:.85rem;background:#f8fafc;border:1px solid var(--adm-border);border-radius:10px;">
-                    <div>
-                      <strong style="font-size:.9rem;color:#1e293b;">🍽️ Table QR Order &amp; Digital Bill Ready</strong>
-                      <p style="font-size:.78rem;color:var(--adm-muted);margin:2px 0 0 0;">Send instant digital receipt &amp; UPI payment link to dining table guests</p>
-                    </div>
-                    <label class="switch" style="margin:0;">
-                      <input type="checkbox" id="wa-auto-table" checked />
-                      <span class="slider round"></span>
-                    </label>
-                  </div>
-
-                  <div style="display:flex;justify-content:space-between;align-items:center;padding:.85rem;background:#f8fafc;border:1px solid var(--adm-border);border-radius:10px;">
-                    <div>
-                      <strong style="font-size:.9rem;color:#1e293b;">⭐ Google 5-Star Review Booster Invite</strong>
-                      <p style="font-size:.78rem;color:var(--adm-muted);margin:2px 0 0 0;">Send polite Google review invite 15 minutes after food delivery</p>
-                    </div>
-                    <label class="switch" style="margin:0;">
-                      <input type="checkbox" id="wa-auto-review" checked />
-                      <span class="slider round"></span>
-                    </label>
-                  </div>
-
-                  <div style="display:flex;justify-content:space-between;align-items:center;padding:.85rem;background:#f8fafc;border:1px solid var(--adm-border);border-radius:10px;">
-                    <div>
-                      <strong style="font-size:.9rem;color:#1e293b;">🎁 Promo Coupon &amp; VIP Deal Alerts</strong>
-                      <p style="font-size:.78rem;color:var(--adm-muted);margin:2px 0 0 0;">Auto-attach active promo coupons (e.g. WELCOME10) in greeting messages</p>
-                    </div>
-                    <label class="switch" style="margin:0;">
-                      <input type="checkbox" id="wa-auto-promo" checked />
-                      <span class="slider round"></span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Right: 1-Click Direct Chat & Messenger -->
-            <div style="display:flex;flex-direction:column;gap:1.25rem;">
-              <div class="adm-card" style="padding:1.5rem;border-left:4px solid #25D366;">
-                <h3 style="font-size:1.05rem;font-weight:800;margin:0 0 1rem 0;color:#1e293b;display:flex;align-items:center;gap:.5rem;">
-                  <span>💬 1-Click WhatsApp Direct Chat</span>
-                </h3>
-
-                <div style="margin-bottom:.85rem;">
-                  <label class="adm-label" style="font-weight:700;">Customer Phone Number</label>
-                  <input type="tel" id="wa-direct-phone" class="adm-input" placeholder="+91 98765 43210" style="width:100%;margin-top:.3rem;" />
-                </div>
-
-                <div style="margin-bottom:.85rem;">
-                  <label class="adm-label" style="font-weight:700;">Select Quick Template</label>
-                  <select id="wa-direct-template-select" class="adm-select" style="width:100%;margin-top:.3rem;">
-                    <option value="confirm">✅ Order Confirmation &amp; Greeting</option>
-                    <option value="delivery">🚗 Food Dispatched / Out for Delivery</option>
-                    <option value="review">⭐ Google 5-Star Review Request</option>
-                    <option value="coupon">🎁 20% OFF Promo Coupon Code</option>
-                    <option value="table">🍽️ Table Reservation Confirmed</option>
-                    <option value="custom">✏️ Custom Message</option>
-                  </select>
-                </div>
-
-                <div style="margin-bottom:1rem;">
-                  <label class="adm-label" style="font-weight:700;">Message Preview</label>
-                  <textarea id="wa-direct-msg" class="adm-input" rows="5" style="width:100%;resize:vertical;margin-top:.3rem;font-size:.85rem;line-height:1.4;"></textarea>
-                </div>
-
-                <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
-                  <button type="button" id="wa-send-direct-btn" class="adm-btn adm-btn-primary" style="flex:1;background:#25D366;border-color:#25D366;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:.35rem;">
-                    <span>💬</span> Send via WhatsApp
-                  </button>
-                  <button type="button" id="wa-copy-direct-btn" class="adm-btn adm-btn-outline" title="Copy text" style="padding:.5rem .75rem;">
-                    📋 Copy
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 3. THERMAL PRINTER SUBTAB -->
-        <div id="settings-subtab-printer" class="settings-subtab-pane" style="display:none;"></div>
-
-        <!-- 4. GOOGLE PROFILE SUBTAB -->
-        <div id="settings-subtab-profile" class="settings-subtab-pane" style="display:none;"></div>
-
-        <!-- 5. GOOGLE SHEETS SYNC SUBTAB -->
-        <div id="settings-subtab-sheets" class="settings-subtab-pane" style="display:none;"></div>
+        <!-- Hidden Native Driver Thermal Print IFrame -->
+        <iframe id="thermal-native-print-frame" style="position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none;"></iframe>
       </section>
 
       <!-- ═════════════════════════════════════════════════════════════════════ -->
@@ -3415,6 +4290,106 @@
         </div>
 
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Hold Order Settle & Payment Method Selection Modal -->
+<div id="adm-hold-settle-modal" class="adm-hold-modal" style="display:none;align-items:center;justify-content:center;z-index:10001;">
+  <div class="adm-hold-modal-content" style="max-width:500px;border-radius:18px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,0.35);border:1.5px solid var(--adm-border);background:#fffdfa;">
+    
+    <!-- Modal Header with tasteful gold accent -->
+    <div style="padding:1.1rem 1.35rem;background:linear-gradient(135deg, #1e293b 0%, #0f172a 100%);color:#fff;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #d97706;">
+      <div>
+        <h3 style="font-size:1.12rem;font-weight:800;margin:0;display:flex;align-items:center;gap:.5rem;color:#fff;">
+          <span style="color:#fbbf24;">💳</span> Confirm Payment &amp; Settle
+        </h3>
+        <p id="hold-settle-modal-subtitle" style="font-size:.78rem;color:#94a3b8;margin:2px 0 0 0;">
+          Select payment mode to finalize bill and complete settlement
+        </p>
+      </div>
+      <button type="button" id="hold-settle-close-btn" style="background:rgba(255,255,255,0.1);border:none;color:#fff;font-size:1.15rem;width:30px;height:30px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;">✕</button>
+    </div>
+
+    <!-- Modal Body -->
+    <div style="padding:1.25rem 1.35rem;display:flex;flex-direction:column;gap:1rem;background:#fcfbf9;">
+      
+      <!-- Order / Table Summary Card -->
+      <div style="background:#fff;border:1px solid #e2d9cc;border-radius:12px;padding:.85rem 1rem;display:flex;flex-direction:column;gap:.4rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span id="hold-settle-order-title" style="font-size:.95rem;font-weight:800;color:#1e293b;">
+            🪑 Table 04
+          </span>
+          <span id="hold-settle-order-badge" style="font-size:.72rem;font-weight:700;padding:.15rem .5rem;border-radius:999px;background:#eef2ff;color:#4f46e5;border:1px solid #c7d2fe;">
+            Dine-In
+          </span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--adm-muted);">
+          <span id="hold-settle-customer-name">Walk-in Guest</span>
+          <span id="hold-settle-items-count">0 Dishes</span>
+        </div>
+      </div>
+
+      <!-- Prominent Final Payable Amount Card -->
+      <div style="background:linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);border:1.5px solid #f59e0b;border-radius:14px;padding:1rem 1.15rem;text-align:center;">
+        <div style="font-size:.75rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#92400e;">
+          Total Payable Amount
+        </div>
+        <div id="hold-settle-payable-amount" style="font-size:2rem;font-weight:900;color:#b45309;margin:.2rem 0;letter-spacing:-0.02em;">
+          ₹0.00
+        </div>
+        <div id="hold-settle-amount-breakdown" style="font-size:.76rem;color:#78350f;display:flex;justify-content:center;gap:.6rem;flex-wrap:wrap;">
+          <span>Subtotal: ₹0.00</span>
+          <span>•</span>
+          <span>5% GST: ₹0.00</span>
+        </div>
+      </div>
+
+      <!-- Payment Method Selection (Cash vs UPI) -->
+      <div>
+        <label style="display:block;font-size:.8rem;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#475569;margin-bottom:.55rem;">
+          Select Payment Method *
+        </label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;" id="hold-settle-methods-grid">
+          
+          <!-- Cash Method Card -->
+          <button type="button" id="hold-settle-method-cash" class="hold-settle-method-card active" data-method="cash" style="background:#fff;border:2.5px solid #d97706;border-radius:12px;padding:.85rem .75rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:.3rem;transition:all .15s ease;text-align:center;box-shadow:0 4px 12px rgba(217,119,6,0.12);">
+            <span style="font-size:1.6rem;line-height:1;">💵</span>
+            <strong style="font-size:.92rem;color:#1e293b;">Cash</strong>
+            <span style="font-size:.72rem;color:#64748b;">Physical Cash</span>
+            <span class="hold-settle-check-pill" style="font-size:.68rem;font-weight:800;background:#d97706;color:#fff;padding:2px 8px;border-radius:999px;margin-top:2px;">✓ Selected</span>
+          </button>
+
+          <!-- UPI Method Card -->
+          <button type="button" id="hold-settle-method-upi" class="hold-settle-method-card" data-method="upi" style="background:#fff;border:1.5px solid #cbd5e1;border-radius:12px;padding:.85rem .75rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:.3rem;transition:all .15s ease;text-align:center;">
+            <span style="font-size:1.6rem;line-height:1;">📱</span>
+            <strong style="font-size:.92rem;color:#1e293b;">UPI / QR</strong>
+            <span style="font-size:.72rem;color:#64748b;">GPay · PhonePe · Paytm</span>
+            <span class="hold-settle-check-pill" style="display:none;font-size:.68rem;font-weight:800;background:#d97706;color:#fff;padding:2px 8px;border-radius:999px;margin-top:2px;">✓ Selected</span>
+          </button>
+
+        </div>
+      </div>
+
+      <!-- Optional UPI Transaction Reference / UTR -->
+      <div id="hold-settle-upi-ref-wrap" style="display:none;flex-direction:column;gap:.35rem;">
+        <label for="hold-settle-upi-ref" style="font-size:.78rem;font-weight:700;color:#475569;">
+          UPI Reference / UTR Number (Optional)
+        </label>
+        <input type="text" id="hold-settle-upi-ref" class="adm-input" placeholder="e.g. 429381029481" style="width:100%;font-size:.85rem;background:#fff;" />
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display:flex;gap:.75rem;margin-top:.4rem;">
+        <button type="button" id="hold-settle-cancel-btn" class="adm-btn adm-btn-outline" style="flex:1;font-weight:700;padding:.65rem;border-color:#cbd5e1;color:#64748b;">
+          ✕ Cancel
+        </button>
+        <button type="button" id="hold-settle-confirm-btn" class="adm-btn adm-btn-primary" style="flex:2;font-weight:800;padding:.65rem;background:#10b981;border-color:#10b981;display:flex;align-items:center;justify-content:center;gap:.4rem;">
+          <span id="hold-settle-confirm-icon">✓</span>
+          <span id="hold-settle-confirm-text">Confirm Payment &amp; Settle</span>
+        </button>
+      </div>
+
     </div>
   </div>
 </div>

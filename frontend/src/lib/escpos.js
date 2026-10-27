@@ -2,7 +2,7 @@
  * LIMRA Restaurant POS V2 — ESC/POS Thermal Printing Formatter
  * Supports both standard 80mm (48 cols) and compact 58mm (32 cols) hardware printers.
  */
-import { calculateOrderBilling, parseNotesBillingMetadata } from './billing-engine.js';
+import { calculateOrderBilling, parseNotesBillingMetadata, formatBillAmount, formatRupee } from './billing-engine.js';
 
 // ESC/POS Command Codes
 export const COMMANDS = {
@@ -100,7 +100,7 @@ export function buildEscPosBill(order = {}, items = [], settings = {}, options =
   let out = COMMANDS.INIT;
 
   // 1. Kick cash drawer if payment is cash
-  const payMode = (order.payment_mode || '').toLowerCase();
+  const payMode = (order.payment_method || order.payment_mode || '').toLowerCase();
   if (payMode.includes('cash')) {
     out += COMMANDS.DRAWER_KICK;
   }
@@ -216,7 +216,8 @@ export function buildEscPosBill(order = {}, items = [], settings = {}, options =
 
   // 7. Totals & Tax Calculation
   const parsedMeta = parseNotesBillingMetadata(order.notes);
-  const deliveryFee = Number(order.delivery_fee ?? parsedMeta.deliveryFee ?? 0);
+  const isDelivery = orderType === 'DELIVERY' || order.order_type === 'delivery';
+  const deliveryFee = isDelivery ? Number(order.delivery_fee ?? parsedMeta.deliveryFee ?? 0) : 0;
   const discountAmt = Number(order.discount_amount ?? parsedMeta.discountAmt ?? 0);
   const discountPct = Number(parsedMeta.discountPct ?? 0);
   const cgstRate = Number(settings.cgst_rate ?? parsedMeta.cgstRate ?? 2.5);
@@ -254,15 +255,19 @@ export function buildEscPosBill(order = {}, items = [], settings = {}, options =
   if (deliveryFee > 0) {
     out += formatTwoColumns('Delivery Fee:', `₹${deliveryFee.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
   }
+  if (billing.roundOff !== 0) {
+    const sign = billing.roundOff < 0 ? '-' : '+';
+    out += formatTwoColumns('Round Off:', `${sign}₹${Math.abs(billing.roundOff).toFixed(2)}`, width) + COMMANDS.LINE_FEED;
+  }
 
   out += doubleSeparator + COMMANDS.LINE_FEED;
   out += COMMANDS.BOLD_ON + COMMANDS.DOUBLE_HEIGHT;
-  out += formatTwoColumns('GRAND TOTAL:', `₹${grandTotal.toFixed(2)}`, width) + COMMANDS.LINE_FEED;
+  out += formatTwoColumns('GRAND TOTAL:', formatBillAmount(grandTotal), width) + COMMANDS.LINE_FEED;
   out += COMMANDS.NORMAL;
   out += doubleSeparator + COMMANDS.LINE_FEED;
 
   // 8. Payment Mode
-  const paymentMode = (order.payment_mode || 'CASH').toUpperCase();
+  const paymentMode = (order.payment_method || order.payment_mode || 'CASH').toUpperCase();
   const paymentStatus = (order.payment_status || 'PAID').toUpperCase();
   out += formatTwoColumns(`Payment: ${paymentMode}`, `Status: ${paymentStatus}`, width) + COMMANDS.LINE_FEED;
 

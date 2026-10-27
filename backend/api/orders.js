@@ -589,27 +589,65 @@ export default async function handler(req, res) {
         });
       }
 
-      const { status, orderType, tableNumber, limit = 100 } = req.query || {};
-      let query = supabase.from("orders").select("*, items:order_items(*)");
+      const {
+        status,
+        orderType,
+        tableNumber,
+        limit,
+        pageSize,
+        page,
+        offset,
+        startDate,
+        endDate,
+        from,
+        to
+      } = req.query || {};
+
+      let query = supabase.from("orders").select("*, items:order_items(*)", { count: "exact" });
 
       // If customer, only permit viewing own orders
       if (!isStaff) {
         query = query.eq("user_id", currentUser.id);
       } else {
-        if (status) query = query.eq("status", sanitizeOrderStatus(status));
+        if (status) {
+          const s = String(status).toLowerCase().trim();
+          if (s === "closed" || s === "settled") {
+            query = query.or("status.in.(delivered,completed,closed,cancelled),payment_status.eq.paid");
+          } else {
+            query = query.eq("status", sanitizeOrderStatus(s));
+          }
+        }
         if (orderType) query = query.eq("order_type", orderType);
         if (tableNumber) query = query.eq("table_number", parseInt(tableNumber, 10));
       }
 
-      const maxLimit = Math.min(parseInt(limit, 10) || 100, 500);
-      query = query.order("created_at", { ascending: false }).limit(maxLimit);
+      // Date range filtering with timezone safety
+      const startFilter = startDate || from;
+      const endFilter = endDate || to;
+      if (startFilter) query = query.gte("created_at", startFilter);
+      if (endFilter) query = query.lte("created_at", endFilter);
 
-      const { data: orders, error: getErr } = await query;
+      query = query.order("created_at", { ascending: false });
+
+      // Pagination & offset resolution
+      const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+      const rawLimit = parseInt(pageSize || limit, 10);
+      const resolvedSize = Math.min(Math.max(1, isNaN(rawLimit) ? 100 : rawLimit), 1000);
+      const startOffset = offset !== undefined && !isNaN(parseInt(offset, 10))
+        ? parseInt(offset, 10)
+        : (parsedPage - 1) * resolvedSize;
+
+      query = query.range(startOffset, startOffset + resolvedSize - 1);
+
+      const { data: orders, error: getErr, count } = await query;
       if (getErr) throw new Error(getErr.message);
 
       return res.status(200).json({
         success: true,
         count: orders ? orders.length : 0,
+        totalCount: typeof count === "number" ? count : (orders ? orders.length : 0),
+        page: parsedPage,
+        pageSize: resolvedSize,
         data: orders || []
       });
     }
@@ -791,6 +829,15 @@ export default async function handler(req, res) {
       const updatePayload = { updated_at: new Date().toISOString() };
       if (status) updatePayload.status = sanitizeOrderStatus(status);
       if (payment_status && userRole !== "kitchen") updatePayload.payment_status = sanitizePaymentStatus(payment_status);
+      if (req.body.payment_method && userRole !== "kitchen") {
+        const pm = String(req.body.payment_method).toLowerCase().trim();
+        if (["cash", "upi", "card", "pay_later", "mixed"].includes(pm)) {
+          updatePayload.payment_method = pm;
+        }
+      }
+      if (req.body.txn_ref) {
+        updatePayload.txn_ref = String(req.body.txn_ref).trim();
+      }
       if (notes !== undefined) updatePayload.notes = notes;
       if (ticket_status && userRole !== "kitchen") updatePayload.ticket_status = ticket_status;
       if (reqIdempotencyKey) updatePayload.idempotency_key = reqIdempotencyKey;
