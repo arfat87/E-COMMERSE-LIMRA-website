@@ -248,31 +248,48 @@ DECLARE
   v_stk public.stock_items%ROWTYPE;
   v_deducted_count integer := 0;
   v_already_logged boolean := false;
+  v_order_tag text := 'Order #' || COALESCE(p_order_number, 0) ||
+    CASE WHEN p_order_id IS NOT NULL THEN ' [OrderID:' || p_order_id::text || ']' ELSE '' END;
 BEGIN
-  -- 4.1 Idempotency Check: Prevent duplicate deductions for the same order
+  -- 4.1 Idempotency Check: Prevent duplicate deductions for the same order (by order_id or order_number)
   SELECT EXISTS (
     SELECT 1 FROM public.stock_logs
     WHERE action = 'ORDER_DEDUCT'
-      AND details ILIKE '%Order #' || p_order_number || '%'
+      AND (
+        (p_order_number IS NOT NULL AND p_order_number > 0 AND details ILIKE '%Order #' || p_order_number || '%')
+        OR (p_order_id IS NOT NULL AND details ILIKE '%[OrderID:' || p_order_id::text || ']%')
+      )
   ) INTO v_already_logged;
 
   IF v_already_logged THEN
     RETURN jsonb_build_object(
       'success', true,
       'already_deducted', true,
-      'message', 'Inventory was already deducted for Order #' || p_order_number
+      'deducted_count', 0,
+      'message', 'Inventory was already deducted for Order #' || COALESCE(p_order_number, 0)
     );
   END IF;
 
   IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN
-    RETURN jsonb_build_object('success', true, 'deducted_count', 0);
+    RETURN jsonb_build_object('success', true, 'already_deducted', false, 'deducted_count', 0);
   END IF;
 
-  -- 4.2 Deduct each item atomically with row-level locking
-  FOR v_item IN SELECT value FROM jsonb_array_elements(p_items)
+  -- 4.2 Deduct each consolidated item atomically with row-level locking
+  FOR v_item IN
+    SELECT jsonb_build_object(
+      'name', clean_name,
+      'quantity', SUM(item_qty)
+    )
+    FROM (
+      SELECT trim(regexp_replace(COALESCE(val->>'name', val->>'item_name', ''), '\s*\[Note:.*\]$', '', 'i')) AS clean_name,
+             GREATEST(1, COALESCE((val->>'quantity')::numeric, (val->>'qty')::numeric, 1)) AS item_qty
+      FROM jsonb_array_elements(p_items) AS val
+    ) raw_items
+    WHERE clean_name <> ''
+    GROUP BY clean_name
   LOOP
-    v_qty := GREATEST(1, COALESCE((v_item->>'quantity')::numeric, (v_item->>'qty')::numeric, 1));
-    v_name := trim(COALESCE(v_item->>'name', v_item->>'item_name', ''));
+    v_qty := GREATEST(1, COALESCE((v_item->>'quantity')::numeric, 1));
+    v_name := trim(COALESCE(v_item->>'name', ''));
 
     IF v_name <> '' THEN
       -- Lock the stock_item row exclusively to prevent race conditions
@@ -295,7 +312,7 @@ BEGIN
         VALUES (
           gen_random_uuid(),
           'ORDER_DEDUCT',
-          v_stk.name || ' deducted ' || v_qty || ' ' || COALESCE(v_stk.unit, 'pcs') || ' for Order #' || p_order_number,
+          v_stk.name || ' deducted ' || v_qty || ' ' || COALESCE(v_stk.unit, 'pcs') || ' for ' || v_order_tag,
           now()
         );
 
@@ -311,7 +328,7 @@ BEGIN
           v_qty,
           to_char(now(), 'DD-MM-YYYY'),
           'System Order Settlement',
-          'Auto deduction for Order #' || p_order_number,
+          'Auto deduction for ' || v_order_tag,
           now()
         );
 
@@ -344,9 +361,13 @@ SET search_path = ''
 AS $$
 DECLARE
   v_order public.orders%ROWTYPE;
+  v_prev_pay_status text;
   v_items jsonb;
+  v_inv_result jsonb := jsonb_build_object('success', true, 'already_deducted', false, 'deducted_count', 0);
   v_cashier_id uuid := auth.uid();
   v_clean_key text := NULLIF(trim(COALESCE(p_idempotency_key, '')), '');
+  v_clean_method text := lower(trim(COALESCE(NULLIF(trim(COALESCE(p_payment_method, '')), ''), 'cash')));
+  v_history_inserted boolean := false;
 BEGIN
   -- 5.1 RBAC Enforcement: Staff authorization required
   IF NOT public.is_admin() THEN
@@ -363,6 +384,10 @@ BEGIN
     RAISE EXCEPTION 'ORDER_NOT_FOUND: Order % does not exist', p_order_id;
   END IF;
 
+  IF v_order.status = 'cancelled' OR v_order.ticket_status = 'CANCELLED' THEN
+    RAISE EXCEPTION 'ORDER_CANCELLED: Order #% is cancelled and cannot be settled.', v_order.order_number;
+  END IF;
+
   -- 5.3 Concurrency Protection: If already settled, check idempotency or reject
   IF v_order.ticket_status = 'CLOSED' AND v_order.payment_status = 'paid' THEN
     -- If same cashier/client is retrying with idempotency key, return existing settlement
@@ -374,6 +399,7 @@ BEGIN
         'status', v_order.status,
         'payment_status', v_order.payment_status,
         'ticket_status', v_order.ticket_status,
+        'payment_method', v_order.payment_method,
         'total_amount', v_order.total_amount,
         'idempotent_replay', true,
         'message', 'Order already settled'
@@ -383,29 +409,44 @@ BEGIN
     END IF;
   END IF;
 
+  v_prev_pay_status := COALESCE(v_order.payment_status, 'unpaid');
+  IF v_clean_method = 'online' THEN
+    v_clean_method := 'upi';
+  END IF;
+
   -- 5.4 Update Order State Atomically
   UPDATE public.orders
   SET status = 'delivered',
       payment_status = 'paid',
       ticket_status = 'CLOSED',
-      payment_method = COALESCE(p_payment_method, v_order.payment_method, 'cash'),
+      payment_method = COALESCE(v_clean_method, v_order.payment_method, 'cash'),
+      notes = COALESCE(NULLIF(trim(COALESCE(p_notes, '')), ''), v_order.notes),
       idempotency_key = COALESCE(v_clean_key, v_order.idempotency_key),
       updated_at = now()
   WHERE id = p_order_id
   RETURNING * INTO v_order;
 
-  -- 5.5 Record Payment Audit Log
-  INSERT INTO public.payment_history (
-    order_id, previous_status, new_status, change_reason, changed_by, created_at
-  )
-  VALUES (
-    p_order_id,
-    'unpaid',
-    'paid',
-    COALESCE(p_notes, 'POS Final Bill Settlement'),
-    v_cashier_id,
-    now()
-  );
+  -- 5.5 Record Payment Audit Log (Idempotent: prevent duplicate paid history rows)
+  IF NOT EXISTS (
+    SELECT 1 FROM public.payment_history
+    WHERE order_id = p_order_id
+      AND new_status = 'paid'
+  ) THEN
+    INSERT INTO public.payment_history (
+      order_id, user_id, previous_status, new_status, changed_by, notes, reason, created_at
+    )
+    VALUES (
+      p_order_id,
+      v_cashier_id,
+      v_prev_pay_status,
+      'paid',
+      COALESCE(v_cashier_id::text, 'pos_cashier'),
+      COALESCE(NULLIF(trim(COALESCE(p_notes, '')), ''), 'POS Final Bill Settlement (' || UPPER(v_order.payment_method) || ')'),
+      'POS Final Bill Settlement (' || UPPER(v_order.payment_method) || ')',
+      now()
+    );
+    v_history_inserted := true;
+  END IF;
 
   -- 5.6 Fetch order items for inventory deduction
   SELECT jsonb_agg(
@@ -419,31 +460,37 @@ BEGIN
 
   -- 5.7 Trigger Atomic Inventory Deduction
   IF v_items IS NOT NULL AND jsonb_array_length(v_items) > 0 THEN
-    PERFORM public.deduct_order_inventory_atomic(p_order_id, v_order.order_number, v_items);
+    v_inv_result := public.deduct_order_inventory_atomic(p_order_id, v_order.order_number, v_items);
   END IF;
 
   -- 5.8 Enqueue External Side Effect (Google Sheets Sync) into Outbox Queue
-  INSERT INTO public.sync_queue (
-    entity_type, entity_id, payload, status, created_at, updated_at
-  )
-  VALUES (
-    'google_sheet',
-    v_order.id::text,
-    jsonb_build_object(
-      'order_id', v_order.id,
-      'order_number', v_order.order_number,
-      'total_amount', v_order.total_amount,
-      'order_type', v_order.order_type,
-      'payment_method', v_order.payment_method,
-      'table_number', v_order.table_number,
-      'customer_name', v_order.customer_name,
-      'customer_phone', v_order.customer_phone,
-      'settled_at', now()
-    ),
-    'pending',
-    now(),
-    now()
-  );
+  IF NOT EXISTS (
+    SELECT 1 FROM public.sync_queue
+    WHERE entity_type = 'google_sheet'
+      AND entity_id = v_order.id::text
+  ) THEN
+    INSERT INTO public.sync_queue (
+      entity_type, entity_id, payload, status, created_at, updated_at
+    )
+    VALUES (
+      'google_sheet',
+      v_order.id::text,
+      jsonb_build_object(
+        'order_id', v_order.id,
+        'order_number', v_order.order_number,
+        'total_amount', v_order.total_amount,
+        'order_type', v_order.order_type,
+        'payment_method', v_order.payment_method,
+        'table_number', v_order.table_number,
+        'customer_name', v_order.customer_name,
+        'customer_phone', v_order.customer_phone,
+        'settled_at', now()
+      ),
+      'pending',
+      now(),
+      now()
+    );
+  END IF;
 
   RETURN jsonb_build_object(
     'success', true,
@@ -452,7 +499,10 @@ BEGIN
     'status', v_order.status,
     'payment_status', v_order.payment_status,
     'ticket_status', v_order.ticket_status,
+    'payment_method', v_order.payment_method,
     'total_amount', v_order.total_amount,
+    'payment_history_inserted', v_history_inserted,
+    'inventory', v_inv_result,
     'idempotent_replay', false,
     'message', 'Order settled and closed successfully'
   );

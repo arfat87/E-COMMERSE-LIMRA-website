@@ -138,8 +138,19 @@ let activeCustomDishes = [];
 function applyTableOverrides(overrides) {
   if (!overrides || !Array.isArray(overrides)) return;
   menuItems.forEach(item => {
-    const override = overrides.find(o => o.id === item.id);
+    const override = overrides.find(o => String(o.id) === String(item.id));
     if (override) {
+      if (override.name) item.name = override.name;
+      if (override.category) item.category = override.category;
+      if (override.diet) {
+        item.diet = override.diet;
+        item.is_veg = override.diet === 'veg';
+      }
+      if (override.image) item.image = override.image;
+      if (override.is_deleted === true || (typeof override.description === 'string' && override.description.includes('[DELETED]'))) {
+        item.is_deleted = true;
+        item.available = false;
+      }
       if (override.price !== null && override.price !== undefined) item.price = parseFloat(override.price);
       if (override.mrp !== null && override.mrp !== undefined) item.mrp = parseFloat(override.mrp);
       if (override.available !== undefined) item.available = override.available;
@@ -281,7 +292,7 @@ function renderMenu() {
   const grid = $('#food-cards-grid');
   const searchVal = $('#food-search-input').value.toLowerCase().trim();
 
-  const allDishes = [...menuItems, ...(activeCustomDishes || [])];
+  const allDishes = [...menuItems, ...(activeCustomDishes || [])].filter(item => item.is_deleted !== true);
 
   // Filter items (skip normal items if combo category selected)
   const filtered = allDishes.filter(item => {

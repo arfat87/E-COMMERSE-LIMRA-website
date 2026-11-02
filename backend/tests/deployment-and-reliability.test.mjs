@@ -10,6 +10,7 @@
  * 6. Health Check Endpoint (/api/db-status) Contract & Structural Conformance
  */
 
+import "./test-env-guard.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";

@@ -3,7 +3,7 @@
 // ═════════════════════════════════════════════════════════════════════
 
 import { insforge } from '../lib/insforge.js';
-import { INITIAL_STOCK_ITEMS } from '../stock-manager/data/initialStockData.js';
+import { INITIAL_STOCK_ITEMS } from './initial-stock-data.js';
 import { safeNum } from './stock-engine.js';
 
 const STORAGE_KEY_ITEMS = 'limra_stock_items_v3';

@@ -1,3 +1,4 @@
+import "./test-env-guard.mjs";
 import assert from "node:assert/strict";
 import crypto from "crypto";
 import createOrderHandler from "../api/create-order.js";

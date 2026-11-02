@@ -1,4 +1,4 @@
-// Auto-generated initial database fallback seed
+// Auto-generated initial database fallback seed for stock module
 export const INITIAL_STOCK_ITEMS = [
   { id: "stk_1785945130881", sku: "J136", name: "THUMSUP 1L", category: "Cold Drinks", unit: "pcs", qty: 0, min_qty: 10, cost_price: 50, supplier: "", is_available: true, updated_at: "2026-08-05T15:52:10.881Z" },
   { id: "stk_4", sku: "J004", name: "Mustard Oil (মাস্টার অয়েল)", category: "Bhusimal & Spices", unit: "L", qty: 2, min_qty: 1, cost_price: 180, supplier: "Egra Supplier", is_available: true, updated_at: "2026-08-15T13:10:05.581Z" },

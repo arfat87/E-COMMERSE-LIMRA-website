@@ -23,7 +23,13 @@ BEGIN
     RAISE EXCEPTION 'Invalid payment transition: Refunded orders cannot be altered back to paid or unpaid.';
   END IF;
 
-  -- 1.2 Ticket Lifecycle Transition Invariants
+  -- 1.2 Prevent cancelling paid or closed orders
+  IF (OLD.ticket_status = 'CLOSED' OR OLD.payment_status = 'paid' OR OLD.status = 'delivered')
+     AND (NEW.status = 'cancelled' OR NEW.ticket_status = 'CANCELLED') THEN
+    RAISE EXCEPTION 'Invalid transition: Paid or closed orders cannot be cancelled.';
+  END IF;
+
+  -- 1.3 Ticket Lifecycle Transition Invariants
   -- Closed tickets cannot be reopened
   IF OLD.ticket_status = 'CLOSED' AND NEW.ticket_status <> 'CLOSED' THEN
     RAISE EXCEPTION 'Invalid ticket transition: Closed tickets cannot be reopened.';
@@ -34,15 +40,29 @@ BEGIN
     RAISE EXCEPTION 'Invalid ticket transition: Cancelled tickets cannot be reopened.';
   END IF;
 
-  -- Closed ticket total_amount cannot be tampered with
-  IF OLD.ticket_status = 'CLOSED' AND NEW.total_amount <> OLD.total_amount THEN
+  -- Closed ticket total_amount cannot be tampered with unless in authorized atomic amendment
+  IF OLD.ticket_status = 'CLOSED' AND NEW.total_amount <> OLD.total_amount
+     AND COALESCE(current_setting('limra.authorized_amendment', true), '') <> 'true' THEN
     RAISE EXCEPTION 'Invalid operation: Total amount of a closed ticket cannot be modified.';
   END IF;
 
-  -- 1.3 Fulfillment Status Transition Invariants
+  -- Voided / refunded invoices are permanently locked against total modification
+  IF (OLD.payment_status = 'refunded' OR COALESCE(OLD.notes, '') LIKE '%[VOIDED]%')
+     AND NEW.total_amount <> OLD.total_amount THEN
+    RAISE EXCEPTION 'Invalid operation: Voided invoice total cannot be modified.';
+  END IF;
+
+  -- 1.4 Fulfillment Status Transition Invariants
   -- Cancelled orders cannot be un-cancelled
   IF OLD.status = 'cancelled' AND NEW.status <> 'cancelled' THEN
     RAISE EXCEPTION 'Invalid fulfillment transition: Cancelled orders cannot be reactivated.';
+  END IF;
+
+  -- 1.5 Keep status = 'cancelled' and ticket_status = 'CANCELLED' synchronized
+  IF NEW.status = 'cancelled' AND NEW.ticket_status <> 'CANCELLED' THEN
+    NEW.ticket_status := 'CANCELLED';
+  ELSIF NEW.ticket_status = 'CANCELLED' AND NEW.status <> 'cancelled' THEN
+    NEW.status := 'cancelled';
   END IF;
 
   RETURN NEW;

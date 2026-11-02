@@ -44,13 +44,15 @@ const apiHandlers = {
   "/api/db": () => import("./api/db.js"),
   "/api/orders": () => import("./api/orders.js"),
   "/api/menu": () => import("./api/menu.js"),
+  "/api/upload-image": () => import("./api/upload.js"),
   "/api/db-status": () => import("./api/db-status.js"),
   "/api/verify-payment": () => import("./api/verify-payment.js"),
   "/api/create-order": () => import("./api/create-order.js"),
   "/api/webhook": () => import("./api/webhook.js"),
   "/api/razorpay-webhook": () => import("./api/webhook.js"),
   "/api/analytics": () => import("./api/analytics.js"),
-  "/api/auth": () => import("./api/auth.js")
+  "/api/auth": () => import("./api/auth.js"),
+  "/api/print-silent": () => import(`./api/print-silent.js?t=${Date.now()}`)
 };
 
 async function parseBody(req) {
@@ -208,7 +210,7 @@ server.listen(PORT, async () => {
   console.log(`📍 Local URL:       http://localhost:${PORT}`);
   console.log(`📊 Admin Login:     http://localhost:${PORT}/admin-login.html`);
   console.log(`🍽️ Table Order:     http://localhost:${PORT}/table/index.html`);
-  console.log(`📦 Stock Manager:   http://localhost:${PORT}/stock-manager/index.html`);
+  console.log(`📦 Stock Inventory: http://localhost:${PORT}/admin.html#panel-stock`);
   console.log(`==================================================\n`);
 
   try {

@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { offlineSync } from "./offline-sync.js";
+import { offlineSync, POS_MUTATION_TYPES, ERROR_TYPES, classifyError } from "./offline-sync.js";
 import {
   getOrFetchRef,
   invalidateRefCache,
@@ -11,6 +11,9 @@ import {
 } from "./reference-cache.js";
 export {
   offlineSync,
+  POS_MUTATION_TYPES,
+  ERROR_TYPES,
+  classifyError,
   getOrFetchRef,
   invalidateRefCache,
   invalidateAllRefCaches,
@@ -610,45 +613,167 @@ export async function getCustomerOrders(phone) {
   return normalizeRpcList(json.data);
 }
 
-export async function getMenuOverrides(force = false) {
-  return await getOrFetchRef('menu_overrides', async () => {
-    const { data, error } = await supabase.from("menu_overrides").select("*");
-    if (!error && data) {
-      return data.map(item => ({
-        ...item,
-        gst_applicable: item.gst_applicable !== undefined
-          ? item.gst_applicable
-          : !(typeof item.description === 'string' && item.description.includes('[NO_GST]'))
-      }));
+export function parseMenuOverrideDescription(rawDesc) {
+  const str = String(rawDesc || '');
+  const isNoGst = str.includes('[NO_GST]');
+  const isDeleted = str.includes('[DELETED]');
+  
+  const nameMatch = str.match(/\[NAME:(.*?)\]/);
+  const catMatch = str.match(/\[CAT:(.*?)\]/);
+  const dietMatch = str.match(/\[DIET:(.*?)\]/);
+  const imageMatch = str.match(/\[IMAGE:(.*?)\]/);
+
+  const cleanDesc = str
+    .replace(/\[NO_GST\]/g, '')
+    .replace(/\[DELETED\]/g, '')
+    .replace(/\[NAME:[^\]]*\]/g, '')
+    .replace(/\[CAT:[^\]]*\]/g, '')
+    .replace(/\[DIET:[^\]]*\]/g, '')
+    .replace(/\[IMAGE:[^\]]*\]/g, '')
+    .trim();
+
+  return {
+    clean_description: cleanDesc,
+    gst_applicable: !isNoGst,
+    is_deleted: isDeleted,
+    name: nameMatch ? nameMatch[1].trim() : null,
+    category: catMatch ? catMatch[1].trim() : null,
+    diet: dietMatch ? dietMatch[1].trim() : null,
+    image: imageMatch ? imageMatch[1].trim() : null
+  };
+}
+
+export function encodeMenuOverrideDescription(rawDesc, metadata = {}) {
+  let cleanDesc = String(rawDesc || '')
+    .replace(/\[NO_GST\]/g, '')
+    .replace(/\[DELETED\]/g, '')
+    .replace(/\[NAME:[^\]]*\]/g, '')
+    .replace(/\[CAT:[^\]]*\]/g, '')
+    .replace(/\[DIET:[^\]]*\]/g, '')
+    .replace(/\[IMAGE:[^\]]*\]/g, '')
+    .trim();
+
+  const tags = [];
+  if (metadata.gst_applicable === false) tags.push('[NO_GST]');
+  if (metadata.is_deleted === true) tags.push('[DELETED]');
+  if (metadata.name) tags.push(`[NAME:${metadata.name.trim()}]`);
+  if (metadata.category) tags.push(`[CAT:${metadata.category.trim()}]`);
+  if (metadata.diet) tags.push(`[DIET:${metadata.diet.trim()}]`);
+  if (metadata.image) tags.push(`[IMAGE:${metadata.image.trim()}]`);
+
+  return tags.length ? `${cleanDesc} ${tags.join(' ')}`.trim() : cleanDesc;
+}
+
+export async function uploadDishPhotoToStorage(fileOrBlob, filename = 'dish.webp', fallbackDataUrl = null) {
+  const safeName = (filename || 'dish_photo')
+    .replace(/\.[^/.]+$/, "")
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .slice(0, 50);
+  const targetFileName = `${safeName}_${Date.now()}.webp`;
+
+  // 1. Try Supabase Storage bucket 'menu-images'
+  try {
+    if (supabase && supabase.storage) {
+      const { data, error } = await supabase.storage
+        .from('menu-images')
+        .upload(targetFileName, fileOrBlob, {
+          contentType: fileOrBlob?.type || 'image/webp',
+          upsert: true
+        });
+
+      if (!error && data) {
+        const { data: urlData } = supabase.storage.from('menu-images').getPublicUrl(targetFileName);
+        if (urlData && urlData.publicUrl) {
+          return urlData.publicUrl;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Storage] Supabase storage upload notice:', err.message);
+  }
+
+  // 2. Try Backend API endpoint /api/upload-image
+  try {
+    let base64Payload = fallbackDataUrl;
+    if (!base64Payload && fileOrBlob) {
+      base64Payload = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(fileOrBlob);
+      });
     }
 
-    const res = await fetch("/api/menu");
-    const json = await res.json();
-    return (json.data || []).map(item => ({
-      ...item,
-      gst_applicable: item.gst_applicable !== undefined
-        ? item.gst_applicable
-        : !(typeof item.description === 'string' && item.description.includes('[NO_GST]'))
-    }));
+    if (base64Payload) {
+      const res = await fetch('/api/upload-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64Payload, filename: safeName })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.url) {
+          return json.url;
+        }
+      }
+    }
+  } catch (backendErr) {
+    console.warn('[Storage] Backend upload endpoint notice:', backendErr.message);
+  }
+
+  // 3. Fallback to client-side compressed Data URL if within strict 150KB limit
+  if (fallbackDataUrl && fallbackDataUrl.length < 200 * 1024) {
+    return fallbackDataUrl;
+  }
+
+  throw new Error('Failed to upload image to storage or backend.');
+}
+
+export async function getMenuOverrides(force = false) {
+  return await getOrFetchRef('menu_overrides', async () => {
+    let rawItems = [];
+    const { data, error } = await supabase.from("menu_overrides").select("*");
+    if (!error && data) {
+      rawItems = data;
+    } else {
+      const res = await fetch("/api/menu");
+      const json = await res.json();
+      rawItems = json.data || [];
+    }
+
+    return rawItems.map(item => {
+      const parsed = parseMenuOverrideDescription(item.description);
+      return {
+        ...item,
+        raw_description: item.description,
+        description: parsed.clean_description,
+        gst_applicable: item.gst_applicable !== undefined ? item.gst_applicable : parsed.gst_applicable,
+        is_deleted: item.is_deleted !== undefined ? item.is_deleted : parsed.is_deleted,
+        name: item.name || parsed.name || null,
+        category: item.category || parsed.category || null,
+        diet: item.diet || parsed.diet || null,
+        image: item.image || item.image_url || parsed.image || null
+      };
+    });
   }, force, DEFAULT_TTLS.menu_overrides);
 }
 
 export async function saveMenuOverride(override) {
-  let desc = override.description || "";
-  if (override.gst_applicable === false) {
-    if (!desc.includes('[NO_GST]')) {
-      desc = (desc + ' [NO_GST]').trim();
-    }
-  } else if (override.gst_applicable === true) {
-    desc = desc.replace(/\[NO_GST\]/g, '').trim();
-  }
+  const desc = encodeMenuOverrideDescription(override.description || '', {
+    gst_applicable: override.gst_applicable,
+    is_deleted: override.is_deleted,
+    name: override.name,
+    category: override.category,
+    diet: override.diet,
+    image: override.image || override.image_url
+  });
 
   const payload = {
-    id: override.id,
-    price: override.price,
-    available: override.available,
-    featured: override.featured,
-    mrp: override.mrp,
+    id: Number(override.id),
+    price: parseFloat(override.price) || 0,
+    available: override.available !== false,
+    featured: override.featured === true,
+    mrp: override.mrp !== null && override.mrp !== undefined && !isNaN(parseFloat(override.mrp)) ? parseFloat(override.mrp) : null,
     description: desc,
     updated_at: new Date().toISOString()
   };

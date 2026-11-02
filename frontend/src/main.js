@@ -37,7 +37,15 @@ export function getAllCombinedMenuItems() {
     }
   }
 
-  return [...formattedCombos, ...menuItems, ...(custom || [])];
+  const all = [...formattedCombos, ...menuItems, ...(custom || [])];
+  return all.filter(item => {
+    if (item.is_deleted === true) return false;
+    const override = (activeMenuOverrides || []).find(o => String(o.id) === String(item.id));
+    if (override && (override.is_deleted === true || (typeof override.description === 'string' && override.description.includes('[DELETED]')))) {
+      return false;
+    }
+    return true;
+  });
 }
 
 // ═══════════════════════════════════════
@@ -2154,8 +2162,19 @@ async function loadCustomDishes() {
 function applyOverridesToList(overrides) {
   if (!overrides || !Array.isArray(overrides)) return;
   menuItems.forEach(item => {
-    const override = overrides.find(o => o.id === item.id);
+    const override = overrides.find(o => String(o.id) === String(item.id));
     if (override) {
+      if (override.name) item.name = override.name;
+      if (override.category) item.category = override.category;
+      if (override.diet) {
+        item.diet = override.diet;
+        item.is_veg = override.diet === 'veg';
+      }
+      if (override.image) item.image = override.image;
+      if (override.is_deleted === true || (typeof override.description === 'string' && override.description.includes('[DELETED]'))) {
+        item.is_deleted = true;
+        item.available = false;
+      }
       if (override.price !== null && override.price !== undefined) item.price = parseFloat(override.price);
       if (override.mrp !== null && override.mrp !== undefined) item.mrp = parseFloat(override.mrp);
       if (override.available !== undefined) item.available = override.available;

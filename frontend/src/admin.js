@@ -1,20 +1,57 @@
 import './style.css';
 import './admin.css';
 import { Chart, registerables } from 'chart.js';
-import { insforge, getMenuOverrides, saveMenuOverride, getCoupons, saveCoupon, deleteCoupon, getCombos, saveCombo, deleteCombo, getCustomDishes, saveCustomDish, deleteCustomDish, getDeliveryAreas, invalidateRefCache, offlineSync } from './lib/insforge.js';
+import { insforge, getMenuOverrides, saveMenuOverride, uploadDishPhotoToStorage, getCoupons, saveCoupon, deleteCoupon, redeemCoupon, getCombos, saveCombo, deleteCombo, getCustomDishes, saveCustomDish, deleteCustomDish, getDeliveryAreas, getCustomerOrders, invalidateRefCache, offlineSync, POS_MUTATION_TYPES, ERROR_TYPES, classifyError } from './lib/insforge.js';
+import { compressDishImage, formatFileSize, COMPRESSION_LIMITS } from './lib/image-optimizer.js';
 import { PaymentService } from './lib/payments.js';
 import { menuItems, categoryImages, categoryLabels, categoryEmojis, categoryTabOrder } from './data/menu.js';
 import { getAdminLoginUrl } from './lib/admin-routes.js';
 import { sendEmailNotification, generateOrderConfirmedHtml, generateOrderCancelledHtml } from './lib/email-service.js';
 import QRCode from 'qrcode';
+import { LIMRA_LOGO_BASE64 } from './lib/logo-data.js';
 import { printQueue } from './lib/print-queue.js';
 import { buildEscPosBill, buildEscPosKOT, COMMANDS as ESC_COMMANDS } from './lib/escpos.js';
 import { calculateOrderBilling, parseNotesBillingMetadata, isValidPaymentTransition, isValidFulfillmentTransition, isValidTicketTransition, formatRupee, formatBillAmount } from './lib/billing-engine.js';
 import { initStockSummarySection } from './admin-stock.js';
 import { initSalesReportHub, loadSalesReportData } from './sales-report/sales-report.js';
+import { posState, posEvents } from './pos/state.js';
+import {
+  notifiedBusinessOrderIds,
+  cashierCreatedOrderIds,
+  getAudioCtx,
+  warmUpAudio,
+  initAudioUnlockListeners,
+  isVoiceAnnouncementEnabled,
+  setVoiceAnnouncementEnabled,
+  speakTableRoundAnnouncement,
+  generateTableRoundChimeWavUri,
+  getTableRoundFallbackAudioElement,
+  playTableRoundChime,
+  playNotificationChime,
+  testNotificationSound,
+  testTableRoundSound,
+  initToastContainer,
+  showAdminToast,
+  showBusinessNotification,
+  showDashboardToast,
+  setNotificationNavigationHandler
+} from './pos/audio-alerts.js';
+import * as posDomainKds from './pos/kds.js';
+import * as posDomainReportsGst from './pos/reports-gst.js';
+import * as posDomainPrinter from './pos/thermal-printer.js';
+import * as posDomainCatalogCrm from './pos/catalog-crm.js';
+import * as posDomainSettingsStaff from './pos/settings-staff.js';
+import * as posDomainWorkstation from './pos/workstation.js';
+import * as posDomainTablesBilling from './pos/tables-billing.js';
+import * as posUtils from './pos/pos-utils.js';
 
 // Category aliases to support group categories, legacy keys, and multi-category filters in Admin
 export const categoryAliases = {
+  // Combos & Deals
+  'combo': ['combo'],
+  'combos': ['combo'],
+  'deals': ['combo'],
+
   // Tandoor & Kabab
   'tandoori': ['tandoor-kabab'],
   'tandoor': ['tandoor-kabab'],
@@ -93,412 +130,11 @@ Chart.register(...registerables);
 
 // ═══════════════════════════════════════
 // ═══════════════════════════════════════
-// AUDIO CONTEXT & NOTIFICATION CHIME
+// AUDIO CONTEXT & NOTIFICATION CHIME (Extracted to pos/audio-alerts.js)
 // ═══════════════════════════════════════
 
-// Persistent AudioContext with browser autoplay-policy unlocking
-let _audioCtx = null;
-let _audioUnlocked = false;
-let _fallbackAudioEl = null;
-
-function getAudioCtx() {
-  if (!_audioCtx) {
-    const Ctor = window.AudioContext || window.webkitAudioContext;
-    if (Ctor) {
-      _audioCtx = new Ctor({ latencyHint: 'interactive' });
-    }
-  }
-  if (_audioCtx && _audioCtx.state === 'suspended') {
-    _audioCtx.resume().catch(() => {});
-  }
-  return _audioCtx;
-}
-
-// Generate an ultra-crisp, audible WAV chime for fallback playback
-function generateChimeWavUri() {
-  const sampleRate = 22050;
-  const duration = 1.2;
-  const numSamples = Math.floor(sampleRate * duration);
-  const buffer = new Uint8Array(44 + numSamples * 2);
-  const view = new DataView(buffer.buffer);
-
-  const writeString = (offset, string) => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  };
-
-  writeString(0, 'RIFF');
-  view.setUint32(4, 36 + numSamples * 2, true);
-  writeString(8, 'WAVE');
-  writeString(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM
-  view.setUint16(22, 1, true); // Mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, 'data');
-  view.setUint32(40, numSamples * 2, true);
-
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    let sample = 0;
-    
-    // Note 1 (0 to 0.5s): G5 (784Hz) + C6 (1046.5Hz)
-    if (t < 0.6) {
-      const env1 = Math.exp(-t * 7);
-      sample += Math.sin(2 * Math.PI * 783.99 * t) * 0.45 * env1;
-      sample += Math.sin(2 * Math.PI * 1046.50 * t) * 0.3 * env1;
-    }
-    // Note 2 (0.18s to 1.2s): E6 (1318.5Hz) + G6 (1568Hz) + C7 (2093Hz)
-    if (t >= 0.18) {
-      const t2 = t - 0.18;
-      const env2 = Math.exp(-t2 * 5.5);
-      sample += Math.sin(2 * Math.PI * 1318.51 * t2) * 0.5 * env2;
-      sample += Math.sin(2 * Math.PI * 1567.98 * t2) * 0.35 * env2;
-      sample += Math.sin(2 * Math.PI * 2093.00 * t2) * 0.28 * Math.exp(-t2 * 9);
-    }
-
-    const val = Math.max(-1, Math.min(1, sample));
-    view.setInt16(44 + i * 2, val < 0 ? val * 0x8000 : val * 0x7FFF, true);
-  }
-
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return 'data:audio/wav;base64,' + btoa(binary);
-}
-
-function getFallbackAudioElement() {
-  if (!_fallbackAudioEl) {
-    try {
-      _fallbackAudioEl = new Audio(generateChimeWavUri());
-      _fallbackAudioEl.preload = 'auto';
-      _fallbackAudioEl.volume = 0.9;
-    } catch(e) {
-      console.warn('Fallback audio creation error:', e);
-    }
-  }
-  return _fallbackAudioEl;
-}
-
-// Warm up and unlock audio context on any user interaction
-function warmUpAudio() {
-  try {
-    const ctx = getAudioCtx();
-    if (ctx && ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
-    }
-    _audioUnlocked = true;
-    const el = getFallbackAudioElement();
-    if (el) {
-      el.load();
-    }
-  } catch(e) {}
-}
-
-window.warmUpAudio = warmUpAudio;
-
-function initAudioUnlockListeners() {
-  const unlock = async () => {
-    try {
-      const ctx = getAudioCtx();
-      if (ctx && ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-      _audioUnlocked = true;
-      const el = getFallbackAudioElement();
-      if (el) {
-        el.load();
-      }
-    } catch (e) {
-      console.warn('Audio unlock warning:', e);
-    }
-  };
-
-  ['click', 'touchstart', 'touchend', 'keydown', 'pointerdown', 'mousedown'].forEach(evt => {
-    window.addEventListener(evt, unlock, { once: false, passive: true });
-  });
-}
-
+// Initialize audio unlock listeners
 initAudioUnlockListeners();
-
-// Check if voice announcements are enabled in localStorage (default true)
-function isVoiceAnnouncementEnabled() {
-  return localStorage.getItem('limra_voice_announcements') !== 'false';
-}
-
-function setVoiceAnnouncementEnabled(enabled) {
-  localStorage.setItem('limra_voice_announcements', enabled ? 'true' : 'false');
-}
-window.isVoiceAnnouncementEnabled = isVoiceAnnouncementEnabled;
-window.setVoiceAnnouncementEnabled = setVoiceAnnouncementEnabled;
-
-// Speak aloud table round announcement using SpeechSynthesis API
-function speakTableRoundAnnouncement(roundNumber, tableNumber) {
-  if (!isVoiceAnnouncementEnabled()) return;
-  if (typeof window === 'undefined' || !window.speechSynthesis) return;
-
-  try {
-    window.speechSynthesis.cancel(); // Cancel any lingering utterance
-    const cleanTable = String(tableNumber || '').replace(/table/i, '').trim() || '—';
-    const text = `Attention! Table ${cleanTable}, Round ${roundNumber} order received!`;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.05;
-    utterance.pitch = 1.15;
-    utterance.volume = 1.0;
-    utterance.lang = 'en-IN';
-
-    // Pick an English voice if available
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-      const enVoice = voices.find(v => v.lang.includes('en-IN') || v.lang.includes('en-US') || v.lang.includes('en-GB') || v.default);
-      if (enVoice) utterance.voice = enVoice;
-    }
-
-    window.speechSynthesis.speak(utterance);
-  } catch (err) {
-    console.warn('[SpeechSynthesis] Error:', err);
-  }
-}
-
-// Generate specialized acoustic WAV chime for Table Round alert
-function generateTableRoundChimeWavUri(roundNumber = 2) {
-  const sampleRate = 22050;
-  const duration = 1.5;
-  const numSamples = Math.floor(sampleRate * duration);
-  const buffer = new Uint8Array(44 + numSamples * 2);
-  const view = new DataView(buffer.buffer);
-
-  const writeString = (offset, string) => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  };
-
-  writeString(0, 'RIFF');
-  view.setUint32(4, 36 + numSamples * 2, true);
-  writeString(8, 'WAVE');
-  writeString(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM
-  view.setUint16(22, 1, true); // Mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, 'data');
-  view.setUint32(40, numSamples * 2, true);
-
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    let sample = 0;
-
-    // Burst 1: Urgent 2-tone ping (0.0s to 0.4s) - D6 (1174.66Hz) + A6 (1760Hz)
-    if (t < 0.45) {
-      const env1 = Math.exp(-t * 9);
-      sample += Math.sin(2 * Math.PI * 1174.66 * t) * 0.5 * env1;
-      sample += Math.sin(2 * Math.PI * 1760.00 * t) * 0.35 * env1;
-    }
-
-    // Burst 2: Rapid rising escalation (0.16s to 0.7s) - F#6 (1479.98Hz) + D7 (2349.32Hz)
-    if (t >= 0.16 && t < 0.75) {
-      const t2 = t - 0.16;
-      const env2 = Math.exp(-t2 * 8);
-      sample += Math.sin(2 * Math.PI * 1479.98 * t2) * 0.55 * env2;
-      sample += Math.sin(2 * Math.PI * 2349.32 * t2) * 0.4 * env2;
-    }
-
-    // Burst 3 (Round 3+ or High Urgency Alert): Resonant High Bell Ping (0.35s to 1.5s)
-    if (t >= 0.35) {
-      const t3 = t - 0.35;
-      const env3 = Math.exp(-t3 * 4.5);
-      sample += Math.sin(2 * Math.PI * 2093.00 * t3) * 0.45 * env3;
-      sample += Math.sin(2 * Math.PI * 2793.83 * t3) * 0.3 * Math.exp(-t3 * 7);
-      sample += Math.sin(2 * Math.PI * 1046.50 * t3) * 0.25 * env3;
-    }
-
-    const val = Math.max(-1, Math.min(1, sample));
-    view.setInt16(44 + i * 2, val < 0 ? val * 0x8000 : val * 0x7FFF, true);
-  }
-
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return 'data:audio/wav;base64,' + btoa(binary);
-}
-
-let _tableRoundAudioEl = null;
-function getTableRoundFallbackAudioElement(roundNumber = 2) {
-  if (!_tableRoundAudioEl) {
-    try {
-      _tableRoundAudioEl = new Audio(generateTableRoundChimeWavUri(roundNumber));
-      _tableRoundAudioEl.preload = 'auto';
-      _tableRoundAudioEl.volume = 1.0;
-    } catch(e) {}
-  }
-  return _tableRoundAudioEl;
-}
-
-// Specialized Table Round Chime (Round 2, 3, 4, 5, etc.) with escalation and voice announcement
-async function playTableRoundChime(roundNumber = 2, tableNumber = '—', order = null, isTest = false) {
-  const roundNum = Number(roundNumber) || 2;
-  const tNum = String(tableNumber || '—');
-
-  // 1. Web Audio API (High-energy multi-harmonic Table Round Chime)
-  try {
-    const ctx = getAudioCtx();
-    if (ctx) {
-      if (ctx.state === 'suspended') {
-        await ctx.resume().catch(() => {});
-      }
-
-      if (ctx.state === 'running') {
-        const now = ctx.currentTime;
-
-        const playBell = (freq, startTime, duration, volume = 0.6, type = 'sine') => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = type;
-          osc.frequency.setValueAtTime(freq, startTime);
-
-          gain.gain.setValueAtTime(0.001, startTime);
-          gain.gain.exponentialRampToValueAtTime(volume, startTime + 0.015);
-          gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-
-          osc.start(startTime);
-          osc.stop(startTime + duration);
-        };
-
-        // Note 1: High alert bell D6 (1174.66Hz) + A6 (1760Hz)
-        playBell(1174.66, now, 0.45, 0.65, 'triangle');
-        playBell(1760.00, now + 0.01, 0.45, 0.50, 'sine');
-
-        // Note 2: Rising chime F#6 (1479.98Hz) + D7 (2349.32Hz)
-        playBell(1479.98, now + 0.14, 0.55, 0.70, 'triangle');
-        playBell(2349.32, now + 0.15, 0.60, 0.55, 'sine');
-
-        // Note 3: Escalation A7 (3520Hz) sparkle + High C7
-        playBell(2093.00, now + 0.28, 0.80, 0.60, 'triangle');
-        playBell(2637.02, now + 0.30, 0.90, 0.45, 'sine');
-
-        // Extra burst for Round 3+
-        if (roundNum >= 3) {
-          playBell(2349.32, now + 0.45, 0.60, 0.65, 'sine');
-          playBell(3135.96, now + 0.46, 0.70, 0.40, 'triangle');
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Web Audio table round chime error:', err);
-  }
-
-  // 2. HTML5 Audio fallback
-  try {
-    const el = getTableRoundFallbackAudioElement(roundNum);
-    if (el) {
-      el.currentTime = 0;
-      el.play().catch(() => {});
-    }
-  } catch (e) {}
-
-  // 3. Voice Speech Synthesis Announcement
-  speakTableRoundAnnouncement(roundNum, tNum);
-
-  if (isTest) {
-    showAdminToast(`🔔 Tested Table ${tNum} Round ${roundNum} Sound & Voice!`, 'success');
-  }
-}
-
-window.testTableRoundSound = function(roundNumber = 2, tableNumber = '04') {
-  playTableRoundChime(roundNumber, tableNumber, null, true);
-};
-
-// Play notification chime with rich harmonic tones & HTML5 audio fallback
-async function playNotificationChime(isTest = false, meta = null) {
-  if (meta && meta.isTable && meta.roundNumber >= 2) {
-    return playTableRoundChime(meta.roundNumber, meta.tableNumber, meta.order, isTest);
-  }
-
-  let playedSuccessfully = false;
-
-  // Method 1: Web Audio API (Multi-oscillator harmonic chime)
-  try {
-    const ctx = getAudioCtx();
-    if (ctx) {
-      if (ctx.state === 'suspended') {
-        await ctx.resume().catch(() => {});
-      }
-
-      if (ctx.state === 'running') {
-        const now = ctx.currentTime;
-
-        const playTone = (freq, startTime, duration, volume = 0.5, type = 'triangle') => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = type;
-          osc.frequency.setValueAtTime(freq, startTime);
-          
-          gain.gain.setValueAtTime(0.001, startTime);
-          gain.gain.exponentialRampToValueAtTime(volume, startTime + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-          
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          
-          osc.start(startTime);
-          osc.stop(startTime + duration);
-        };
-
-        // Note 1: G5 (784Hz) + C6 (1046Hz)
-        playTone(783.99, now, 0.50, 0.55, 'triangle');
-        playTone(1046.50, now + 0.02, 0.55, 0.40, 'sine');
-        
-        // Note 2: E6 (1318.5Hz) + G6 (1568Hz)
-        playTone(1318.51, now + 0.18, 0.70, 0.55, 'triangle');
-        playTone(1567.98, now + 0.20, 0.75, 0.40, 'sine');
-        
-        // Note 3: High C7 sparkle (2093Hz)
-        playTone(2093.00, now + 0.35, 0.90, 0.35, 'sine');
-
-        playedSuccessfully = true;
-      }
-    }
-  } catch(e) {
-    console.warn('Web Audio chime error:', e);
-  }
-
-  // Method 2: HTML5 Audio Fallback (guaranteed cross-browser chime playback)
-  try {
-    const audioEl = getFallbackAudioElement();
-    if (audioEl) {
-      audioEl.currentTime = 0;
-      const playPromise = audioEl.play();
-      if (playPromise !== undefined) {
-        playPromise.then(() => { playedSuccessfully = true; }).catch(() => {});
-      }
-    }
-  } catch(e) {
-    console.warn('HTML5 audio fallback error:', e);
-  }
-
-  if (isTest) {
-    showAdminToast('🔊 Standard notification sound test playing!', 'info');
-  }
-}
-
-window.testNotificationSound = function() {
-  playNotificationChime(true);
-};
 
 
 // ═══════════════════════════════════════
@@ -606,22 +242,22 @@ function renderNotifications() {
     // Look up linked order status or service badge if applicable
     let statusChip = '';
     if (isWaiter) {
-      statusChip = '<span style="font-size:0.68rem;padding:1px 6px;border-radius:999px;background:#ecfdf5;color:#047857;font-weight:700;">🔔 Waiter</span>';
+      statusChip = '<span style="font-size:0.75rem;padding:1px 6px;border-radius:999px;background:#ecfdf5;color:#047857;font-weight:700;">🔔 Waiter</span>';
     } else if (isBill) {
-      statusChip = '<span style="font-size:0.68rem;padding:1px 6px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-weight:700;">🧾 Bill</span>';
+      statusChip = '<span style="font-size:0.75rem;padding:1px 6px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-weight:700;">🧾 Bill</span>';
     }
     const targetId = n.item_id || n.order_id;
     if (targetId && isOrder) {
       const ord = orders.find(o => String(o.id) === String(targetId));
       if (ord) {
         if (ord.status === 'delivered' || ord.status === 'completed' || ord.status === 'closed' || ord.payment_status === 'paid') {
-          statusChip = '<span style="font-size:0.68rem;padding:1px 6px;border-radius:999px;background:#ecfdf5;color:#059669;font-weight:700;">✓ Settled</span>';
+          statusChip = '<span style="font-size:0.75rem;padding:1px 6px;border-radius:999px;background:#ecfdf5;color:#059669;font-weight:700;">✓ Settled</span>';
         } else if (ord.status === 'cancelled') {
-          statusChip = '<span style="font-size:0.68rem;padding:1px 6px;border-radius:999px;background:#fef2f2;color:#dc2626;font-weight:700;">✕ Cancelled</span>';
+          statusChip = '<span style="font-size:0.75rem;padding:1px 6px;border-radius:999px;background:#fef2f2;color:#dc2626;font-weight:700;">✕ Cancelled</span>';
         } else if (ord.status === 'hold') {
-          statusChip = '<span style="font-size:0.68rem;padding:1px 6px;border-radius:999px;background:#fffbeb;color:#d97706;font-weight:700;">⏸️ Hold</span>';
+          statusChip = '<span style="font-size:0.75rem;padding:1px 6px;border-radius:999px;background:#fffbeb;color:#d97706;font-weight:700;">⏸️ Hold</span>';
         } else {
-          statusChip = '<span style="font-size:0.68rem;padding:1px 6px;border-radius:999px;background:#eef2ff;color:#4f46e5;font-weight:700;">● Active</span>';
+          statusChip = '<span style="font-size:0.75rem;padding:1px 6px;border-radius:999px;background:#eef2ff;color:#4f46e5;font-weight:700;">● Active</span>';
         }
       }
     }
@@ -635,7 +271,7 @@ function renderNotifications() {
             ${statusChip}
           </div>
           <p class="adm-notification-desc" style="margin:2px 0 0 0;font-size:0.75rem;color:${isUnread ? '#334155' : 'var(--adm-muted)'};">${escapeHtml(n.message || n.description || '')}</p>
-          <p class="adm-notification-time" style="margin:2px 0 0 0;font-size:0.7rem;color:var(--adm-muted);">${timeStr}</p>
+          <p class="adm-notification-time" style="margin:2px 0 0 0;font-size:0.75rem;color:var(--adm-muted);">${timeStr}</p>
         </div>
         <button type="button" class="adm-notif-dismiss" data-dismiss-id="${n.id}" title="Mark as read">✕</button>
       </div>
@@ -689,124 +325,37 @@ function renderNotifications() {
   });
 }
 
-function initToastContainer() {
-  let container = document.getElementById('dashboard-toast-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'dashboard-toast-container';
-    container.className = 'fixed top-6 right-6 z-[200] flex flex-col gap-3 w-80 max-w-full pointer-events-none';
-    document.body.appendChild(container);
-  }
-}
-
-function showAdminToast(message, type = 'success') {
-  initToastContainer();
-  const container = document.getElementById('dashboard-toast-container');
-  if (!container) return;
-
-  const toast = document.createElement('div');
-  toast.className = 'p-4 rounded-2xl border shadow-xl flex items-center justify-between gap-3 transition-all duration-500 translate-x-80 opacity-0 pointer-events-auto cursor-pointer backdrop-blur-md';
-  
-  toast.style.background = 'rgba(255, 255, 255, 0.95)';
-  toast.style.borderColor = type === 'success' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)';
-  toast.style.color = 'var(--adm-text)';
-  toast.style.fontSize = '0.85rem';
-  toast.style.fontWeight = '600';
-  
-  const icon = type === 'success' ? '✅' : '❌';
-  toast.innerHTML = `
-    <div style="display:flex; align-items:center; gap:0.5rem;">
-      <span style="font-size:1.2rem;">${icon}</span>
-      <span>${escapeHtml(message)}</span>
-    </div>
-    <button style="background:none; border:none; color:#999; cursor:pointer; font-weight:bold; font-size:1rem;">✕</button>
-  `;
-  
-  container.appendChild(toast);
-  
-  setTimeout(() => {
-    toast.classList.remove('translate-x-80', 'opacity-0');
-  }, 50);
-  
-  const close = () => {
-    toast.classList.add('translate-x-80', 'opacity-0');
-    setTimeout(() => toast.remove(), 500);
-  };
-  
-  toast.addEventListener('click', close);
-  toast.querySelector('button').addEventListener('click', (e) => {
-    e.stopPropagation();
-    close();
-  });
-  
-  setTimeout(close, 4000);
-}
-
-function showDashboardToast(title, msg, type = 'info', orderId = null) {
-  initToastContainer();
-  const container = document.getElementById('dashboard-toast-container');
-  if (!container) return;
-  
-  const toast = document.createElement('div');
-  toast.className = 'p-4 rounded-2xl border shadow-xl flex gap-3 transition-all duration-500 translate-x-80 opacity-0 pointer-events-auto cursor-pointer hover:scale-[1.02] backdrop-blur-md';
-  
-  const isTableRound = type === 'table_round';
-  if (isTableRound) {
-    toast.style.background = 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 50%, #fae8ff 100%)';
-    toast.style.borderColor = '#f59e0b';
-    toast.style.borderWidth = '2px';
-    toast.style.boxShadow = '0 12px 28px -4px rgba(245, 158, 11, 0.4), 0 8px 12px -6px rgba(168, 85, 247, 0.3)';
-  } else {
-    toast.style.background = 'rgba(255, 255, 255, 0.95)';
-    toast.style.borderColor = type === 'success' ? 'rgba(16, 185, 129, 0.5)' : 'rgba(217, 119, 6, 0.5)';
-  }
-  
-  const icon = isTableRound ? '🔔' : (type === 'success' ? '🍽️' : (type === 'booking' ? '📅' : '⚡'));
-  
-  toast.innerHTML = `
-    <div class="text-3xl shrink-0 ${isTableRound ? 'animate-bounce' : ''}">${icon}</div>
-    <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-1.5 flex-wrap">
-        <h4 class="font-extrabold text-sm ${isTableRound ? 'text-amber-950' : 'text-slate-800'}">${title}</h4>
-        ${isTableRound ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 shadow-sm">NEW ROUND</span>` : ''}
-      </div>
-      <p class="text-xs ${isTableRound ? 'text-amber-900 font-semibold' : 'text-slate-600'} mt-1">${msg}</p>
-    </div>
-    <button class="text-slate-400 hover:text-slate-700 text-sm font-bold shrink-0 self-start p-1">✕</button>
-  `;
-  
-  container.appendChild(toast);
-  
-  // Slide in
-  setTimeout(() => {
-    toast.classList.remove('translate-x-80', 'opacity-0');
-  }, 50);
-  
-  // Click handler to open order details if orderId is provided!
-  if (orderId) {
-    toast.addEventListener('click', (e) => {
-      if (e.target.tagName === 'BUTTON') return;
-      selectedOrderId = orderId;
+// ── STRICT POS NOTIFICATION SYSTEM: DEDUPLICATION & ROUTING (pos/audio-alerts.js) ──
+setNotificationNavigationHandler((payload) => {
+  if (payload.type === 'website') {
+    if (payload.orderId) {
+      selectedOrderId = payload.orderId;
       switchPanel('orders');
-      renderOrderDetail(orderId);
-      toast.remove();
-    });
-  }
-  
-  // Close button click handler
-  toast.querySelector('button').addEventListener('click', (e) => {
-    e.stopPropagation();
-    toast.classList.add('translate-x-80', 'opacity-0');
-    setTimeout(() => toast.remove(), 500);
-  });
-  
-  // Auto remove after 9 seconds (slightly longer for table rounds)
-  setTimeout(() => {
-    if (toast.parentNode) {
-      toast.classList.add('translate-x-80', 'opacity-0');
-      setTimeout(() => toast.remove(), 500);
+      renderOrderDetail(payload.orderId);
     }
-  }, isTableRound ? 12000 : 8000);
+  } else {
+    if (typeof window !== 'undefined' && typeof window.tablesSubtab !== 'undefined') window.tablesSubtab = 'all';
+    tablesSubtab = 'all';
+    switchPanel('tables');
+    renderTablesPanel();
+    if (payload.orderId) {
+      selectedOrderId = payload.orderId;
+      renderOrderDetail(payload.orderId);
+    }
+  }
+});
+
+// Expose on window for runtime testing and inspection
+if (typeof window !== 'undefined') {
+  window.warmUpAudio = warmUpAudio;
+  window.isVoiceAnnouncementEnabled = isVoiceAnnouncementEnabled;
+  window.setVoiceAnnouncementEnabled = setVoiceAnnouncementEnabled;
+  window.testTableRoundSound = testTableRoundSound;
+  window.testNotificationSound = testNotificationSound;
+  window.notifiedBusinessOrderIds = notifiedBusinessOrderIds;
+  window.cashierCreatedOrderIds = cashierCreatedOrderIds;
+  window.showAdminToast = showAdminToast;
+  window.showBusinessNotification = showBusinessNotification;
 }
 
 const $ = id => document.getElementById(id);
@@ -833,6 +382,7 @@ function parseNotesMetadata(notes, order = null) {
     deliveryFee: 0,
     discountPct: 0,
     discountAmt: 0,
+    couponCode: '',
     cgstRate: null,
     sgstRate: null,
     payment: '',
@@ -855,6 +405,20 @@ function parseNotesMetadata(notes, order = null) {
     if (order.delivery_fee !== undefined && order.delivery_fee !== null) {
       const oFee = Number(order.delivery_fee);
       if (!isNaN(oFee) && oFee >= 0) result.deliveryFee = oFee;
+    }
+    if (order.discount_pct !== undefined && order.discount_pct !== null) {
+      const dPct = Number(order.discount_pct);
+      if (!isNaN(dPct) && dPct >= 0) result.discountPct = dPct;
+    }
+    if (order.discount_amount !== undefined && order.discount_amount !== null) {
+      const dAmt = Number(order.discount_amount);
+      if (!isNaN(dAmt) && dAmt >= 0) result.discountAmt = dAmt;
+    }
+    if (order.consolidated_into_order_id) {
+      result.parentOrderId = String(order.consolidated_into_order_id);
+    }
+    if (order.settled_at) {
+      result.settledAt = String(order.settled_at);
     }
   }
   
@@ -887,12 +451,12 @@ function parseNotesMetadata(notes, order = null) {
   
   if (result.type === 'delivery') {
     const addrMatch = notes.match(/Address:\s*([^|\]]+)/i);
-    const areaMatch = notes.match(/Selected Area:\s*([^|\]]+)/i);
+    const areaMatch = notes.match(/(?:Selected Area|Place):\s*([^|\]]+)/i);
     const distMatch = notes.match(/Distance:\s*([^|\]]+)/i);
     const chargeMatch = notes.match(/Delivery\s+(?:charge|fee):\s*([^|\]]+)/i);
     
     if (addrMatch) result.address = addrMatch[1].trim();
-    if (areaMatch) result.area = areaMatch[1].trim();
+    if (areaMatch && areaMatch[1].trim() !== 'N/A') result.area = areaMatch[1].trim();
     if (distMatch) result.distance = distMatch[1].trim();
     if (chargeMatch) {
       result.charge = chargeMatch[1].trim();
@@ -905,6 +469,11 @@ function parseNotesMetadata(notes, order = null) {
   if (deliveryFeeMatch) {
     const dNum = parseFloat(deliveryFeeMatch[1].replace(/[^0-9.]/g, ''));
     if (!isNaN(dNum) && dNum >= 0) result.deliveryFee = dNum;
+  }
+
+  const couponMatch = notes.match(/\[COUPON:\s*([^\]|]+)\]/i);
+  if (couponMatch) {
+    result.couponCode = couponMatch[1].trim().toUpperCase();
   }
 
   const discPctMatch = notes.match(/\[(?:DISCOUNT_PCT|DISCOUNT):\s*([^\]|%]+)%?\]/i);
@@ -946,11 +515,14 @@ function parseNotesMetadata(notes, order = null) {
     .replace(/\[ROUND:[^\]]+\]/gi, '')
     .replace(/\[PARENT_ORDER_ID:[^\]]+\]/gi, '')
     .replace(/\[TABLE:[^\]]+\]/gi, '')
-    .replace(/\[DELIVERY\] Address:[^|]+/gi, '')
+    .replace(/\[DELIVERY\]\s*Place:[^|]+/gi, '')
+    .replace(/\[DELIVERY\]\s*Address:[^|]+/gi, '')
+    .replace(/Address:[^|]+/gi, '')
     .replace(/Selected Area:[^|]+/gi, '')
     .replace(/Distance:[^|]+/gi, '')
     .replace(/Delivery charge:[^|]+/gi, '')
     .replace(/\[DELIVERY_FEE:[^\]]+\]/gi, '')
+    .replace(/\[COUPON:[^\]]+\]/gi, '')
     .replace(/\[(?:DISCOUNT_PCT|DISCOUNT):[^\]]+\]/gi, '')
     .replace(/\[DISCOUNT_AMT:[^\]]+\]/gi, '')
     .replace(/\[CGST:[^\]]+\]/gi, '')
@@ -963,6 +535,25 @@ function parseNotesMetadata(notes, order = null) {
     .trim();
     
   result.customNote = cleanNote;
+
+  if (order) {
+    if (order.discount_pct !== undefined && order.discount_pct !== null && Number(order.discount_pct) > 0) {
+      result.discountPct = Number(order.discount_pct);
+    }
+    if (order.discount_amount !== undefined && order.discount_amount !== null && Number(order.discount_amount) > 0) {
+      result.discountAmt = Number(order.discount_amount);
+    }
+    if (order.delivery_fee !== undefined && order.delivery_fee !== null && Number(order.delivery_fee) > 0) {
+      result.deliveryFee = Number(order.delivery_fee);
+    }
+    if (order.consolidated_into_order_id) {
+      result.parentOrderId = String(order.consolidated_into_order_id);
+    }
+    if (order.settled_at) {
+      result.settledAt = String(order.settled_at);
+    }
+  }
+
   return result;
 }
 
@@ -1013,16 +604,33 @@ function getOrderRoundInfo(order, allOrders = orders) {
 
 function fmtDate(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+  try {
+    const dateObj = d instanceof Date ? d : new Date(d);
+    if (isNaN(dateObj.getTime())) return '—';
+    return dateObj.toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch (e) {
+    return '—';
+  }
 }
 
 function fmtDateShort(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  try {
+    const dateObj = d instanceof Date ? d : new Date(d);
+    if (isNaN(dateObj.getTime())) return '—';
+    return dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch (e) {
+    return '—';
+  }
 }
+
+function formatDateTime(d) {
+  return fmtDate(d);
+}
+window.formatDateTime = formatDateTime;
 
 function fmtMoney(n) {
   return formatBillAmount(n);
@@ -1254,10 +862,57 @@ function computeOrderTaxDetails(order, optionalItemsList) {
     };
   }
 
-  const s = getBillSettings();
   const rawItems = optionalItemsList || getItemsForOrder(order.id);
   const items = consolidateOrderItems(rawItems.filter(isFoodDishItem));
-  
+
+  // 1. Structured Column Fast Path:
+  // If order contains normalized financial breakdown columns, return exact stored values directly.
+  // This eliminates tax rate drift and preserves historical audit veracity even if restaurant tax settings change.
+  const hasStructuredFinancials = (
+    order.taxable_amount !== undefined &&
+    order.taxable_amount !== null &&
+    (Number(order.taxable_amount) > 0 || Number(order.subtotal_amount) > 0)
+  );
+
+  if (hasStructuredFinancials) {
+    const subtotal = Number(order.subtotal_amount) || 0;
+    const discountPct = Number(order.discount_pct) || 0;
+    const discountAmt = Number(order.discount_amount) || 0;
+    const taxableValue = Number(order.taxable_amount) || 0;
+    const cgstAmt = Number(order.cgst_amount) || 0;
+    const sgstAmt = Number(order.sgst_amount) || 0;
+    const totalGst = Math.round((cgstAmt + sgstAmt) * 100) / 100;
+    const deliveryFee = Number(order.delivery_fee) || 0;
+    const packagingFee = Number(order.packaging_fee) || 0;
+    const grandTotal = Math.floor(Math.max(0, Number(order.total_amount) || 0));
+    const roundOff = (order.round_off_amount !== undefined && order.round_off_amount !== null)
+      ? Number(order.round_off_amount)
+      : Math.round((grandTotal - (taxableValue + totalGst + deliveryFee + packagingFee)) * 100) / 100;
+
+    const derivedCgstRate = taxableValue > 0 ? Math.round((cgstAmt / taxableValue) * 1000) / 10 : 2.5;
+    const derivedSgstRate = taxableValue > 0 ? Math.round((sgstAmt / taxableValue) * 1000) / 10 : 2.5;
+
+    return {
+      items,
+      itemCount: items.reduce((sum, i) => sum + Number(i.quantity || i.qty || 1), 0),
+      subtotal,
+      discountPct,
+      discountAmt,
+      taxableValue,
+      cgstRate: derivedCgstRate,
+      cgstAmt,
+      sgstRate: derivedSgstRate,
+      sgstAmt,
+      totalGstRate: Math.round((derivedCgstRate + derivedSgstRate) * 10) / 10,
+      totalGst,
+      deliveryFee,
+      packagingFee,
+      grandTotal,
+      roundOff
+    };
+  }
+
+  const s = getBillSettings();
   const parsed = parseNotesMetadata(order.notes, order);
   const billingMeta = parseNotesBillingMetadata(order.notes);
 
@@ -1401,6 +1056,66 @@ function redirectToLogin() {
   window.location.replace(getAdminLoginUrl(window.location.pathname + window.location.search));
 }
 
+// ═════════════════════════════════════════════════════════════════
+// STAFF IDENTITY & ROLE-BASED ACCESS CONTROL (RBAC) ENGINE
+// ═════════════════════════════════════════════════════════════════
+
+let currentAdminUser = null;
+
+const ROLE_WORKSPACE_PERMISSIONS = {
+  owner: ['dashboard', 'order-detail', 'orders', 'tables', 'kitchen', 'foods', 'stock', 'daily-sales-report', 'settings'],
+  admin: ['dashboard', 'order-detail', 'orders', 'tables', 'kitchen', 'foods', 'stock', 'daily-sales-report', 'settings'],
+  manager: ['dashboard', 'order-detail', 'orders', 'tables', 'kitchen', 'foods', 'stock', 'daily-sales-report', 'settings'],
+  cashier: ['dashboard', 'order-detail', 'orders', 'tables', 'kitchen', 'foods'],
+  kitchen: ['kitchen'],
+  waiter: ['tables', 'orders', 'kitchen'],
+  captain: ['tables', 'orders', 'kitchen']
+};
+
+function normalizeStaffRole(role) {
+  if (!role) return 'cashier';
+  const r = String(role).toLowerCase().trim();
+  if (r.includes('owner')) return 'owner';
+  if (r.includes('manager')) return 'manager';
+  if (r.includes('chef') || r.includes('kitchen') || r.includes('cook')) return 'kitchen';
+  if (r.includes('waiter') || r.includes('captain') || r.includes('service')) return 'waiter';
+  if (r.includes('cashier') || r.includes('billing')) return 'cashier';
+  if (r.includes('admin')) return 'admin';
+  return 'cashier';
+}
+
+function hasStaffPermission(workspaceOrAction, userRole = null) {
+  const role = normalizeStaffRole(userRole || currentAdminUser?.role || 'owner');
+  const allowed = ROLE_WORKSPACE_PERMISSIONS[role] || ROLE_WORKSPACE_PERMISSIONS.cashier;
+  return allowed.includes(workspaceOrAction);
+}
+
+function applyStaffRoleUIRestrictions() {
+  const role = normalizeStaffRole(currentAdminUser?.role || 'owner');
+  const allowedWorkspaces = ROLE_WORKSPACE_PERMISSIONS[role] || ROLE_WORKSPACE_PERMISSIONS.cashier;
+
+  // 1. Hide/show workspace buttons in sidebar
+  document.querySelectorAll('#sidebar .adm-nav .adm-nav-item[data-panel]').forEach(btn => {
+    const panel = btn.dataset.panel;
+    const isAllowed = allowedWorkspaces.includes(panel);
+    btn.classList.toggle('adm-role-restricted', !isAllowed);
+    btn.style.display = isAllowed ? '' : 'none';
+  });
+
+  // 2. Hide/show action buttons based on privilege
+  if (role === 'cashier' || role === 'kitchen' || role === 'waiter') {
+    // Hide closed order void / edit modal trigger
+    const voidBtn = $('btn-open-closed-order-modal');
+    if (voidBtn) voidBtn.style.display = 'none';
+  }
+
+  // 3. Update header staff identity pill
+  const greeting = $('admin-greeting');
+  if (greeting && currentAdminUser) {
+    greeting.innerHTML = `Hello, <strong>${escapeHtml(currentAdminUser.name || 'Staff')}</strong> <span style="font-size:0.75rem;padding:2px 7px;border-radius:999px;background:#fef3c7;color:#b45309;font-weight:800;margin-left:4px;">${role.toUpperCase()}</span>`;
+  }
+}
+
 async function checkAdminAccess() {
   const isLocalDev = typeof window !== 'undefined' && (
     window.location.hostname === 'localhost' ||
@@ -1410,49 +1125,102 @@ async function checkAdminAccess() {
   );
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const isStrict = urlParams?.get('strict_auth') === 'true';
+
+  let foundAdminRow = null;
+
+  if (currentUser) {
+    const cleanEmail = (currentUser.email || '').toLowerCase().trim();
+    if (currentUser.id) {
+      try {
+        const { data: byId } = await insforge.database
+          .from('admin_users')
+          .select('*')
+          .eq('user_id', currentUser.id)
+          .maybeSingle();
+        if (byId) foundAdminRow = byId;
+      } catch (e) {}
+    }
+
+    if (!foundAdminRow && cleanEmail) {
+      try {
+        const { data: byEmail } = await insforge.database
+          .from('admin_users')
+          .select('*')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+        if (byEmail) foundAdminRow = byEmail;
+      } catch (e) {}
+    }
+  }
+
+  if (foundAdminRow) {
+    currentAdminUser = {
+      id: foundAdminRow.id,
+      user_id: foundAdminRow.user_id,
+      name: foundAdminRow.name || foundAdminRow.email.split('@')[0],
+      role: normalizeStaffRole(foundAdminRow.role || 'admin'),
+      email: foundAdminRow.email,
+      phone: foundAdminRow.phone || '',
+      shift: foundAdminRow.shift || '',
+      status: foundAdminRow.status || 'on_duty'
+    };
+    window.currentAdminUser = currentAdminUser;
+    applyStaffRoleUIRestrictions();
+    return true;
+  }
+
   if (isLocalDev && !isStrict) {
-    return true;
-  }
-  if (!currentUser) return false;
-  const cleanEmail = (currentUser.email || '').toLowerCase().trim();
-  const knownAdmins = ['arfatalis451@gmail.com', 'admin@limra.com', 'orkiya220@gmail.com', 'arifsk78637@gmail.com'];
-  if (knownAdmins.includes(cleanEmail)) {
+    currentAdminUser = {
+      id: 'dev-owner-id',
+      name: 'Salim Khan',
+      role: 'owner',
+      email: currentUser?.email || 'salim@limra.com',
+      phone: '+91 99887 76655',
+      shift: '10:00 AM - 08:00 PM',
+      status: 'on_duty'
+    };
+    window.currentAdminUser = currentAdminUser;
+    applyStaffRoleUIRestrictions();
     return true;
   }
 
-  if (currentUser.id) {
-    try {
-      const { data: byId } = await insforge.database
-        .from('admin_users')
-        .select('user_id')
-        .eq('user_id', currentUser.id)
-        .maybeSingle();
-      if (byId) return true;
-    } catch (e) {}
+  if (currentUser) {
+    const cleanEmail = (currentUser.email || '').toLowerCase().trim();
+    const knownAdmins = ['arfatalis451@gmail.com', 'admin@limra.com', 'orkiya220@gmail.com', 'arifsk78637@gmail.com'];
+    if (knownAdmins.includes(cleanEmail)) {
+      currentAdminUser = {
+        id: 'known-admin-id',
+        name: cleanEmail.split('@')[0],
+        role: 'admin',
+        email: cleanEmail,
+        status: 'on_duty'
+      };
+      window.currentAdminUser = currentAdminUser;
+      applyStaffRoleUIRestrictions();
+      return true;
+    }
   }
 
-  if (cleanEmail) {
-    try {
-      const { data: byEmail } = await insforge.database
-        .from('admin_users')
-        .select('email')
-        .eq('email', cleanEmail)
-        .maybeSingle();
-      if (byEmail) return true;
-    } catch (e) {}
-  }
   return false;
 }
 
-async function fetchAllTableRows(table, select = '*', orderCol = 'created_at', ascending = false) {
-  const pageSize = 1000;
+window.currentAdminUser = currentAdminUser;
+window.hasStaffPermission = hasStaffPermission;
+window.normalizeStaffRole = normalizeStaffRole;
+window.applyStaffRoleUIRestrictions = applyStaffRoleUIRestrictions;
+window.ROLE_WORKSPACE_PERMISSIONS = ROLE_WORKSPACE_PERMISSIONS;
+
+async function fetchAllTableRows(table, select = '*', orderCol = 'created_at', ascending = false, maxRows = 1000) {
+  const pageSize = Math.min(1000, maxRows);
   let allRows = [];
   let from = 0;
-  while (true) {
+  while (allRows.length < maxRows) {
+    const remaining = maxRows - allRows.length;
+    const chunkLimit = Math.min(pageSize, remaining);
     let query = insforge.database
       .from(table)
       .select(select)
-      .range(from, from + pageSize - 1);
+      .range(from, from + chunkLimit - 1);
     if (orderCol) {
       query = query.order(orderCol, { ascending });
     }
@@ -1460,8 +1228,8 @@ async function fetchAllTableRows(table, select = '*', orderCol = 'created_at', a
     if (error) throw error;
     if (!data || data.length === 0) break;
     allRows.push(...data);
-    if (data.length < pageSize) break;
-    from += pageSize;
+    if (data.length < chunkLimit) break;
+    from += chunkLimit;
   }
   return allRows;
 }
@@ -1496,142 +1264,144 @@ async function loadStaticConfigData(force = false) {
 }
 
 function processNotificationsAndAlerts(incomingNotifs, currentAllOrders, newlyArrivedOrders, isFirstLoad) {
-  let newUnreadDetected = false;
-  let newTableRoundEvent = null; // { roundNumber, tableNumber, order }
-  const announcedOrderIds = new Set();
+  // 1. Initial Load Protection: On startup or page refresh, register all existing orders
+  // and notifications as already known so NO historical notifications are announced.
+  if (isFirstLoad) {
+    (currentAllOrders || []).forEach(o => {
+      if (o && o.id) {
+        knownOrderIds.add(String(o.id));
+        notifiedBusinessOrderIds.add(String(o.id));
+      }
+      if (o && o.order_number) {
+        notifiedBusinessOrderIds.add(String(o.order_number));
+      }
+    });
+    (incomingNotifs || []).forEach(n => {
+      if (n && n.id) knownNotificationIds.add(String(n.id));
+    });
+    return;
+  }
 
-  // 1. Process notifications in chronological order (oldest first) so they arrive correctly
-  const reversedNotifs = [...(incomingNotifs || [])].reverse();
-  reversedNotifs.forEach(n => {
-    if (!knownNotificationIds.has(n.id)) {
-      knownNotificationIds.add(n.id);
-      
-      // If it's a new unread notification (and not the very first load of the dashboard)
-      if (!isFirstLoad && !n.is_read) {
-        const targetOrderId = n.item_id || n.order_id;
-        const linkedOrder = currentAllOrders.find(o => String(o.id) === String(targetOrderId));
+  // 2. Mark incoming notification records as known to avoid re-evaluating
+  (incomingNotifs || []).forEach(n => {
+    if (n && n.id) knownNotificationIds.add(String(n.id));
+  });
 
-        // If linked order is already closed/settled/cancelled, don't trigger sound or toasts and auto-mark read
-        if (linkedOrder && (linkedOrder.status === 'delivered' || linkedOrder.status === 'completed' || linkedOrder.status === 'closed' || linkedOrder.status === 'cancelled' || linkedOrder.payment_status === 'paid')) {
-          n.is_read = true;
-          insforge.database.from('notifications').update({ is_read: true }).eq('id', n.id).then(() => {}, () => {});
-          return;
-        }
+  // 3. Process new candidate orders. Deduplicate via notifiedBusinessOrderIds & cashierCreatedOrderIds.
+  const candidates = [];
+  const candidateIds = new Set();
 
-        newUnreadDetected = true;
-        if (targetOrderId) announcedOrderIds.add(targetOrderId);
-        
-        // Show dynamic toast depending on the type
-        if (n.type === 'order') {
-          const order = linkedOrder || currentAllOrders.find(o => o.id === targetOrderId);
-          let isTableRoundNotif = false;
-          let tableNum = '—';
-          let roundNum = 1;
+  function addCandidate(order) {
+    if (!order || !order.id) return;
+    const strId = String(order.id);
+    if (candidateIds.has(strId)) return;
+    if (cashierCreatedOrderIds.has(strId)) return; // Internal cashier-created POS order -> SUPPRESS
+    if (notifiedBusinessOrderIds.has(strId)) return; // Already notified -> SUPPRESS
 
-          if (order) {
-            const meta = parseNotesMetadata(order.notes, order);
-            const roundInfo = getOrderRoundInfo(order, currentAllOrders);
-            const isTable = meta.type === 'table' || order.order_type === 'table' || Boolean(meta.tableNumber || order.table_number);
-            tableNum = meta.tableNumber || order.table_number || '—';
-            roundNum = meta.roundNumber || roundInfo.roundNumber || 1;
-            isTableRoundNotif = isTable && roundNum >= 2;
-          } else if (/round\s*([2-9]|\d{2,})/i.test(n.title || n.message)) {
-            const rMatch = (n.title + ' ' + n.message).match(/round\s*(\d+)/i);
-            const tMatch = (n.title + ' ' + n.message).match(/table\s*(\w+)/i);
-            roundNum = rMatch ? parseInt(rMatch[1], 10) : 2;
-            tableNum = tMatch ? tMatch[1] : '—';
-            isTableRoundNotif = roundNum >= 2;
-          }
+    // Finished, delivered, closed, or cancelled orders do not generate new notifications
+    if (order.status === 'delivered' || order.status === 'completed' || order.status === 'closed' || order.status === 'cancelled') {
+      notifiedBusinessOrderIds.add(strId);
+      return;
+    }
 
-          if (isTableRoundNotif) {
-            newTableRoundEvent = { roundNumber: roundNum, tableNumber: tableNum, order };
-            const title = `🔔 TABLE ${tableNum} — ROUND ${roundNum}!`;
-            const msg = n.message || `Table ${tableNum} added Round ${roundNum}. Prepare KOT!`;
-            showDashboardToast(title, msg, 'table_round', targetOrderId);
-          } else {
-            const title = n.title || '🍽️ New Order Received!';
-            const msg = n.message || n.description || 'New order placed';
-            showDashboardToast(title, msg, 'success', targetOrderId);
-          }
-          
-          // Trigger incoming order modal for online website orders instead of auto printing final bill
-          try {
-            if (order) {
-              const meta = parseNotesMetadata(order.notes, order);
-              if (meta.type === 'delivery' || meta.type === 'pickup' || order.status === 'pending') {
-                triggerIncomingOrderPrompt(order);
-              }
-            }
-          } catch (promptErr) {
-            console.error('[Incoming Order] Prompt failed:', promptErr);
-          }
-        } else if (n.type === 'booking') {
-          showDashboardToast(
-            n.title || `📅 New Booking Enquiry!`,
-            n.message || n.description || 'New booking enquiry',
-            'info'
-          );
-        } else if (n.type === 'order_status') {
-          showDashboardToast(
-            n.title || `🍽️ Order Status Updated!`,
-            n.message || n.description || 'Order status changed',
-            'success',
-            targetOrderId
-          );
-        }
+    candidateIds.add(strId);
+    candidates.push(order);
+  }
+
+  // Check incoming notifications pointing to order IDs
+  (incomingNotifs || []).forEach(n => {
+    if (!n.is_read && n.type === 'order') {
+      const targetOrderId = n.item_id || n.order_id;
+      if (targetOrderId) {
+        const order = (currentAllOrders || []).find(o => String(o.id) === String(targetOrderId));
+        if (order) addCandidate(order);
       }
     }
   });
 
-  // 2. Direct Order Detection (Guaranteed alert & chime for every new active order or round)
+  // Check newly arrived orders from delta sync / realtime
   (newlyArrivedOrders || []).forEach(order => {
-    if (!knownOrderIds.has(order.id)) {
-      knownOrderIds.add(order.id);
+    addCandidate(order);
+  });
 
-      if (!isFirstLoad && !announcedOrderIds.has(order.id)) {
-        // Skip orders that are already delivered, closed, or cancelled
-        if (order.status === 'delivered' || order.status === 'completed' || order.status === 'closed' || order.status === 'cancelled' || order.payment_status === 'paid') {
-          return;
-        }
+  if (candidates.length === 0) return;
 
-        newUnreadDetected = true;
-        const meta = parseNotesMetadata(order.notes, order);
-        const roundInfo = getOrderRoundInfo(order, currentAllOrders);
-        const isTable = meta.type === 'table' || order.order_type === 'table' || Boolean(meta.tableNumber || order.table_number);
-        const tableNum = meta.tableNumber || order.table_number || '—';
-        const roundNum = meta.roundNumber || roundInfo.roundNumber || 1;
+  let chimeNeeded = false;
+  let hasTableEvent = false;
+  let lastTableRound = 1;
+  let lastTableNum = '—';
+  let lastTableOrder = null;
 
-        if (isTable) {
-          if (roundNum >= 2) {
-            newTableRoundEvent = { roundNumber: roundNum, tableNumber: tableNum, order };
-            const title = `🔔 TABLE ${tableNum} — ROUND ${roundNum}!`;
-            const msg = `Table ${tableNum} placed Round ${roundNum} (₹${Number(order.total_amount || 0).toFixed(0)}). Prepare Kitchen ticket!`;
-            showDashboardToast(title, msg, 'table_round', order.id);
-          } else {
-            const title = `🍽️ Table ${tableNum} - Round 1`;
-            const msg = `Table ${tableNum} placed new Dine-in order (₹${Number(order.total_amount || 0).toFixed(0)})`;
-            showDashboardToast(title, msg, 'success', order.id);
-          }
-        } else if (meta.type === 'delivery') {
-          const title = `🚗 Online Delivery #${formatDailyOrderNumber(order)}`;
-          const msg = `${order.customer_name || 'Customer'} placed Delivery order (₹${Number(order.total_amount || 0).toFixed(0)})`;
-          showDashboardToast(title, msg, 'success', order.id);
+  // Process ONLY the two allowed business notification types
+  candidates.forEach(order => {
+    const strId = String(order.id);
+    if (notifiedBusinessOrderIds.has(strId)) return;
+    notifiedBusinessOrderIds.add(strId);
+    knownOrderIds.add(strId);
+
+    const meta = parseNotesMetadata(order.notes, order);
+    const roundInfo = getOrderRoundInfo(order, currentAllOrders);
+    const isTable = order.order_type === 'table' || meta.type === 'table' || Boolean(order.table_number || meta.tableNumber);
+    const tableNum = order.table_number || meta.tableNumber || '—';
+    const roundNum = meta.roundNumber || roundInfo.roundNumber || 1;
+
+    if (isTable) {
+      // ════════════════════════════════════════════════════════════════
+      // TYPE 2: NEW TABLE QR ORDER RECEIVED
+      // ════════════════════════════════════════════════════════════════
+      const orderItemsList = (orderItems || []).filter(i => String(i.order_id) === strId);
+      const itemsCount = orderItemsList.reduce((sum, i) => sum + (Number(i.quantity) || 1), 0) || 1;
+      const orderNum = `#ORD-${formatDailyOrderNumber(order)}`;
+
+      showBusinessNotification({
+        type: 'table_qr',
+        orderId: order.id,
+        orderNumber: orderNum,
+        tableNumber: `Table ${tableNum}`,
+        itemCount: itemsCount,
+        amount: Number(order.total_amount || 0),
+        order
+      });
+
+      chimeNeeded = true;
+      hasTableEvent = true;
+      lastTableRound = roundNum;
+      lastTableNum = tableNum;
+      lastTableOrder = order;
+    } else {
+      // ════════════════════════════════════════════════════════════════
+      // TYPE 1: NEW WEBSITE ORDER RECEIVED (Delivery / Takeaway)
+      // ════════════════════════════════════════════════════════════════
+      const orderNum = `#ORD-${formatDailyOrderNumber(order)}`;
+      const customerName = order.customer_name || 'Online Customer';
+      const orderTypeStr = (meta.type === 'delivery' || order.order_type === 'delivery') ? 'Delivery' : 'Takeaway';
+
+      showBusinessNotification({
+        type: 'website',
+        orderId: order.id,
+        orderNumber: orderNum,
+        customerName: customerName,
+        orderType: orderTypeStr,
+        amount: Number(order.total_amount || 0),
+        order
+      });
+
+      chimeNeeded = true;
+
+      // Trigger incoming order prompt modal if pending
+      try {
+        if (order.status === 'pending') {
           triggerIncomingOrderPrompt(order);
-        } else {
-          const title = `🥡 Pickup Order #${formatDailyOrderNumber(order)}`;
-          const msg = `${order.customer_name || 'Customer'} placed Pickup order (₹${Number(order.total_amount || 0).toFixed(0)})`;
-          showDashboardToast(title, msg, 'success', order.id);
-          if (order.status === 'pending') {
-            triggerIncomingOrderPrompt(order);
-          }
         }
+      } catch (promptErr) {
+        console.error('[Incoming Order] Prompt failed:', promptErr);
       }
     }
   });
 
-  if (newTableRoundEvent) {
-    playTableRoundChime(newTableRoundEvent.roundNumber, newTableRoundEvent.tableNumber, newTableRoundEvent.order);
-  } else if (newUnreadDetected) {
+  if (hasTableEvent && lastTableRound >= 2) {
+    playTableRoundChime(lastTableRound, lastTableNum, lastTableOrder);
+  } else if (chimeNeeded) {
     playNotificationChime();
   }
 }
@@ -1639,7 +1409,7 @@ function processNotificationsAndAlerts(incomingNotifs, currentAllOrders, newlyAr
 // ── Incoming Online Website Orders (Accept / Reject Flow) ───────────────
 let currentIncomingOrder = null;
 
-function closeIncomingOrderModal() {
+export function closeIncomingOrderModal() {
   const modal = $('adm-incoming-order-modal');
   if (modal) {
     modal.classList.remove('open');
@@ -1649,7 +1419,7 @@ function closeIncomingOrderModal() {
 }
 window.closeIncomingOrderModal = closeIncomingOrderModal;
 
-async function triggerIncomingOrderPrompt(order) {
+export async function triggerIncomingOrderPrompt(order) {
   if (!order) return;
   // If order is already settled, delivered or cancelled, ignore
   if (order.status === 'delivered' || order.status === 'completed' || order.status === 'closed' || order.status === 'cancelled' || order.status === 'preparing') {
@@ -1751,8 +1521,15 @@ async function triggerIncomingOrderPrompt(order) {
     }
   }
 
+  // Non-blocking display & focus preservation
+  const activeEl = document.activeElement;
   modal.classList.add('open');
-  modal.style.display = 'flex';
+  modal.style.display = 'block';
+
+  // Explicitly ensure keyboard focus remains on cashier's active typing element
+  if (activeEl && typeof activeEl.focus === 'function' && document.body.contains(activeEl)) {
+    try { activeEl.focus(); } catch (e) {}
+  }
 }
 window.triggerIncomingOrderPrompt = triggerIncomingOrderPrompt;
 
@@ -1761,10 +1538,10 @@ async function acceptIncomingOnlineOrder() {
   const order = currentIncomingOrder;
 
   try {
-    // 1. Update status to 'preparing' and ticket_status to 'HOLD'
+    // 1. Update status to 'preparing' and ticket_status to 'OPEN'
     await updateOrderStatus(order.id, 'preparing');
     order.status = 'preparing';
-    order.ticket_status = 'HOLD';
+    order.ticket_status = 'OPEN';
 
     // 2. Fetch order items for KOT
     let items = getItemsForOrder(order.id);
@@ -1835,9 +1612,18 @@ function persistOrdersCache() {
   try {
     if (Array.isArray(orders)) {
       localStorage.setItem('limra_cached_orders', JSON.stringify(orders.slice(0, 150)));
+      if (typeof window !== 'undefined') {
+        window.orders = orders;
+      }
+      if (typeof posState !== 'undefined' && typeof posState.setOrders === 'function') {
+        posState.setOrders(orders);
+      }
     }
     if (Array.isArray(orderItems)) {
       localStorage.setItem('limra_cached_order_items', JSON.stringify(orderItems.slice(0, 500)));
+      if (typeof window !== 'undefined') {
+        window.orderItems = orderItems;
+      }
     }
   } catch (e) {
     console.warn('[Cache Persist Warn]:', e);
@@ -1853,12 +1639,45 @@ async function loadOrders(force = true) {
 }
 window.loadOrders = loadOrders;
 
+const ORDER_SELECT_COLUMNS = 'id, order_number, customer_name, customer_phone, total_amount, subtotal_amount, discount_pct, discount_amount, taxable_amount, cgst_amount, sgst_amount, delivery_fee, packaging_fee, round_off_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, settled_at, consolidated_into_order_id, created_at, updated_at';
+const ORDER_ITEM_SELECT_COLUMNS = 'id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at';
+
+function getScopedActiveOrderIdsForItems(orderList = orders) {
+  if (!Array.isArray(orderList) || orderList.length === 0) return [];
+  const todayStr = getLocalDateString(new Date());
+  const scopedIds = new Set();
+
+  // 1. All active/unsettled orders (kitchen, tables, hold, unpaid bills) + today's orders
+  for (const o of orderList) {
+    if (!o || !o.id) continue;
+    const isTerminal = o.status === 'delivered' || o.status === 'completed' || o.status === 'closed' || o.status === 'cancelled';
+    const isUnpaid = o.payment_status !== 'paid' && o.status !== 'cancelled';
+    const isToday = o.created_at && getLocalDateString(o.created_at) === todayStr;
+    if (!isTerminal || isUnpaid || isToday) {
+      scopedIds.add(String(o.id));
+    }
+  }
+
+  // 2. First page of recent orders for immediate Order List display
+  const firstPageLimit = typeof ORDERS_PER_PAGE === 'number' ? ORDERS_PER_PAGE : 25;
+  for (let i = 0; i < Math.min(orderList.length, firstPageLimit); i++) {
+    if (orderList[i]?.id) scopedIds.add(String(orderList[i].id));
+  }
+
+  // 3. Currently selected order in Order Detail / POS Billing
+  if (selectedOrderId) {
+    scopedIds.add(String(selectedOrderId));
+  }
+
+  return Array.from(scopedIds);
+}
+
 async function loadData(isManual = false) {
   const isFirstLoad = !lastSyncTimestamp || isManual || (knownNotificationIds.size === 0 && knownOrderIds.size === 0);
 
-  // A. FULL BASELINE LOAD (On initial page boot or manual force-sync)
+  // A. SCOPED BASELINE LOAD (On initial page boot or manual force-sync)
   if (isFirstLoad) {
-    // 0ms instant render from cache if available
+    // 0ms instant render of active panel only from cache if available
     try {
       if (orders.length === 0) {
         const cachedOrders = JSON.parse(localStorage.getItem('limra_cached_orders') || '[]');
@@ -1866,27 +1685,21 @@ async function loadData(isManual = false) {
         if (cachedOrders.length > 0) {
           orders = cachedOrders;
           orderItems = cachedItems;
-          renderOverview();
-          renderOrdersTable();
-          renderBillingQuickCards();
-          renderTablesPanel();
-          renderHoldOrdersPanel();
+          renderAll();
         }
       }
     } catch (e) {}
 
     const fetchStartTime = new Date(Date.now() - 10000).toISOString();
 
-    // Query recent records scoped with selective columns to eliminate massive egress and delay
-    const [ordersRes, itemsRes, bookingsRes, notifsRes] = await Promise.all([
-      insforge.database.from('orders').select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, created_at, updated_at').order('created_at', { ascending: false }).limit(300),
-      insforge.database.from('order_items').select('id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at').order('created_at', { ascending: false }).limit(1000),
+    // Step 1: Query recent orders, bookings, notifications, and static config in parallel (NO unscoped order_items dump)
+    const [ordersRes, bookingsRes, notifsRes] = await Promise.all([
+      insforge.database.from('orders').select(ORDER_SELECT_COLUMNS).order('created_at', { ascending: false }).limit(300),
       insforge.database.from('bookings').select('*').order('created_at', { ascending: false }).limit(100),
       insforge.database.from('notifications').select('*').order('created_at', { ascending: false }).limit(35),
       loadStaticConfigData(isManual)
     ]);
 
-    if (itemsRes && itemsRes.error) throw itemsRes.error;
     if (bookingsRes && bookingsRes.error) throw bookingsRes.error;
     if (notifsRes && notifsRes.error) throw notifsRes.error;
 
@@ -1904,11 +1717,20 @@ async function loadData(isManual = false) {
       orders = [];
     }
 
-    orderItems = (itemsRes && itemsRes.data) || [];
+    // Step 2: Fetch order_items strictly scoped to active, today's, and visible first-page orders
+    const scopedOrderIds = getScopedActiveOrderIdsForItems(orders);
+    if (isManual) {
+      loadedItemOrderIds.clear();
+      orderItems = [];
+    }
+    if (scopedOrderIds.length > 0) {
+      await ensureOrderItemsLoaded(scopedOrderIds, { force: isManual });
+    }
+
     bookings = (bookingsRes && bookingsRes.data) || [];
     const fetchedNotifs = (notifsRes && notifsRes.data) || [];
 
-    // Cache recent orders to localStorage
+    // Cache recent orders & scoped items to localStorage
     persistOrdersCache();
 
     processNotificationsAndAlerts(fetchedNotifs, orders, orders, true);
@@ -1916,20 +1738,28 @@ async function loadData(isManual = false) {
     activeNotifications = fetchedNotifs;
     renderNotifications();
     lastSyncTimestamp = fetchStartTime;
-    $('last-updated').textContent = `Updated ${new Date().toLocaleTimeString('en-IN')}`;
+    if ($('last-updated')) {
+      $('last-updated').textContent = `Updated ${new Date().toLocaleTimeString('en-IN')}`;
+    }
     return;
   }
 
-  // B. ULTRA-LIGHTWEIGHT INCREMENTAL DELTA SYNC (Runs on smart polling heartbeat)
+  // B. ULTRA-LIGHTWEIGHT INCREMENTAL DELTA SYNC (Runs on smart polling heartbeat & realtime events)
   const syncSince = lastSyncTimestamp;
   const nextSyncTime = new Date(Date.now() - 10000).toISOString();
 
-  const [deltaOrdersRes, deltaBookingsRes, notifsRes] = await Promise.all([
+  const [deltaOrdersRes, deltaItemsSignalRes, deltaBookingsRes, notifsRes] = await Promise.all([
     insforge.database
       .from('orders')
-      .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, created_at, updated_at')
+      .select(ORDER_SELECT_COLUMNS)
       .or(`updated_at.gte.${syncSince},created_at.gte.${syncSince}`)
       .order('created_at', { ascending: false }),
+    insforge.database
+      .from('order_items')
+      .select(ORDER_ITEM_SELECT_COLUMNS)
+      .gte('created_at', syncSince)
+      .order('created_at', { ascending: false })
+      .limit(200),
     insforge.database
       .from('bookings')
       .select('*')
@@ -1963,19 +1793,38 @@ async function loadData(isManual = false) {
     }
   }
 
+  const recentCreatedItems = (deltaItemsSignalRes && Array.isArray(deltaItemsSignalRes.data)) ? deltaItemsSignalRes.data : [];
   const deltaBookings = (deltaBookingsRes && deltaBookingsRes.data) || [];
   const fetchedNotifs = (notifsRes && notifsRes.data) || [];
 
-  // Fetch order_items ONLY if orders were added or modified
-  let deltaItems = [];
-  if (deltaOrders.length > 0) {
-    const changedOrderIds = deltaOrders.map(o => o.id);
-    const { data: fetchedDeltaItems, error: itemsErr } = await insforge.database
-      .from('order_items')
-      .select('id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at')
-      .in('order_id', changedOrderIds);
-    if (!itemsErr && Array.isArray(fetchedDeltaItems)) {
-      deltaItems = fetchedDeltaItems;
+  // If new order_items arrived for an order not yet in memory or deltaOrders, fetch that parent order too
+  if (recentCreatedItems.length > 0) {
+    const knownAndDeltaIds = new Set([
+      ...orders.map(o => String(o.id)),
+      ...deltaOrders.map(o => String(o.id))
+    ]);
+    const missingParentOrderIds = Array.from(
+      new Set(recentCreatedItems.map(i => String(i.order_id)).filter(id => id && !knownAndDeltaIds.has(id)))
+    );
+    if (missingParentOrderIds.length > 0) {
+      let parentOrders = null;
+      try {
+        const res = await insforge.database
+          .from('orders')
+          .select(ORDER_SELECT_COLUMNS)
+          .in('id', missingParentOrderIds);
+        if (res.error) throw res.error;
+        parentOrders = res.data;
+      } catch (err) {
+        const fbRes = await insforge.database
+          .from('orders')
+          .select('*')
+          .in('id', missingParentOrderIds);
+        parentOrders = fbRes.data;
+      }
+      if (Array.isArray(parentOrders) && parentOrders.length > 0) {
+        deltaOrders.push(...parentOrders);
+      }
     }
   }
 
@@ -1985,13 +1834,29 @@ async function loadData(isManual = false) {
     orders.forEach(o => orderMap.set(String(o.id), o));
     deltaOrders.forEach(o => orderMap.set(String(o.id), o));
     orders = Array.from(orderMap.values()).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-    persistOrdersCache();
   }
 
-  // Merge delta order_items into memory
-  if (deltaOrders.length > 0) {
-    const changedIdsSet = new Set(deltaOrders.map(o => String(o.id)));
-    orderItems = orderItems.filter(item => !changedIdsSet.has(String(item.order_id))).concat(deltaItems);
+  // Determine all orders whose order_items need refreshing (deltaOrders + orders with recently created items)
+  const affectedOrderIds = Array.from(
+    new Set([
+      ...deltaOrders.map(o => String(o.id)),
+      ...recentCreatedItems.map(i => String(i.order_id))
+    ].filter(Boolean))
+  );
+
+  if (affectedOrderIds.length > 0) {
+    await ensureOrderItemsLoaded(affectedOrderIds, { force: true });
+  }
+
+  // Also ensure any active (non-closed) orders in memory that still lack loaded items are synchronized
+  const activeMissingItemIds = orders
+    .filter(o => o && o.id && !['delivered', 'completed', 'closed', 'cancelled'].includes(o.status) && !loadedItemOrderIds.has(String(o.id)))
+    .map(o => String(o.id));
+  if (activeMissingItemIds.length > 0) {
+    await ensureOrderItemsLoaded(activeMissingItemIds);
+  }
+
+  if (deltaOrders.length > 0 || affectedOrderIds.length > 0) {
     persistOrdersCache();
   }
 
@@ -2009,7 +1874,9 @@ async function loadData(isManual = false) {
   activeNotifications = fetchedNotifs;
   renderNotifications();
   lastSyncTimestamp = nextSyncTime;
-  $('last-updated').textContent = `Updated ${new Date().toLocaleTimeString('en-IN')}`;
+  if ($('last-updated')) {
+    $('last-updated').textContent = `Updated ${new Date().toLocaleTimeString('en-IN')}`;
+  }
 }
 
 function buildCustomerStats() {
@@ -2033,11 +1900,14 @@ function buildCustomerStats() {
         items: {},
         recentBookings: [],
         ordersHistory: [],
+        lastAddress: '',
+        lastPlace: '',
+        lastAddressDate: null,
         tier: 'new'
       });
     }
     const c = map.get(phone);
-    if (name && (!c.name || c.name === 'Customer' || c.name === 'Walk-in Customer')) c.name = name;
+    if (name && (!c.name || c.name === 'Customer' || c.name === 'Walk-in Customer' || c.name === 'Walk-in Guest')) c.name = name;
     return c;
   }
 
@@ -2059,9 +1929,16 @@ function buildCustomerStats() {
     c.ordersHistory.push(order);
     const meta = parseNotesMetadata(order.notes, order);
     if (meta.email) c.email = meta.email;
+    const orderAddr = (meta.address || order.address || '').trim();
+    const orderArea = (meta.area || '').trim();
+    if ((orderAddr || orderArea) && (!c.lastAddressDate || new Date(order.created_at || 0) >= new Date(c.lastAddressDate))) {
+      if (orderAddr) c.lastAddress = orderAddr;
+      if (orderArea) c.lastPlace = orderArea;
+      c.lastAddressDate = order.created_at || new Date().toISOString();
+    }
     if (!c.lastOrder || new Date(order.created_at) > new Date(c.lastOrder)) {
       c.lastOrder = order.created_at;
-      if (order.customer_name && order.customer_name !== 'Customer') c.name = order.customer_name;
+      if (order.customer_name && order.customer_name !== 'Customer' && order.customer_name !== 'Walk-in Guest') c.name = order.customer_name;
     }
     touchActivity(c, order.created_at);
     getItemsForOrder(order.id).forEach(item => {
@@ -2161,87 +2038,232 @@ function getBookingsByDayOfWeek() {
 // ── Dashboard ───────────────────────────────────────────
 
 function renderStats() {
-  const pending = orders.filter(o => o.status === 'pending').length;
-  const delivered = orders.filter(o => o.status === 'delivered').length;
-  const revenue = orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
+  const now = new Date();
+  const todayStr = getLocalDateString(now);
+  const yDate = new Date(now);
+  yDate.setDate(yDate.getDate() - 1);
+  const yesterdayStr = getLocalDateString(yDate);
+  const nowMs = now.getTime();
 
-  // New payment stats calculations
-  const paidCount = orders.filter(o => o.payment_status === 'paid').length;
-  const unpaidCount = orders.filter(o => o.payment_status === 'unpaid' || !o.payment_status).length;
-  
-  const todayDate = new Date();
-  const todayStr = todayDate.toDateString();
-  const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === todayStr);
+  // All-time metrics for legacy badges & reports
+  let allPending = 0;
+  let allDelivered = 0;
+  let allRevenue = 0;
+  let allPaidCount = 0;
+  let allUnpaidCount = 0;
+  let allPendingPayments = 0;
+  let allCollectedRev = 0;
+  let allOutstandingRev = 0;
 
-  const todayGrossRev = todayOrders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
-  const todayPaidRev = todayOrders.filter(o => o.payment_status === 'paid' && o.status !== 'cancelled').reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
-  const todayPendingRev = todayOrders.filter(o => (o.payment_status === 'unpaid' || !o.payment_status) && o.status !== 'cancelled').reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
+  // Today's metrics
+  let todayTotalOrders = 0;
+  let todayGrossRev = 0;
+  let todayPaidRev = 0;
+  let todayPendingRev = 0;
+  let todayPaidCount = 0;
+  let todayPendingCount = 0;
+  let todayDineIn = 0;
+  let todayOnline = 0;
+  let yesterdayPaidRev = 0;
 
-  const todayDineIn = todayOrders.filter(o => {
-    const meta = parseNotesMetadata(o.notes, o);
-    return meta.type === 'table' || o.order_type === 'table';
-  }).length;
-  const todayOnline = todayOrders.length - todayDineIn;
+  // Payment method breakdowns (today settled only)
+  let cashCollected = 0;
+  let upiCollected = 0;
+  let cardCollected = 0;
+  let settledTxnCount = 0;
 
-  // Active Hold Orders (in kitchen / table)
-  const heldOrders = orders.filter(o => o.status === 'hold');
-  const heldTotal = heldOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
+  // Active KDS Kitchen metrics
+  let kdsPendingCount = 0;
+  let kdsPreparingCount = 0;
+  let kdsReadyCount = 0;
+  let kdsDelayedCount = 0;
+  let kdsMaxWaitMins = 0;
 
-  // Digital vs Cash today
-  let todayDigital = 0;
-  let todayCash = 0;
-  todayOrders.filter(o => o.payment_status === 'paid').forEach(o => {
-    const meta = parseNotesMetadata(o.notes, o);
-    const mode = (meta.paymentMode || o.payment_mode || meta.payment || '').toLowerCase();
-    const amt = getEffectiveOrderTotal(o);
-    if (mode.includes('upi') || mode.includes('card') || mode.includes('online')) {
-      todayDigital += amt;
-    } else {
-      todayCash += amt;
+  // Held orders count
+  let heldOrdersCount = 0;
+  let heldTotalAmount = 0;
+
+  // Single-pass O(N) aggregation across orders
+  for (let i = 0; i < orders.length; i++) {
+    const o = orders[i];
+    const isCancelled = (o.status === 'cancelled' || o.ticket_status === 'CANCELLED');
+    const isClosed = (o.ticket_status === 'CLOSED');
+    const isPaid = (o.payment_status === 'paid');
+    const orderTotal = getEffectiveOrderTotal(o);
+    const orderDateStr = getLocalDateString(o.created_at);
+    const isToday = (orderDateStr === todayStr);
+    const isYesterday = (orderDateStr === yesterdayStr);
+
+    // All-time stats
+    if (o.status === 'pending') allPending++;
+    if (o.status === 'delivered') allDelivered++;
+    if (o.status === 'hold') {
+      heldOrdersCount++;
+      heldTotalAmount += orderTotal;
     }
-  });
+    if (isPaid) {
+      allPaidCount++;
+      if (!isCancelled) allCollectedRev += orderTotal;
+    } else {
+      allUnpaidCount++;
+      allPendingPayments += orderTotal;
+      if (!isCancelled) allOutstandingRev += orderTotal;
+    }
+    if (!isCancelled) allRevenue += orderTotal;
 
-  // Hero Cards Rendering
+    // Today's stats
+    if (isToday) {
+      todayTotalOrders++;
+      const meta = parseNotesMetadata(o.notes, o);
+      const isTableOrder = (meta.type === 'table' || o.order_type === 'table');
+      if (isTableOrder) todayDineIn++;
+      else todayOnline++;
+
+      if (!isCancelled) {
+        todayGrossRev += orderTotal;
+        if (isPaid) {
+          todayPaidRev += orderTotal;
+          todayPaidCount++;
+          settledTxnCount++;
+
+          // Breakdown by payment mode
+          const mode = (o.payment_method || meta.paymentMode || o.payment_mode || meta.payment || '').toLowerCase();
+          if (mode.includes('card')) {
+            cardCollected += orderTotal;
+          } else if (mode.includes('upi') || mode.includes('online') || mode.includes('razorpay') || meta.type === 'delivery') {
+            upiCollected += orderTotal;
+          } else {
+            cashCollected += orderTotal;
+          }
+        } else {
+          todayPendingRev += orderTotal;
+          todayPendingCount++;
+        }
+      }
+    } else if (isYesterday && !isCancelled && isPaid) {
+      yesterdayPaidRev += orderTotal;
+    }
+
+    // Kitchen KDS active items
+    if (!isCancelled && !isClosed && o.status !== 'delivered') {
+      if (o.status === 'pending' || o.status === 'confirmed') {
+        kdsPendingCount++;
+      } else if (o.status === 'preparing') {
+        kdsPreparingCount++;
+      } else if (o.status === 'ready') {
+        kdsReadyCount++;
+      }
+
+      if (['pending', 'confirmed', 'preparing', 'ready'].includes(o.status)) {
+        const orderTime = o.created_at ? new Date(o.created_at).getTime() : nowMs;
+        const waitMins = Math.max(0, Math.floor((nowMs - orderTime) / 60000));
+        if (waitMins > kdsMaxWaitMins) kdsMaxWaitMins = waitMins;
+        if (waitMins >= 20 && o.status !== 'ready') {
+          kdsDelayedCount++;
+        }
+      }
+    }
+  }
+
+  // Dining Table stats from existing table functions
+  const totalTables = getTotalTablesCount();
+  const tableSessions = getActiveTableSessions();
+  const unpaidTableBills = typeof getOutstandingBills === 'function' ? getOutstandingBills('table') : getOutstandingTableBills();
+
+  let freeTables = 0;
+  let occupiedTables = 0;
+  let billedTables = 0;
+
+  for (let tNum = 1; tNum <= totalTables; tNum++) {
+    const sess = tableSessions.find(s => s.tableNumber === tNum);
+    const tableBill = unpaidTableBills.find(b => {
+      const meta = parseNotesMetadata(b.notes, b);
+      const bNum = parseInt(String(meta.tableNumber || b.table_number || '').replace(/\D/g, ''), 10);
+      return bNum === tNum;
+    });
+
+    if (sess && sess.orders.length > 0) {
+      occupiedTables++;
+    } else if (tableBill) {
+      billedTables++;
+    } else {
+      freeTables++;
+    }
+  }
+
+  // --- RENDER CARD 1: Today's Net Sales ---
+  if ($('kpi-today-net-sales')) $('kpi-today-net-sales').textContent = fmtMoney(todayPaidRev);
+  if ($('kpi-today-sales-sub')) $('kpi-today-sales-sub').textContent = `₹${todayPaidRev.toFixed(2)} Paid · ₹${todayPendingRev.toFixed(2)} Unpaid`;
+  if ($('kpi-today-orders-count')) $('kpi-today-orders-count').textContent = `${todayPaidCount} Orders completed`;
+  if ($('kpi-today-benchmark')) {
+    if (yesterdayPaidRev > 0) {
+      $('kpi-today-benchmark').textContent = `vs Yesterday: ${fmtMoney(yesterdayPaidRev)}`;
+    } else if (todayPaidCount > 0) {
+      $('kpi-today-benchmark').textContent = `Avg: ${fmtMoney(todayPaidRev / todayPaidCount)}`;
+    } else {
+      $('kpi-today-benchmark').textContent = 'Shift started';
+    }
+  }
+
+  // --- RENDER CARD 2: Payment Collections ---
+  if ($('kpi-total-collected')) $('kpi-total-collected').textContent = fmtMoney(todayPaidRev);
+  if ($('kpi-cash-collected')) $('kpi-cash-collected').textContent = fmtMoney(cashCollected);
+  if ($('kpi-upi-collected')) $('kpi-upi-collected').textContent = fmtMoney(upiCollected);
+  if ($('kpi-card-collected')) $('kpi-card-collected').textContent = fmtMoney(cardCollected);
+  if ($('kpi-collected-txns')) $('kpi-collected-txns').textContent = `${settledTxnCount} Settlements`;
+  if ($('kpi-payments-unpaid')) $('kpi-payments-unpaid').textContent = `₹${todayPendingRev.toFixed(2)} Unpaid`;
+
+  // --- RENDER CARD 3: Dining Table Status ---
+  const activeTablesCount = occupiedTables + billedTables;
+  const tablePct = Math.round((activeTablesCount / Math.max(totalTables, 1)) * 100);
+  if ($('kpi-table-occupancy')) $('kpi-table-occupancy').textContent = `${occupiedTables} / ${totalTables} Occupied`;
+  if ($('kpi-table-bar-fill')) $('kpi-table-bar-fill').style.width = `${tablePct}%`;
+  if ($('kpi-table-free-pill')) $('kpi-table-free-pill').textContent = `🟢 ${freeTables} Free`;
+  if ($('kpi-table-busy-pill')) $('kpi-table-busy-pill').textContent = `🟡 ${occupiedTables} Seated`;
+  if ($('kpi-table-billed-pill')) $('kpi-table-billed-pill').textContent = `🔴 ${billedTables} Billed`;
+
+  // --- RENDER CARD 4: Kitchen KDS Status ---
+  const totalActiveKds = kdsPendingCount + kdsPreparingCount + kdsReadyCount;
+  if ($('kpi-kds-active-count')) $('kpi-kds-active-count').textContent = `${totalActiveKds} Active KOTs`;
+  if ($('kpi-kds-breakdown')) $('kpi-kds-breakdown').textContent = `${kdsPreparingCount} Cooking · ${kdsPendingCount} Queued · ${kdsReadyCount} Ready`;
+  if ($('kpi-kds-max-wait')) $('kpi-kds-max-wait').textContent = `Wait: ${kdsMaxWaitMins}m`;
+
+  const delayBadge = $('kpi-kds-delay-badge');
+  if (delayBadge) {
+    if (kdsDelayedCount > 0) {
+      delayBadge.className = 'dash-kds-badge delayed';
+      delayBadge.textContent = `⚠️ ${kdsDelayedCount} Delayed (>20m)`;
+    } else {
+      delayBadge.className = 'dash-kds-badge ok';
+      delayBadge.textContent = '✓ On Track (0 Delayed)';
+    }
+  }
+
+  // --- Legacy Hero & Stat Elements (Backward Compatibility) ---
   if ($('dash-hero-today-sales')) $('dash-hero-today-sales').textContent = fmtMoney(todayGrossRev);
   if ($('dash-hero-today-sales-sub')) $('dash-hero-today-sales-sub').textContent = `₹${todayPaidRev.toFixed(2)} Paid · ₹${todayPendingRev.toFixed(2)} Pending`;
-  
-  if ($('dash-hero-today-orders')) $('dash-hero-today-orders').textContent = `${todayOrders.length} Orders`;
+  if ($('dash-hero-today-orders')) $('dash-hero-today-orders').textContent = `${todayTotalOrders} Orders`;
   if ($('dash-hero-today-orders-sub')) $('dash-hero-today-orders-sub').textContent = `${todayDineIn} Dine-in · ${todayOnline} Online/Takeaway`;
-
-  if ($('dash-hero-hold-orders')) $('dash-hero-hold-orders').textContent = `${heldOrders.length} KOTs`;
-  if ($('dash-hero-hold-orders-sub')) $('dash-hero-hold-orders-sub').textContent = `₹${heldTotal.toFixed(2)} pending settlement`;
-
-  if ($('dash-hero-digital-cash')) $('dash-hero-digital-cash').textContent = `₹${todayDigital.toFixed(2)} UPI/Card`;
-  if ($('dash-hero-digital-cash-sub')) $('dash-hero-digital-cash-sub').textContent = `₹${todayCash.toFixed(2)} Cash received`;
-
-  // Standard 8 stats
-  const pendingPayments = orders
-    .filter(o => o.payment_status === 'unpaid' || !o.payment_status)
-    .reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
-
-  const collectedRev = orders
-    .filter(o => o.payment_status === 'paid' && o.status !== 'cancelled')
-    .reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
-
-  const outstandingRev = orders
-    .filter(o => (o.payment_status === 'unpaid' || !o.payment_status) && o.status !== 'cancelled')
-    .reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
+  if ($('dash-hero-hold-orders')) $('dash-hero-hold-orders').textContent = `${heldOrdersCount} KOTs`;
+  if ($('dash-hero-hold-orders-sub')) $('dash-hero-hold-orders-sub').textContent = `₹${heldTotalAmount.toFixed(2)} pending settlement`;
+  if ($('dash-hero-digital-cash')) $('dash-hero-digital-cash').textContent = `₹${(upiCollected + cardCollected).toFixed(2)} UPI/Card`;
+  if ($('dash-hero-digital-cash-sub')) $('dash-hero-digital-cash-sub').textContent = `₹${cashCollected.toFixed(2)} Cash received`;
 
   if ($('stat-total-orders')) $('stat-total-orders').textContent = orders.length;
-  if ($('stat-revenue')) $('stat-revenue').textContent = fmtMoney(revenue);
-  if ($('stat-paid-orders')) $('stat-paid-orders').textContent = paidCount;
-  if ($('stat-unpaid-orders')) $('stat-unpaid-orders').textContent = unpaidCount;
+  if ($('stat-revenue')) $('stat-revenue').textContent = fmtMoney(allRevenue);
+  if ($('stat-paid-orders')) $('stat-paid-orders').textContent = allPaidCount;
+  if ($('stat-unpaid-orders')) $('stat-unpaid-orders').textContent = allUnpaidCount;
   if ($('stat-today-payments')) $('stat-today-payments').textContent = fmtMoney(todayPaidRev);
-  if ($('stat-pending-payments')) $('stat-pending-payments').textContent = fmtMoney(pendingPayments);
-  if ($('stat-collected-revenue')) $('stat-collected-revenue').textContent = fmtMoney(collectedRev);
-  if ($('stat-outstanding-revenue')) $('stat-outstanding-revenue').textContent = fmtMoney(outstandingRev);
+  if ($('stat-pending-payments')) $('stat-pending-payments').textContent = fmtMoney(allPendingPayments);
+  if ($('stat-collected-revenue')) $('stat-collected-revenue').textContent = fmtMoney(allCollectedRev);
+  if ($('stat-outstanding-revenue')) $('stat-outstanding-revenue').textContent = fmtMoney(allOutstandingRev);
 
   // Render GST compliance & accounting section with active date filters
   renderGSTSection();
 
   // Sidebar badges
   const orderBadge = $('pending-orders-badge');
-  if (pending > 0) { orderBadge.textContent = pending; show(orderBadge); }
+  if (allPending > 0) { orderBadge.textContent = allPending; show(orderBadge); }
   else hide(orderBadge);
 
   const bookBadge = $('pending-bookings-badge');
@@ -2374,7 +2396,7 @@ async function ensureOrdersForGstRange(startIso, endIso, rangeKey, force = false
     while (true) {
       let q = insforge.database
         .from('orders')
-        .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, created_at, updated_at')
+        .select(ORDER_SELECT_COLUMNS)
         .gte('created_at', startIso)
         .lte('created_at', endIso)
         .order('created_at', { ascending: false })
@@ -2831,10 +2853,62 @@ function initDashboardQuickListeners() {
 
   $('dash-quick-sync-btn')?.addEventListener('click', () => {
     refreshDashboard(true);
-    showAdminToast('Data refreshed and synchronized! 🔄', 'success');
   });
 
   $('dash-quick-export-today-btn')?.addEventListener('click', exportTodaySummaryCSV);
+
+  // Phase 2 KPI Card Interactive Navigation
+  const cardSales = $('card-kpi-sales');
+  if (cardSales && !cardSales.dataset.bound) {
+    cardSales.dataset.bound = 'true';
+    cardSales.addEventListener('click', () => switchPanel('daily-sales-report'));
+    cardSales.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        switchPanel('daily-sales-report');
+      }
+    });
+  }
+
+  const cardPayments = $('card-kpi-payments');
+  if (cardPayments && !cardPayments.dataset.bound) {
+    cardPayments.dataset.bound = 'true';
+    cardPayments.addEventListener('click', () => switchPanel('daily-sales-report'));
+    cardPayments.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        switchPanel('daily-sales-report');
+      }
+    });
+  }
+
+  const cardTables = $('card-kpi-tables');
+  if (cardTables && !cardTables.dataset.bound) {
+    cardTables.dataset.bound = 'true';
+    cardTables.addEventListener('click', () => switchPanel('tables'));
+    cardTables.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        switchPanel('tables');
+      }
+    });
+  }
+
+  const cardKitchen = $('card-kpi-kitchen');
+  if (cardKitchen && !cardKitchen.dataset.bound) {
+    cardKitchen.dataset.bound = 'true';
+    cardKitchen.addEventListener('click', () => switchPanel('kitchen'));
+    cardKitchen.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        switchPanel('kitchen');
+      }
+    });
+  }
+
+  // Phase 3 Two-Column Header Navigation Buttons
+  $('dash-btn-view-floor')?.addEventListener('click', () => switchPanel('tables'));
+  $('dash-btn-view-all-orders')?.addEventListener('click', () => switchPanel('orders'));
 
   initGSTSectionListeners();
 
@@ -3043,9 +3117,11 @@ function getConsolidatedClosedBills(ordersList) {
       const sTot = Number(sibling.total_amount || 0);
       const fbTot = Number(fb.total_amount || 0);
 
-      // Only swallow sibling if it has 0 total or was explicitly consolidated
+      // Only swallow sibling if it was explicitly consolidated or has 0 total and matches listed KOTs
       let isSibling = false;
-      if (listedKotNums.size > 0 && listedKotNums.has(sNum) && sTot <= 0) {
+      if (sibling.consolidated_into_order_id && String(sibling.consolidated_into_order_id) === String(fb.id)) {
+        isSibling = true;
+      } else if (listedKotNums.size > 0 && listedKotNums.has(sNum) && sTot <= 0) {
         isSibling = true;
       }
 
@@ -3390,7 +3466,7 @@ async function ensureHistoricalOrdersForReport() {
   try {
     let q = insforge.database
       .from('orders')
-      .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, notes, latitude, longitude, landmark, delivery_notes, location_verified, order_type, table_number, table_zone, txn_ref, ticket_status, created_at, updated_at')
+      .select(ORDER_SELECT_COLUMNS)
       .neq('status', 'cancelled')
       .order('created_at', { ascending: false });
 
@@ -3504,8 +3580,8 @@ async function renderOrdersReport() {
     const isCancelled = o.status === 'cancelled';
     const payModeStr = parsed.paymentMode || o.payment_mode || 'Cash/UPI';
     const payBadge = isPaid
-      ? `<span style="background:#f0fdf4;color:#166534;font-size:.72rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;border:1px solid #bbf7d0;">Paid · ${escapeHtml(payModeStr)}</span>`
-      : (isCancelled ? '<span style="background:#fee2e2;color:#b91c1c;font-size:.72rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;">Cancelled</span>' : '<span style="background:#fef2f2;color:#991b1b;font-size:.72rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;border:1px solid #fecaca;">Unpaid</span>');
+      ? `<span style="background:#f0fdf4;color:#166534;font-size:0.75rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;border:1px solid #bbf7d0;">Paid · ${escapeHtml(payModeStr)}</span>`
+      : (isCancelled ? '<span style="background:#fee2e2;color:#b91c1c;font-size:0.75rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;">Cancelled</span>' : '<span style="background:#fef2f2;color:#991b1b;font-size:0.75rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;border:1px solid #fecaca;">Unpaid</span>');
 
     const d = new Date(o.created_at);
     const dateStr = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) + ', ' + d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
@@ -3812,8 +3888,290 @@ function renderDashboardDateFilter() {
   }
 }
 
+function updateDashboardHeader() {
+  const dateEl = $('dash-current-date');
+  const shiftEl = $('dash-active-shift');
+  const staffEl = $('dash-staff-user');
+  const now = new Date();
+
+  if (dateEl) {
+    dateEl.textContent = now.toLocaleDateString('en-IN', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+  }
+
+  if (shiftEl) {
+    const hr = now.getHours();
+    if (hr >= 11 && hr < 17) {
+      shiftEl.innerHTML = '<span class="shift-dot lunch"></span> Lunch Shift';
+      shiftEl.className = 'dash-shift-pill lunch';
+    } else if (hr >= 17 && hr <= 23) {
+      shiftEl.innerHTML = '<span class="shift-dot dinner"></span> Dinner Shift';
+      shiftEl.className = 'dash-shift-pill dinner';
+    } else {
+      shiftEl.innerHTML = '<span class="shift-dot prep"></span> Prep / Late Shift';
+      shiftEl.className = 'dash-shift-pill prep';
+    }
+  }
+
+  if (staffEl) {
+    const name = currentAdminUser?.name || 'Salim Khan';
+    const role = (currentAdminUser?.role || 'Manager').toUpperCase();
+    staffEl.textContent = `👤 ${name} (${role})`;
+  }
+
+  if ($('last-updated')) {
+    $('last-updated').textContent = `Updated ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+}
+window.updateDashboardHeader = updateDashboardHeader;
+
+function formatTimeAgo(dateInput) {
+  if (!dateInput) return 'just now';
+  const diffMs = Date.now() - new Date(dateInput).getTime();
+  const mins = Math.max(0, Math.floor(diffMs / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m ago`;
+}
+
+function renderActionableTables() {
+  const container = $('dash-actionable-tables-list');
+  const badge = $('dash-actionable-tables-badge');
+  if (!container) return;
+
+  const tableSessions = getActiveTableSessions();
+  const unpaidTableBills = typeof getOutstandingBills === 'function' ? getOutstandingBills('table') : getOutstandingTableBills();
+  const nowMs = Date.now();
+
+  const actionableList = [];
+
+  // 1. Add active seated table sessions
+  tableSessions.forEach(sess => {
+    const primaryOrder = sess.orders && sess.orders[0];
+    const totalAmt = sess.orders.reduce((sum, o) => sum + getEffectiveOrderTotal(o), 0);
+    const orderCount = sess.orders.length;
+    const firstCreated = sess.orders.reduce((earliest, o) => {
+      const t = o.created_at ? new Date(o.created_at).getTime() : nowMs;
+      return Math.min(earliest, t);
+    }, nowMs);
+    const elapsedMins = Math.max(0, Math.floor((nowMs - firstCreated) / 60000));
+    const customerName = primaryOrder?.customer_name && primaryOrder.customer_name !== 'Customer' ? primaryOrder.customer_name : 'Walk-in Guest';
+
+    actionableList.push({
+      type: 'session',
+      tableNumber: sess.tableNumber,
+      zone: sess.zone || `Table ${sess.tableNumber}`,
+      primaryOrderId: primaryOrder?.id,
+      customerName,
+      elapsedMins,
+      orderCount,
+      totalAmt,
+      isBilled: false,
+      session: sess,
+      order: primaryOrder
+    });
+  });
+
+  // 2. Add unpaid printed table bills if not already represented in active sessions
+  unpaidTableBills.forEach(bill => {
+    const parsedMeta = parseNotesMetadata(bill.notes, bill);
+    const tNum = parseInt(String(parsedMeta.tableNumber || bill.table_number || '').replace(/\D/g, ''), 10);
+    if (!tNum || actionableList.some(item => item.tableNumber === tNum)) return;
+
+    const billCreated = bill.created_at ? new Date(bill.created_at).getTime() : nowMs;
+    const elapsedMins = Math.max(0, Math.floor((nowMs - billCreated) / 60000));
+    const customerName = bill.customer_name && bill.customer_name !== 'Customer' ? bill.customer_name : 'Dine-In Guest';
+
+    actionableList.push({
+      type: 'bill',
+      tableNumber: tNum,
+      zone: bill.table_zone || `Table ${tNum}`,
+      primaryOrderId: bill.id,
+      customerName,
+      elapsedMins,
+      orderCount: 1,
+      totalAmt: getEffectiveOrderTotal(bill),
+      isBilled: true,
+      order: bill
+    });
+  });
+
+  // Sort by table number ascending
+  actionableList.sort((a, b) => a.tableNumber - b.tableNumber);
+
+  if (badge) {
+    badge.textContent = `${actionableList.length} Active`;
+  }
+
+  if (actionableList.length === 0) {
+    container.innerHTML = `
+      <div class="dash-ops-empty">
+        <div class="dash-ops-empty-icon">🪑</div>
+        <p class="dash-ops-empty-title">All tables available</p>
+        <p class="dash-ops-empty-sub">Ready to seat incoming restaurant guests</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = actionableList.map(item => {
+    const stateClass = item.isBilled ? 'billed' : 'seated';
+    const stateLabel = item.isBilled ? 'Bill Printed' : `Seated ${item.elapsedMins}m`;
+    const pillClass = item.isBilled ? 'dash-tnum-pill billed' : 'dash-tnum-pill';
+
+    return `
+      <div class="dash-table-item">
+        <div class="dash-table-item-left">
+          <span class="${pillClass}">T-${item.tableNumber}</span>
+          <div class="dash-table-meta-text">
+            <strong class="dash-table-guest-name">${escapeHtml(item.customerName)}</strong>
+            <span class="dash-table-details-sub">${item.zone} · ${item.orderCount} order${item.orderCount > 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        <div class="dash-table-item-right">
+          <div class="dash-table-price-wrap">
+            <strong class="dash-table-price">${fmtMoney(item.totalAmt)}</strong>
+            <span class="dash-table-state-tag ${stateClass}">${stateLabel}</span>
+          </div>
+          <div class="dash-table-btns">
+            <button type="button" class="dash-tbl-btn resume" data-action="resume-table" data-order-id="${item.primaryOrderId || ''}" data-table-num="${item.tableNumber}" title="Open Table in POS Workstation">
+              ✏️ Resume
+            </button>
+            <button type="button" class="dash-tbl-btn settle" data-action="settle-table" data-order-id="${item.primaryOrderId || ''}" data-table-num="${item.tableNumber}" title="Settle Bill">
+              💳 Settle
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Bind Resume and Settle action buttons
+  container.querySelectorAll('.dash-tbl-btn[data-action="resume-table"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const orderId = btn.dataset.orderId;
+      if (orderId) {
+        loadHoldOrderToPos(orderId);
+      } else {
+        switchPanel('order-detail');
+      }
+    });
+  });
+
+  container.querySelectorAll('.dash-tbl-btn[data-action="settle-table"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tNum = parseInt(btn.dataset.tableNum, 10);
+      const orderId = btn.dataset.orderId;
+      const sess = tableSessions.find(s => s.tableNumber === tNum);
+      if (sess) {
+        openHoldSettleModal({ type: 'table', tableNumber: tNum, session: sess });
+      } else if (orderId) {
+        const ord = orders.find(o => o.id === orderId);
+        if (ord) openHoldSettleModal(ord);
+      }
+    });
+  });
+}
+window.renderActionableTables = renderActionableTables;
+
+function renderLiveOrdersStream() {
+  const container = $('dash-live-orders-stream');
+  const badge = $('dash-live-orders-badge');
+  if (!container) return;
+
+  const now = new Date();
+  const todayStr = getLocalDateString(now);
+
+  // Get active or recent orders of today (exclude cancelled)
+  const streamOrders = orders.filter(o => {
+    if (o.status === 'cancelled' || o.ticket_status === 'CANCELLED') return false;
+    return getLocalDateString(o.created_at) === todayStr;
+  }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const activeCount = streamOrders.filter(o => o.status !== 'delivered' && o.ticket_status !== 'CLOSED').length;
+  if (badge) {
+    badge.textContent = `${activeCount > 0 ? activeCount : streamOrders.length} Active`;
+  }
+
+  const displayOrders = streamOrders.slice(0, 5);
+
+  if (displayOrders.length === 0) {
+    container.innerHTML = `
+      <div class="dash-ops-empty">
+        <div class="dash-ops-empty-icon">⚡</div>
+        <p class="dash-ops-empty-title">No orders yet today</p>
+        <p class="dash-ops-empty-sub">New orders will appear here in real-time</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = displayOrders.map(o => {
+    const meta = parseNotesMetadata(o.notes, o);
+    const orderNum = formatDailyOrderNumber(o);
+    const timeAgo = formatTimeAgo(o.created_at);
+    const totalAmt = getEffectiveOrderTotal(o);
+
+    let chanClass = 'pickup';
+    let chanText = '🥡 Takeaway';
+    if (meta.type === 'table' || o.order_type === 'table') {
+      chanClass = 'table';
+      chanText = `🍽️ T-${meta.tableNumber || o.table_number || '—'}`;
+    } else if (meta.type === 'delivery' || o.order_type === 'delivery') {
+      chanClass = 'delivery';
+      chanText = '🛵 Delivery';
+    }
+
+    const custName = o.customer_name && o.customer_name !== 'Customer' ? o.customer_name : (meta.type === 'table' ? 'Table Guest' : 'Walk-in');
+
+    // Items brief preview
+    const items = getItemsForOrder(o.id);
+    const itemsCount = items.reduce((s, it) => s + Number(it.quantity || 1), 0);
+    const itemsNames = items.slice(0, 2).map(it => `${it.quantity}x ${it.item_name}`).join(', ');
+    const itemsSummary = itemsCount > 0 ? `${itemsCount} item${itemsCount > 1 ? 's' : ''}${itemsNames ? ` (${itemsNames}${items.length > 2 ? '…' : ''})` : ''}` : 'Order logged';
+
+    return `
+      <div class="dash-live-order-item" data-order-id="${o.id}">
+        <div class="dash-live-order-left">
+          <div class="dash-live-order-head">
+            <span class="dash-live-order-num">#${orderNum}</span>
+            <span class="dash-order-chan-badge ${chanClass}">${chanText}</span>
+            <span class="dash-live-order-time">${timeAgo}</span>
+          </div>
+          <div class="dash-live-order-cust">
+            <strong>${escapeHtml(custName)}</strong> · <span>${escapeHtml(itemsSummary)}</span>
+          </div>
+        </div>
+        <div class="dash-live-order-right">
+          <strong class="dash-live-order-price">${fmtMoney(totalAmt)}</strong>
+          ${statusPill(o.status, meta.type === 'table')}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Bind Row Click to open Order Detail Drawer
+  container.querySelectorAll('.dash-live-order-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const orderId = item.dataset.orderId;
+      if (orderId) openOrderDetail(orderId);
+    });
+  });
+}
+window.renderLiveOrdersStream = renderLiveOrdersStream;
+
 function renderOverview() {
+  updateDashboardHeader();
   renderStats();
+  renderActionableTables();
+  renderLiveOrdersStream();
   renderDonuts();
   renderCharts();
   renderDashboardDateFilter();
@@ -4108,6 +4466,18 @@ function renderOrdersTable() {
   const start = (ordersPage - 1) * ORDERS_PER_PAGE;
   const page = filtered.slice(start, start + ORDERS_PER_PAGE);
 
+  // Lazily ensure order_items are loaded for visible page orders if any were not in the initial active scope
+  const missingPageOrderIds = page
+    .map(o => String(o.id))
+    .filter(id => id && !loadedItemOrderIds.has(id) && !orderItems.some(i => String(i.order_id) === id));
+  if (missingPageOrderIds.length > 0) {
+    ensureOrderItemsLoaded(missingPageOrderIds).then((didLoad) => {
+      if (didLoad && getActivePanelId() === 'orders') {
+        renderOrdersTable();
+      }
+    });
+  }
+
   const tbody = $('orders-table-body');
   if (page.length === 0) {
     tbody.innerHTML = `<tr><td colspan="9" class="adm-empty" style="text-align:center;padding:2.5rem;color:var(--adm-muted);">No orders match your filter criteria</td></tr>`;
@@ -4118,11 +4488,11 @@ function renderOrdersTable() {
       const roundInfo = getOrderRoundInfo(order);
       const items = getItemsForOrder(order.id);
       
-      let typeBadge = '<span style="background:#e0f2fe;color:#0284c7;font-size:0.72rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">🚗 Online Delivery</span>';
+      let typeBadge = '<span style="background:#e0f2fe;color:#0284c7;font-size:0.75rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">🚗 Online Delivery</span>';
       if (isTable) {
-        typeBadge = `<span style="background:#fef3c7;color:#b45309;font-size:0.72rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">🪑 Table ${parsedMeta.tableNumber || order.table_number || '—'}</span>`;
+        typeBadge = `<span style="background:#fef3c7;color:#b45309;font-size:0.75rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">🪑 Table ${parsedMeta.tableNumber || order.table_number || '—'}</span>`;
       } else if (parsedMeta.type === 'pickup' || order.order_type === 'pickup') {
-        typeBadge = '<span style="background:#f3e8ff;color:#7e22ce;font-size:0.72rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">🥡 Pickup</span>';
+        typeBadge = '<span style="background:#f3e8ff;color:#7e22ce;font-size:0.75rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">🥡 Pickup</span>';
       }
 
       const itemsSummary = items.length > 0
@@ -4138,7 +4508,7 @@ function renderOrdersTable() {
             <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
               <strong style="font-size:.95rem;color:#1e293b;">#${formatDailyOrderNumber(order)}</strong>
               ${roundInfo.isTable && roundInfo.roundNumber ? `
-                <span style="font-size:0.72rem;font-weight:800;padding:.12rem .45rem;border-radius:6px;background:${roundInfo.roundNumber > 1 ? '#ede9fe' : '#f1f5f9'};color:${roundInfo.roundNumber > 1 ? '#6d28d9' : '#475569'};border:1px solid ${roundInfo.roundNumber > 1 ? '#ddd6fe' : '#e2e8f0'};">
+                <span style="font-size:0.75rem;font-weight:800;padding:.12rem .45rem;border-radius:6px;background:${roundInfo.roundNumber > 1 ? '#ede9fe' : '#f1f5f9'};color:${roundInfo.roundNumber > 1 ? '#6d28d9' : '#475569'};border:1px solid ${roundInfo.roundNumber > 1 ? '#ddd6fe' : '#e2e8f0'};">
                   Round ${roundInfo.roundNumber}
                 </span>
               ` : ''}
@@ -4153,7 +4523,7 @@ function renderOrdersTable() {
             <div style="font-size:0.8rem;color:#334155;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(items.map(i => `${i.quantity}x ${i.item_name}`).join(', '))}">
               🍽️ ${escapeHtml(itemsSummary)}
             </div>
-            <div style="font-size:0.72rem;color:var(--adm-muted);">${items.length} item(s)</div>
+            <div style="font-size:0.75rem;color:var(--adm-muted);">${items.length} item(s)</div>
           </td>
           <td>
             <strong style="font-size:1rem;color:#1e293b;">${fmtMoney(order.total_amount)}</strong>
@@ -4245,47 +4615,44 @@ function renderOrdersTable() {
       const ids = checkedCbs.map(cb => cb.dataset.orderId).filter(Boolean);
       if (!ids.length) return;
 
-      const confirmed = confirm(`Are you sure you want to permanently delete ${ids.length} selected order(s)?\n\nThis will remove the selected orders and all their items from the database. This action cannot be undone.`);
-      if (!confirmed) return;
+      const reasonPrompt = typeof prompt === 'function'
+        ? prompt(`Enter mandatory financial audit reason to void ${ids.length} selected order(s) (minimum 3 characters):`)
+        : '';
+      if (reasonPrompt === null) return;
+      const cleanReason = String(reasonPrompt || '').trim();
+      if (cleanReason.length < 3) {
+        showAdminToast('REASON_REQUIRED: A valid reason (minimum 3 characters) is required to void orders.', 'error');
+        return;
+      }
 
       try {
         bulkDeleteBtn.disabled = true;
-        bulkDeleteBtn.innerHTML = '<span>⏳</span> Deleting...';
+        bulkDeleteBtn.innerHTML = '<span>⏳</span> Voiding...';
 
+        let voidedCount = 0;
         for (const orderId of ids) {
-          await insforge.database.from('order_items').delete().eq('order_id', orderId);
-          try { await insforge.database.from('notifications').delete().eq('order_id', orderId); } catch (e) {}
-          await insforge.database.from('orders').delete().eq('id', orderId);
-
-          const oIdx = orders.findIndex(o => String(o.id) === String(orderId));
-          if (oIdx !== -1) orders.splice(oIdx, 1);
-
-          const remainingItems = orderItems.filter(i => String(i.order_id) !== String(orderId));
-          orderItems.length = 0;
-          orderItems.push(...remainingItems);
-
-          const remainingNotifs = notifications.filter(n => String(n.order_id) !== String(orderId));
-          notifications.length = 0;
-          notifications.push(...remainingNotifs);
+          const res = await voidClosedOrder(orderId, cleanReason);
+          if (res && res.ok) voidedCount++;
         }
 
-        showAdminToast(`${ids.length} order(s) permanently deleted 🗑️`, 'success');
+        if (voidedCount > 0) {
+          showAdminToast(`${voidedCount} order(s) voided and recorded in audit log 🚫`, 'success');
+        }
         renderOrdersTable();
         renderOverview();
         renderBillingQuickCards();
         renderBillingTotalBills();
         renderClosedOrdersPanel();
         if (selectedOrderId && ids.includes(selectedOrderId)) {
-          selectedOrderId = null;
-          renderOrderDetail(null);
+          renderOrderDetail(selectedOrderId);
         }
       } catch (err) {
-        console.error('[Bulk Delete Orders Error]', err);
-        showAdminToast('Failed to delete selected orders: ' + err.message, 'error');
+        console.error('[Bulk Void Orders Error]', err);
+        showAdminToast('Failed to void selected orders: ' + err.message, 'error');
       } finally {
         if (bulkDeleteBtn) {
           bulkDeleteBtn.disabled = false;
-          bulkDeleteBtn.innerHTML = `<span>🗑️</span> Delete Selected (<span id="orders-selected-count">0</span>)`;
+          bulkDeleteBtn.innerHTML = `<span>🚫</span> Void Selected (<span id="orders-selected-count">0</span>)`;
         }
       }
     };
@@ -4391,12 +4758,7 @@ async function toggleOrderHoldStatus(orderId, targetActionOrStatus) {
 
     persistOrdersCache();
     showAdminToast(`Order #${formatDailyOrderNumber(order)} put on Hold ⏸️`, 'success');
-    renderOrdersTable();
-    renderHoldOrdersPanel();
-    renderBillingQuickCards();
-    renderBillingTotalBills();
-    renderOverview();
-    renderTablesPanel();
+    renderAll();
   } else if (targetActionOrStatus === 'release' || targetActionOrStatus === 'confirmed') {
     // 1. Immediately update local state in-memory
     order.status = 'confirmed';
@@ -4423,12 +4785,7 @@ async function toggleOrderHoldStatus(orderId, targetActionOrStatus) {
 
     persistOrdersCache();
     showAdminToast(`Order #${formatDailyOrderNumber(order)} released from Hold ▶️`, 'success');
-    renderOrdersTable();
-    renderHoldOrdersPanel();
-    renderBillingQuickCards();
-    renderBillingTotalBills();
-    renderOverview();
-    renderTablesPanel();
+    renderAll();
   }
 }
 window.toggleOrderHoldStatus = toggleOrderHoldStatus;
@@ -4441,15 +4798,14 @@ function loadOrderIntoPos(order) {
   switchPanel('order-detail');
 
   // Allow panel mount then open POS builder
-  setTimeout(() => {
+  setTimeout(async () => {
     const posEl = $('billing-pos');
     const totalSection = $('billing-total-section');
-    const detailEl = $('billing-detail-view');
     const picker = $('billing-order-picker');
 
     if (posEl) posEl.style.display = 'block';
     if (totalSection) totalSection.style.display = 'none';
-    if (detailEl) detailEl.style.display = 'none';
+    closeOrderDetailDrawer();
     if (picker) picker.value = '';
 
     const parsedMeta = parseNotesMetadata(order.notes, order);
@@ -4487,7 +4843,8 @@ function loadOrderIntoPos(order) {
       $('pos-notes').value = (parsedMeta.notes || '').replace(/\[Ref\s*#\d+\]/gi, '').trim();
     }
 
-    // Load items into POS Cart
+    // Load items into POS Cart (ensure loaded on-demand if historical order)
+    await ensureOrderItemsLoaded([order.id]);
     const items = getItemsForOrder(order.id);
     const foodOnlyItems = (items || []).filter(isFoodDishItem);
     if (foodOnlyItems.length > 0) {
@@ -4512,8 +4869,19 @@ function loadOrderIntoPos(order) {
       }];
     }
 
-    // Set discount percentage if present
-    if (parsedMeta.discountPct && $('pos-discount-pct')) {
+    // Restore applied coupon or manual discount percentage if present
+    posAppliedCoupon = null;
+    if (parsedMeta.couponCode) {
+      const matchedCoupon = (adminCoupons || []).find(c => String(c.code || '').toUpperCase() === parsedMeta.couponCode);
+      posAppliedCoupon = matchedCoupon || {
+        id: null,
+        code: parsedMeta.couponCode,
+        discount_pct: parsedMeta.discountPct || 0,
+        min_bill: 0
+      };
+      if ($('pos-coupon-code-input')) $('pos-coupon-code-input').value = parsedMeta.couponCode;
+      if ($('pos-discount-pct')) $('pos-discount-pct').value = '0';
+    } else if (parsedMeta.discountPct && $('pos-discount-pct')) {
       $('pos-discount-pct').value = parsedMeta.discountPct;
     } else if (parsedMeta.discountAmt && $('pos-discount-pct')) {
       const foodSubtotal = posCart.reduce((sum, i) => sum + i.price * i.qty, 0);
@@ -4523,6 +4891,7 @@ function loadOrderIntoPos(order) {
     } else if ($('pos-discount-pct')) {
       $('pos-discount-pct').value = '0';
     }
+    renderPosCouponPicker();
 
     // Restore and preserve Payment Method in POS workstation
     const existingPay = (order.payment_method || parsedMeta.paymentMode || 'cash').toLowerCase().trim();
@@ -4543,8 +4912,6 @@ function loadOrderIntoPos(order) {
     renderCategoryPills();
     updateCatalogCatHeader();
     renderFoodGrid();
-
-    showAdminToast(`Loaded Order #${formatDailyOrderNumber(order)} into POS Billing with ${posCart.length} item(s)! 🧾`, 'info');
   }, 100);
 }
 window.loadOrderIntoPos = loadOrderIntoPos;
@@ -4601,9 +4968,105 @@ function exportOrdersListCSV() {
   showAdminToast('Orders exported to CSV! 📥', 'success');
 }
 
+function isOrderPaidOrClosed(ord) {
+  if (!ord) return false;
+  const status = String(ord.status || '').toLowerCase();
+  const paymentStatus = String(ord.payment_status || '').toLowerCase();
+  const ticketStatus = String(ord.ticket_status || '').toUpperCase();
+  return (
+    paymentStatus === 'paid' ||
+    ticketStatus === 'CLOSED' ||
+    status === 'delivered' ||
+    status === 'completed' ||
+    status === 'closed'
+  );
+}
+
+async function cancelOrderRecord(ord) {
+  if (!ord || !ord.id) {
+    throw new Error('Invalid order for cancellation.');
+  }
+  const canonical = orders.find(o => String(o.id) === String(ord.id)) || ord;
+  if (isOrderPaidOrClosed(canonical) || isOrderPaidOrClosed(ord)) {
+    throw new Error(`Order #${canonical.order_number || canonical.id} is already paid or closed and cannot be cancelled.`);
+  }
+
+  const cancelPayload = {
+    status: 'cancelled',
+    ticket_status: 'CANCELLED',
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = await insforge.database
+    .from('orders')
+    .update(cancelPayload)
+    .eq('id', canonical.id)
+    .neq('ticket_status', 'CLOSED')
+    .neq('payment_status', 'paid');
+
+  if (error) {
+    throw new Error(error.message || 'Database error while cancelling order.');
+  }
+
+  ord.status = 'cancelled';
+  ord.ticket_status = 'CANCELLED';
+  ord.updated_at = cancelPayload.updated_at;
+  if (canonical !== ord) {
+    canonical.status = 'cancelled';
+    canonical.ticket_status = 'CANCELLED';
+    canonical.updated_at = cancelPayload.updated_at;
+  }
+  return canonical;
+}
+
+async function cancelTableOrders(tableNum, explicitOrders = null) {
+  const numericTable = parseInt(String(tableNum || '').replace(/\D/g, ''), 10);
+  const targetOrders = Array.isArray(explicitOrders) && explicitOrders.length > 0
+    ? explicitOrders
+    : (getActiveTableSessions().find(s => s.tableNumber === numericTable)?.orders || []);
+
+  if (!targetOrders.length) {
+    // Check if table only has paid or closed orders
+    const closedOrPaidForTable = orders.filter(o => {
+      const t = parseInt(String(o.table_number || '').replace(/\D/g, ''), 10);
+      return t === numericTable && isOrderPaidOrClosed(o);
+    });
+    if (closedOrPaidForTable.length > 0) {
+      showAdminToast(`Cannot cancel Table ${numericTable}: order is already paid or closed.`, 'error');
+      return { success: false, reason: 'ORDER_PAID_OR_CLOSED' };
+    }
+    showAdminToast(`No active running orders found for Table ${numericTable}.`, 'error');
+    return { success: false, reason: 'NO_ACTIVE_ORDERS' };
+  }
+
+  const paidOrClosedOrder = targetOrders.find(ord => {
+    const canonical = orders.find(o => String(o.id) === String(ord.id)) || ord;
+    return isOrderPaidOrClosed(ord) || isOrderPaidOrClosed(canonical);
+  });
+  if (paidOrClosedOrder) {
+    showAdminToast(`Order #${paidOrClosedOrder.order_number || paidOrClosedOrder.id} is already paid or closed and cannot be cancelled.`, 'error');
+    return { success: false, reason: 'ORDER_PAID_OR_CLOSED' };
+  }
+
+  for (const ord of targetOrders) {
+    await cancelOrderRecord(ord);
+    await markOrderNotificationsRead(ord.id);
+  }
+  persistOrdersCache();
+  return { success: true, cancelledCount: targetOrders.length };
+}
+
+window.isOrderPaidOrClosed = isOrderPaidOrClosed;
+window.cancelOrderRecord = cancelOrderRecord;
+window.cancelTableOrders = cancelTableOrders;
+
 async function updateOrderStatus(orderId, newStatus) {
   const existingOrder = orders.find(o => o.id === orderId);
   if (existingOrder) {
+    if (newStatus === 'cancelled' && isOrderPaidOrClosed(existingOrder)) {
+      showAdminToast('Paid or closed orders cannot be cancelled.', 'error');
+      return false;
+    }
     if (existingOrder.ticket_status === 'CLOSED' && newStatus !== 'delivered') {
       showAdminToast('Closed orders cannot be transitioned to another status.', 'error');
       return false;
@@ -4631,19 +5094,21 @@ async function updateOrderStatus(orderId, newStatus) {
     }
   }
 
-  let { error } = null;
   try {
-    const res = await insforge.database.from('orders').update(updates).eq('id', orderId);
-    error = res.error;
-    if (error && (error.message || '').includes('ticket_status')) {
-      const fallback = { ...updates };
-      delete fallback.ticket_status;
-      const retry = await insforge.database.from('orders').update(fallback).eq('id', orderId);
-      error = retry.error;
+    let query = insforge.database.from('orders').update(updates).eq('id', orderId);
+    if (newStatus === 'cancelled') {
+      query = query.neq('ticket_status', 'CLOSED').neq('payment_status', 'paid');
     }
-    if (error) console.warn('[Update Order Status] Cloud update warning (saved locally):', error);
+    const res = await query;
+    if (res.error) {
+      console.error('[Update Order Status] Database update failed:', res.error);
+      showAdminToast('Failed to update order status: ' + (res.error.message || 'Database error'), 'error');
+      return false;
+    }
   } catch (err) {
-    console.warn('[Update Order Status] Offline status update:', err);
+    console.error('[Update Order Status] Request failed:', err);
+    showAdminToast('Failed to update order status: ' + (err.message || 'Network error'), 'error');
+    return false;
   }
 
   const order = orders.find(o => o.id === orderId);
@@ -4736,14 +5201,8 @@ async function updateOrderStatus(orderId, newStatus) {
       await markOrderNotificationsRead(orderId);
     }
   }
-  renderOverview();
-  renderOrdersTable();
-  renderHoldOrdersPanel();
-  renderClosedOrdersPanel();
-  renderBillingQuickCards();
-  renderBillingTotalBills();
-  renderOrderDetailPicker();
-  if (selectedOrderId === orderId) renderOrderDetail(orderId);
+  renderAll();
+  if (selectedOrderId === orderId && getActivePanelId() === 'order-detail') renderOrderDetail(orderId);
   return true;
 }
 
@@ -4769,14 +5228,8 @@ async function updateOrderPaymentStatus(orderId, newStatus) {
         console.warn('[Admin] Realtime payment notification broadcast failed:', err);
       }
     }
-    renderOverview();
-    renderOrdersTable();
-    renderHoldOrdersPanel();
-    renderClosedOrdersPanel();
-    renderBillingQuickCards();
-    renderBillingTotalBills();
-    renderOrderDetailPicker();
-    if (selectedOrderId === orderId) renderOrderDetail(orderId);
+    renderAll();
+    if (selectedOrderId === orderId && getActivePanelId() === 'order-detail') renderOrderDetail(orderId);
     return true;
   } catch (err) {
     showAdminToast('Failed to update payment status: ' + err.message, 'error');
@@ -4801,10 +5254,10 @@ async function loadAndRenderPaymentHistory(orderId) {
               <span style="color: ${h.new_status === 'paid' ? 'var(--adm-green)' : '#ff5b5b'}">
                 ${h.previous_status.toUpperCase()} → ${h.new_status.toUpperCase()}
               </span>
-              <span style="color: var(--adm-muted); font-weight: normal; font-size: 0.7rem;">${fmtDate(h.created_at)}</span>
+              <span style="color: var(--adm-muted); font-weight: normal; font-size:0.75rem;">${fmtDate(h.created_at)}</span>
             </div>
             <p style="margin: 0 0 0.25rem 0; color: var(--adm-text); font-weight: 500;">${escapeHtml(h.notes || 'No description provided.')}</p>
-            <div style="font-size: 0.675rem; color: var(--adm-muted);">Operator: ${escapeHtml(h.changed_by)}</div>
+            <div style="font-size:0.75rem; color: var(--adm-muted);">Operator: ${escapeHtml(h.changed_by)}</div>
           </div>
         `).join('')}
       </div>
@@ -4815,12 +5268,85 @@ async function loadAndRenderPaymentHistory(orderId) {
   }
 }
 
+function isOrderDetailDrawerOpen() {
+  const detailEl = $('billing-detail-view');
+  return Boolean(detailEl && (detailEl.classList.contains('open') || detailEl.style.display === 'flex' || detailEl.style.display === 'block'));
+}
+
+function openOrderDetailDrawer(orderId) {
+  const targetId = orderId || selectedOrderId || $('order-detail-picker')?.value || $('billing-order-picker')?.value;
+  if (!targetId) return;
+  selectedOrderId = targetId;
+
+  // Prevent overlapping modals and popovers when opening the slide-over drawer
+  if (typeof closeAllPosExtraPopovers === 'function') closeAllPosExtraPopovers();
+  if (typeof closePosEditItemModal === 'function') closePosEditItemModal();
+  document.querySelectorAll('.adm-modal.open, .adm-modal[style*="display: flex"], .adm-modal[style*="display: block"]').forEach(m => {
+    m.classList.remove('open');
+    m.style.display = 'none';
+  });
+
+  // Never hide or reset #billing-pos — keep active POS workstation live underneath
+  const posEl = $('billing-pos');
+  if (posEl && posEl.style.display === 'none') {
+    posEl.style.display = 'block';
+  }
+
+  const detailEl = $('billing-detail-view');
+  const backdropEl = $('billing-detail-drawer-backdrop');
+  if (detailEl) {
+    detailEl.style.display = 'flex';
+    detailEl.classList.add('open');
+    detailEl.setAttribute('aria-hidden', 'false');
+  }
+  if (backdropEl) {
+    backdropEl.style.display = 'block';
+    backdropEl.classList.add('open');
+    backdropEl.setAttribute('aria-hidden', 'false');
+  }
+
+  if ($('billing-order-picker')) $('billing-order-picker').value = targetId;
+  if ($('order-detail-picker')) $('order-detail-picker').value = targetId;
+  show($('billing-print-btn'));
+  show($('billing-print-kot-btn'));
+
+  renderOrderDetail(targetId);
+}
+
+function closeOrderDetailDrawer() {
+  const detailEl = $('billing-detail-view');
+  const backdropEl = $('billing-detail-drawer-backdrop');
+  if (detailEl) {
+    detailEl.classList.remove('open');
+    detailEl.style.display = 'none';
+    detailEl.setAttribute('aria-hidden', 'true');
+  }
+  if (backdropEl) {
+    backdropEl.classList.remove('open');
+    backdropEl.style.display = 'none';
+    backdropEl.setAttribute('aria-hidden', 'true');
+  }
+  if ($('billing-order-picker')) $('billing-order-picker').value = '';
+  const posEl = $('billing-pos');
+  if (posEl && posEl.style.display === 'none') {
+    posEl.style.display = 'block';
+  }
+}
+
 function openOrderDetail(orderId) {
+  if (!orderId) return;
   selectedOrderId = orderId;
   renderOrderDetailPicker();
-  switchPanel('order-detail');
-  renderOrderDetail(orderId);
+  if (getActivePanelId() !== 'order-detail') {
+    switchPanel('order-detail');
+  }
+  openOrderDetailDrawer(orderId);
 }
+
+window.openOrderDetailDrawer = openOrderDetailDrawer;
+window.closeOrderDetailDrawer = closeOrderDetailDrawer;
+window.isOrderDetailDrawerOpen = isOrderDetailDrawerOpen;
+window.openOrderDetail = openOrderDetail;
 
 function renderOrderDetailPicker() {
   const picker = $('order-detail-picker');
@@ -4874,6 +5400,7 @@ async function renderOrderDetail(orderId) {
   ).join('');
   statusSelect.onchange = () => updateOrderStatus(order.id, statusSelect.value);
 
+  await ensureOrderItemsLoaded([order.id]);
   const rawItems = getItemsForOrder(order.id);
   const items = consolidateOrderItems(rawItems);
   const itemsSubtotal = items.reduce((s, i) => s + Number(i.line_total), 0);
@@ -5205,7 +5732,7 @@ async function renderOrderDetail(orderId) {
   content.querySelector('.accept-order')?.addEventListener('click', async () => {
     await updateOrderStatus(order.id, 'preparing');
     order.status = 'preparing';
-    order.ticket_status = 'HOLD';
+    order.ticket_status = 'OPEN';
     let items = getItemsForOrder(order.id);
     try {
       await printKOT(order, items);
@@ -5528,8 +6055,8 @@ function renderCustomers() {
   el.innerHTML = list.map(c => {
     const topItems = Object.entries(c.items).sort((a, b) => b[1] - a[1]).slice(0, 3);
     const tierBadge = c.tier === 'vip'
-      ? '<span style="background:#fef3c7;color:#b45309;font-size:.72rem;font-weight:800;padding:.15rem .5rem;border-radius:999px;border:1px solid #fde68a;">👑 VIP PATRON</span>'
-      : (c.tier === 'frequent' ? '<span style="background:#e0e7ff;color:#4338ca;font-size:.72rem;font-weight:700;padding:.15rem .5rem;border-radius:999px;border:1px solid #c7d2fe;">🥈 FREQUENT GUEST</span>' : '<span style="background:#f0fdf4;color:#166534;font-size:.72rem;font-weight:600;padding:.15rem .5rem;border-radius:999px;border:1px solid #bbf7d0;">🌱 NEW GUEST</span>');
+      ? '<span style="background:#fef3c7;color:#b45309;font-size:0.75rem;font-weight:800;padding:.15rem .5rem;border-radius:999px;border:1px solid #fde68a;">👑 VIP PATRON</span>'
+      : (c.tier === 'frequent' ? '<span style="background:#e0e7ff;color:#4338ca;font-size:0.75rem;font-weight:700;padding:.15rem .5rem;border-radius:999px;border:1px solid #c7d2fe;">🥈 FREQUENT GUEST</span>' : '<span style="background:#f0fdf4;color:#166534;font-size:0.75rem;font-weight:600;padding:.15rem .5rem;border-radius:999px;border:1px solid #bbf7d0;">🌱 NEW GUEST</span>');
 
     const totalVisits = c.orderCount + c.bookingCount;
     const cleanPhone = (c.phone || '').replace(/\D/g, '');
@@ -5555,11 +6082,11 @@ function renderCustomers() {
         <!-- Metrics Row -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;background:#f8fafc;padding:.6rem .8rem;border-radius:10px;border:1px solid #f1f5f9;font-size:.8rem;">
           <div>
-            <span style="color:var(--adm-muted);display:block;font-size:.7rem;">Lifetime Spend</span>
+            <span style="color:var(--adm-muted);display:block;font-size:0.75rem;">Lifetime Spend</span>
             <strong style="color:#059669;font-size:.92rem;">₹${Number(c.totalSpent || 0).toFixed(2)}</strong>
           </div>
           <div>
-            <span style="color:var(--adm-muted);display:block;font-size:.7rem;">Total Visits</span>
+            <span style="color:var(--adm-muted);display:block;font-size:0.75rem;">Total Visits</span>
             <strong style="color:#111827;font-size:.92rem;">${totalVisits} visits</strong> (${c.orderCount} ord)
           </div>
         </div>
@@ -5570,7 +6097,7 @@ function renderCustomers() {
             <span style="color:var(--adm-muted);font-weight:600;display:block;margin-bottom:3px;">Favorite Dishes:</span>
             <div style="display:flex;gap:.3rem;flex-wrap:wrap;">
               ${topItems.map(([name, qty]) => `
-                <span style="background:#f1f5f9;color:#334155;padding:.15rem .45rem;border-radius:6px;font-size:.72rem;font-weight:500;">
+                <span style="background:#f1f5f9;color:#334155;padding:.15rem .45rem;border-radius:6px;font-size:0.75rem;font-weight:500;">
                   ${escapeHtml(name)} <strong style="color:#6366f1;">(${qty})</strong>
                 </span>
               `).join('')}
@@ -5584,14 +6111,14 @@ function renderCustomers() {
             ⏱️ ${c.lastActivity ? timeSince(c.lastActivity) : 'No activity'}
           </span>
           <div style="display:flex;gap:.35rem;align-items:center;">
-            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm cust-history-btn" data-phone="${c.phone}" style="font-size:.72rem;padding:.2rem .5rem;" title="View complete order history">
+            <button type="button" class="adm-btn adm-btn-outline adm-btn-sm cust-history-btn" data-phone="${c.phone}" style="font-size:0.75rem;padding:.2rem .5rem;" title="View complete order history">
               👁️ History
             </button>
             ${cleanPhone ? `
-              <a href="${waLink}" target="_blank" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:.72rem;padding:.2rem .45rem;color:#16a34a;border-color:#bbf7d0;" title="Send WhatsApp message">
+              <a href="${waLink}" target="_blank" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:0.75rem;padding:.2rem .45rem;color:#16a34a;border-color:#bbf7d0;" title="Send WhatsApp message">
                 💬 WA
               </a>
-              <a href="tel:${c.phone}" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:.72rem;padding:.2rem .45rem;color:#4f46e5;border-color:#c7d2fe;" title="Call customer">
+              <a href="tel:${c.phone}" class="adm-btn adm-btn-outline adm-btn-sm" style="font-size:0.75rem;padding:.2rem .45rem;color:#4f46e5;border-color:#c7d2fe;" title="Call customer">
                 📞
               </a>
             ` : ''}
@@ -5802,9 +6329,9 @@ function timeSince(dateStr) {
 function getActiveTableSessions() {
   const activeTableOrders = orders.filter(o => {
     if (o.ticket_status) {
-      if (o.ticket_status === 'CLOSED' || o.ticket_status === 'CANCELLED') return false;
+      if (o.ticket_status === 'CLOSED' || o.ticket_status === 'CANCELLED' || o.ticket_status === 'BILLED') return false;
     } else {
-      if (o.status === 'delivered' || o.status === 'cancelled') return false;
+      if (o.status === 'delivered' || o.status === 'cancelled' || o.status === 'billed') return false;
     }
     const meta = parseNotesMetadata(o.notes, o);
     return o.order_type === 'table' || meta.type === 'table' || meta.tableNumber || o.table_number;
@@ -5901,13 +6428,24 @@ async function createFinalBillForTableSession(tableNum, paymentMethod = 'cash', 
   }
 
   const kotNumbersText = session.kots.map(k => `#${k.orderNumber}`).join(' + ');
+  const nowIso = new Date().toISOString();
 
   const finalBillOrder = {
     ...primaryOrder,
     total_amount: grandTotal,
+    subtotal_amount: subtotal || 0,
+    discount_pct: billing.discountPct || 0,
+    discount_amount: billing.discountAmt || 0,
+    taxable_amount: billing.taxableValue || 0,
+    cgst_amount: cgst || 0,
+    sgst_amount: sgst || 0,
+    delivery_fee: 0,
+    packaging_fee: 0,
+    round_off_amount: billing.roundOff || 0,
     status: 'delivered',
     payment_status: 'paid',
     ticket_status: 'CLOSED',
+    settled_at: nowIso,
     payment_method: validMethod,
     payment_mode: validMethod,
     notes: `[TABLE: ${tableNum}] [FINAL_BILL] [KOTS: ${kotNumbersText}] [CGST: ${billing.cgstRate}%] [SGST: ${billing.sgstRate}%] [PAYMENT: ${validMethod}]${upiRefNote}`
@@ -5922,81 +6460,129 @@ async function createFinalBillForTableSession(tableNum, paymentMethod = 'cash', 
 
   const siblingOrders = session.orders.slice(1);
   const siblingOrderIds = siblingOrders.map(o => o.id);
-  const settleIdempotencyKey = idempotencyKey || ((typeof crypto !== 'undefined' && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : `settle-table-${tableNum}-${Date.now()}`);
+  const settleIdempotencyKey = idempotencyKey || primaryOrder._settleIdempotencyKey || ((typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? `settle-table-${tableNum}-${crypto.randomUUID()}`
+    : `settle-table-${tableNum}-${primaryOrder.id}`);
+  primaryOrder._settleIdempotencyKey = settleIdempotencyKey;
 
-  // 3. Atomically commit database update first (Prevents double billing / double checkout)
-  let cloudSettled = false;
+  // 3. Atomically commit database settlement via settle_order_atomic RPC
   try {
+    const primaryFinancials = {
+      total_amount: grandTotal,
+      subtotal_amount: subtotal || 0,
+      discount_pct: billing.discountPct || 0,
+      discount_amount: billing.discountAmt || 0,
+      taxable_amount: billing.taxableValue || 0,
+      cgst_amount: cgst || 0,
+      sgst_amount: sgst || 0,
+      delivery_fee: 0,
+      packaging_fee: 0,
+      round_off_amount: billing.roundOff || 0,
+      settled_at: nowIso,
+      updated_at: nowIso
+    };
+
     if (siblingOrderIds.length > 0) {
-      await insforge.database
+      const { error: moveErr } = await insforge.database
         .from('order_items')
         .update({ order_id: primaryOrder.id })
         .in('order_id', siblingOrderIds);
+      if (moveErr) throw moveErr;
     }
 
-    let pUpd = await insforge.database
+    const { error: totalErr } = await insforge.database
       .from('orders')
-      .update({
-        total_amount: grandTotal,
-        status: 'delivered',
-        payment_status: 'paid',
-        ticket_status: 'CLOSED',
-        payment_method: validMethod,
-        notes: finalBillOrder.notes,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', primaryOrder.id)
-      .neq('ticket_status', 'CLOSED')
-      .select();
+      .update(primaryFinancials)
+      .eq('id', primaryOrder.id);
+    if (totalErr) throw totalErr;
 
-    if (pUpd.error && (pUpd.error.message || '').includes('ticket_status')) {
-      await insforge.database
-        .from('orders')
-        .update({
-          total_amount: grandTotal,
-          status: 'delivered',
-          payment_status: 'paid',
-          payment_method: validMethod,
-          notes: finalBillOrder.notes,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', primaryOrder.id);
-      cloudSettled = true;
-    } else if (pUpd.data && pUpd.data.length > 0) {
-      cloudSettled = true;
-    } else if (!pUpd.error) {
-      showAdminToast(`Table ${tableNum} was already closed by another cashier.`, 'error');
-      await refreshDashboard(true);
-      return;
+    const { data: rpcResult, error: rpcError } = await insforge.database.rpc('settle_order_atomic', {
+      p_order_id: primaryOrder.id,
+      p_payment_method: validMethod,
+      p_notes: finalBillOrder.notes,
+      p_idempotency_key: settleIdempotencyKey
+    });
+
+    if (rpcError) {
+      const msg = String(rpcError.message || '');
+      if (msg.includes('ORDER_ALREADY_SETTLED')) {
+        showAdminToast(`Table ${tableNum} was already closed by another cashier.`, 'error');
+        await refreshDashboard(true);
+        return;
+      }
+      throw rpcError;
+    }
+
+    if (rpcResult && rpcResult.success === false) {
+      throw new Error(rpcResult.error || 'Atomic settlement rejected by database.');
     }
 
     for (const ord of siblingOrders) {
-      let sUpd = await insforge.database
+      const { error: sErr } = await insforge.database
         .from('orders')
-        .update({ status: 'delivered', payment_status: 'paid', ticket_status: 'CLOSED', payment_method: validMethod })
+        .update({
+          status: 'delivered',
+          payment_status: 'paid',
+          ticket_status: 'CLOSED',
+          payment_method: validMethod,
+          settled_at: nowIso,
+          consolidated_into_order_id: primaryOrder.id
+        })
         .eq('id', ord.id);
-      if (sUpd.error && (sUpd.error.message || '').includes('ticket_status')) {
-        await insforge.database
-          .from('orders')
-          .update({ status: 'delivered', payment_status: 'paid', payment_method: validMethod })
-          .eq('id', ord.id);
-      }
+      if (sErr) throw sErr;
     }
   } catch (cloudErr) {
-    console.warn('[Table Session Settle] Cloud update warning (saved locally):', cloudErr);
+    const errType = typeof classifyError === 'function' ? classifyError(cloudErr) : 'NETWORK';
+    if (errType === ERROR_TYPES.NETWORK || errType === ERROR_TYPES.SERVER_ERROR || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      primaryOrder._settlementPendingSync = true;
+      primaryOrder._pendingPaymentMethod = validMethod;
+      primaryOrder.ticket_status = 'BILLED';
+      primaryOrder.payment_status = 'unpaid';
+
+      if (typeof offlineSync !== 'undefined' && offlineSync.enqueuePosSettlement) {
+        offlineSync.enqueuePosSettlement({
+          orderId: primaryOrder.id,
+          paymentMethod: validMethod,
+          notes: finalBillOrder.notes,
+          idempotencyKey: settleIdempotencyKey,
+          tableNum
+        });
+        offlineSync.updateSyncIndicator();
+      }
+
+      persistOrdersCache();
+      showAdminToast(`⚠️ Network Offline: Settlement queued! Table ${tableNum} remains UNPAID until cloud confirms payment.`, 'warning');
+      renderTablesPanel();
+      return;
+    }
+
+    console.error('[Table Session Settle] Atomic RPC error:', cloudErr);
+    showAdminToast('Failed to settle table bill: ' + (cloudErr.message || 'Database transaction error'), 'error');
+    return;
   }
+
+  delete primaryOrder._settleIdempotencyKey;
 
   // 4. Update local in-memory state
   const localPrimary = orders.find(x => x.id === primaryOrder.id) || primaryOrder;
   localPrimary.total_amount = grandTotal;
+  localPrimary.subtotal_amount = subtotal || 0;
+  localPrimary.discount_pct = billing.discountPct || 0;
+  localPrimary.discount_amount = billing.discountAmt || 0;
+  localPrimary.taxable_amount = billing.taxableValue || 0;
+  localPrimary.cgst_amount = cgst || 0;
+  localPrimary.sgst_amount = sgst || 0;
+  localPrimary.delivery_fee = 0;
+  localPrimary.packaging_fee = 0;
+  localPrimary.round_off_amount = billing.roundOff || 0;
+  localPrimary.settled_at = nowIso;
   localPrimary.status = 'delivered';
   localPrimary.payment_status = 'paid';
   localPrimary.ticket_status = 'CLOSED';
   localPrimary.payment_method = validMethod;
   localPrimary.payment_mode = validMethod;
   localPrimary.notes = finalBillOrder.notes;
+  localPrimary.idempotency_key = settleIdempotencyKey;
 
   siblingOrders.forEach(ord => {
     const local = orders.find(x => x.id === ord.id) || ord;
@@ -6005,6 +6591,8 @@ async function createFinalBillForTableSession(tableNum, paymentMethod = 'cash', 
     local.ticket_status = 'CLOSED';
     local.payment_method = validMethod;
     local.payment_mode = validMethod;
+    local.settled_at = nowIso;
+    local.consolidated_into_order_id = primaryOrder.id;
   });
 
   if (siblingOrderIds.length > 0) {
@@ -6051,10 +6639,16 @@ async function settleSingleHeldOrder(orderId, paymentMethod = 'cash', txnRef = '
     return;
   }
 
+  if (order.status === 'cancelled' || order.ticket_status === 'CANCELLED') {
+    showAdminToast(`Order #${order.order_number} is cancelled and cannot be settled.`, 'error');
+    return;
+  }
+
   const validMethod = ['cash', 'upi', 'card', 'pay_later'].includes(paymentMethod) ? paymentMethod : 'cash';
-  const settleIdempotencyKey = idempotencyKey || ((typeof crypto !== 'undefined' && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : `settle-${orderId}-${Date.now()}`);
+  const settleIdempotencyKey = idempotencyKey || order._settleIdempotencyKey || ((typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? `settle-${orderId}-${crypto.randomUUID()}`
+    : `settle-${orderId}`);
+  order._settleIdempotencyKey = settleIdempotencyKey;
 
   const upiRefNote = (validMethod === 'upi' && txnRef) ? ` [UPI_REF: ${txnRef}]` : '';
   const currentNotes = (order.notes || '');
@@ -6072,80 +6666,42 @@ async function settleSingleHeldOrder(orderId, paymentMethod = 'cash', txnRef = '
     }
   }
 
-  // 1. ATOMIC SETTLEMENT IN DATABASE FIRST
-  let cloudSettled = false;
-  let settlementConflict = false;
-
+  // 1. ATOMIC SETTLEMENT IN DATABASE FIRST VIA settle_order_atomic RPC
   try {
-    const res = await fetch('/api/orders', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-idempotency-key': settleIdempotencyKey
-      },
-      body: JSON.stringify({
-        id: orderId,
-        status: 'delivered',
-        payment_status: 'paid',
-        ticket_status: 'CLOSED',
-        payment_method: validMethod,
-        txn_ref: txnRef || undefined,
-        notes: updatedNotes,
-        idempotency_key: settleIdempotencyKey
-      })
+    const { data: rpcResult, error: rpcError } = await insforge.database.rpc('settle_order_atomic', {
+      p_order_id: order.id,
+      p_payment_method: validMethod,
+      p_notes: updatedNotes,
+      p_idempotency_key: settleIdempotencyKey
     });
 
-    if (res.status === 409) {
-      settlementConflict = true;
-      const conflictData = await res.json().catch(() => ({}));
-      showAdminToast(conflictData.error || `Order #${order.order_number} was already settled by another cashier.`, 'error');
-      await refreshDashboard(true);
-      return;
-    }
-
-    if (res.ok) {
-      cloudSettled = true;
-    }
-  } catch (fetchErr) {
-    console.warn('[Hold Settle API fallback to direct client]:', fetchErr);
-  }
-
-  if (!cloudSettled && !settlementConflict) {
-    try {
-      const { data: updatedRows, error: updErr } = await insforge.database
-        .from('orders')
-        .update({
-          status: 'delivered',
-          payment_status: 'paid',
-          ticket_status: 'CLOSED',
-          payment_method: validMethod,
-          notes: updatedNotes,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', orderId)
-        .neq('ticket_status', 'CLOSED')
-        .select();
-
-      if (updErr && (updErr.message || '').includes('ticket_status')) {
-        await insforge.database.from('orders').update({
-          status: 'delivered',
-          payment_status: 'paid',
-          payment_method: validMethod,
-          notes: updatedNotes,
-          updated_at: new Date().toISOString()
-        }).eq('id', orderId);
-        cloudSettled = true;
-      } else if (updatedRows && updatedRows.length > 0) {
-        cloudSettled = true;
-      } else if (!updErr) {
-        showAdminToast(`Order #${order.order_number} was already closed by another cashier.`, 'error');
+    if (rpcError) {
+      const errMsg = String(rpcError.message || '');
+      if (errMsg.includes('ORDER_ALREADY_SETTLED')) {
+        showAdminToast(`Order #${order.order_number} was already settled by another cashier.`, 'error');
         await refreshDashboard(true);
         return;
       }
-    } catch (offlineErr) {
-      console.warn('[Hold Settle Offline]:', offlineErr);
+      if (errMsg.includes('ORDER_CANCELLED')) {
+        showAdminToast(`Order #${order.order_number} is cancelled and cannot be settled.`, 'error');
+        return;
+      }
+      console.error('[Hold Settle RPC Error]:', rpcError);
+      showAdminToast('Failed to settle held order: ' + (errMsg || 'Database transaction error'), 'error');
+      return;
     }
+
+    if (rpcResult && rpcResult.success === false) {
+      showAdminToast('Failed to settle held order: ' + (rpcResult.error || 'Settlement rejected'), 'error');
+      return;
+    }
+  } catch (rpcEx) {
+    console.error('[Hold Settle Exception]:', rpcEx);
+    showAdminToast('Failed to settle held order: ' + (rpcEx.message || 'Network or database error'), 'error');
+    return;
   }
+
+  delete order._settleIdempotencyKey;
 
   // 2. Database committed! Now update local in-memory state
   order.status = 'delivered';
@@ -6154,6 +6710,8 @@ async function settleSingleHeldOrder(orderId, paymentMethod = 'cash', txnRef = '
   order.payment_method = validMethod;
   order.payment_mode = validMethod;
   order.notes = updatedNotes;
+  order.idempotency_key = settleIdempotencyKey;
+  order.settled_at = rpcResult?.settled_at || new Date().toISOString();
   order.updated_at = new Date().toISOString();
   persistOrdersCache();
 
@@ -6190,6 +6748,7 @@ function openHoldSettleModal(target) {
   if (!target) return;
   const modal = $('adm-hold-settle-modal');
   if (!modal) return;
+  closeOrderDetailDrawer();
 
   currentHoldSettleTarget = target;
   let grandTotal = 0;
@@ -6406,6 +6965,7 @@ function initHoldSettleModalListeners() {
   $('hold-settle-method-upi')?.addEventListener('click', () => selectHoldSettleMethod('upi'));
 
   $('hold-settle-confirm-btn')?.addEventListener('click', executeHoldSettlement);
+  initTableTransferModalListeners();
 }
 
 window.openHoldSettleModal = openHoldSettleModal;
@@ -6414,6 +6974,25 @@ window.closeHoldSettleModal = closeHoldSettleModal;
 window.executeHoldSettlement = executeHoldSettlement;
 window.settleSingleHeldOrder = settleSingleHeldOrder;
 window.createFinalBillForTableSession = createFinalBillForTableSession;
+window.confirmHeldTableOrder = confirmHeldTableOrder;
+window.confirmHeldOrder = confirmHeldOrder;
+window.settleTableBill = settleTableBill;
+window.settleBill = settleBill;
+window.setTableBillPaymentMethod = setTableBillPaymentMethod;
+window.getOutstandingTableBills = getOutstandingTableBills;
+window.getOutstandingBills = getOutstandingBills;
+window.getClosedTableBills = getClosedTableBills;
+window.getClosedBills = getClosedBills;
+window.renderTablesPanel = renderTablesPanel;
+window.renderTablesBillSection = renderTablesBillSection;
+window.renderTablesCloseSection = renderTablesCloseSection;
+window.renderTablesHoldSection = renderTablesHoldSection;
+window.getTotalTablesCount = getTotalTablesCount;
+window.openTableTransferModal = openTableTransferModal;
+window.closeTableTransferModal = closeTableTransferModal;
+window.executeTableTransfer = executeTableTransfer;
+window.executeTableSwap = executeTableSwap;
+window.updateNotesTableNumber = updateNotesTableNumber;
 
 function renderHoldOrdersPanel() {
   const search = ($('hold-orders-search')?.value || '').toLowerCase().trim();
@@ -6470,7 +7049,7 @@ function renderHoldOrdersPanel() {
       const rLabel = rInfo.roundNumber ? `Round ${rInfo.roundNumber}` : `Round ${i+1}`;
       const isHold = o.status === 'hold';
       return `
-        <span style="background:${isHold ? '#fffbeb' : '#f0fdf4'};color:${isHold ? '#b45309' : '#15803d'};border:1px solid ${isHold ? '#fed7aa' : '#bbf7d0'};border-radius:6px;padding:.15rem .45rem;font-size:.72rem;font-weight:700;display:inline-flex;align-items:center;gap:3px;">
+        <span style="background:${isHold ? '#fffbeb' : '#f0fdf4'};color:${isHold ? '#b45309' : '#15803d'};border:1px solid ${isHold ? '#fed7aa' : '#bbf7d0'};border-radius:6px;padding:.15rem .45rem;font-size:0.75rem;font-weight:700;display:inline-flex;align-items:center;gap:3px;">
           <span>🗒️ #${formatDailyOrderNumber(o)} · ${rLabel} (₹${Number(o.total_amount || 0).toFixed(0)}) ${isHold ? '⏸️ Hold' : '✓ Active'}</span>
           <button type="button" class="cancel-single-round-btn" data-order-id="${o.id}" data-round="${rLabel}" style="background:none;border:none;color:#dc2626;cursor:pointer;font-weight:900;font-size:0.75rem;padding:0 2px;margin-left:2px;border-radius:3px;" title="Cancel only this round">✕</button>
         </span>
@@ -6485,7 +7064,7 @@ function renderHoldOrdersPanel() {
               <span style="background:#eef2ff;color:#4f46e5;font-size:.85rem;font-weight:900;padding:.2rem .65rem;border-radius:999px;border:1px solid #c7d2fe;">
                 🪑 Table ${sess.tableNumber}
               </span>
-              <span style="background:#ecfdf5;color:#059669;font-size:.72rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;">
+              <span style="background:#ecfdf5;color:#059669;font-size:0.75rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;">
                 ● Active Dining Session
               </span>
             </div>
@@ -6528,8 +7107,8 @@ function renderHoldOrdersPanel() {
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm table-print-kot-btn" data-table="${sess.tableNumber}" style="background:#fff3e0;border-color:#f59e0b;color:#b45309;" title="Print consolidated kitchen ticket">
               🖨️ Repr. KOTs
             </button>
-            <button type="button" class="adm-btn adm-btn-primary adm-btn-sm table-final-bill-btn" data-table="${sess.tableNumber}" style="background:#10b981;border-color:#10b981;font-weight:800;padding:.35rem .75rem;" title="Combine all KOTs & create 1 Final Bill">
-              🧾 Create Final Bill
+            <button type="button" class="adm-btn adm-btn-primary adm-btn-sm table-final-bill-btn" data-table="${sess.tableNumber}" style="background:#10b981;border-color:#10b981;font-weight:800;padding:.35rem .75rem;" title="Confirm held order, generate unpaid bill, and release Table ${sess.tableNumber}">
+              ✔️ Confirm Bill
             </button>
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm table-cancel-btn" data-table="${sess.tableNumber}" style="border-color:#ff5b5b;color:#ff5b5b;font-weight:700;" title="Cancel all orders for Table ${sess.tableNumber}">
               ✕ Cancel Table
@@ -6577,7 +7156,7 @@ function renderHoldOrdersPanel() {
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-add-items-btn" data-order-id="${order.id}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;font-weight:700;">➕ Add Dishes</button>
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-resume-pos-btn" data-order-id="${order.id}" style="background:#fef3c7;border-color:#f59e0b;color:#92400e;font-weight:700;" title="Resume this order in POS billing">▶️ Resume in POS</button>
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-print-kot-btn" data-order-id="${order.id}" style="background:#fff3e0;border-color:#f59e0b;color:#b45309;">🖨️ Repr. KOT</button>
-            <button type="button" class="adm-btn adm-btn-primary adm-btn-sm hold-final-bill-btn" data-order-id="${order.id}" style="background:#10b981;border-color:#10b981;font-weight:700;">🧾 Final Bill</button>
+            <button type="button" class="adm-btn adm-btn-primary adm-btn-sm hold-final-bill-btn" data-order-id="${order.id}" style="background:#10b981;border-color:#10b981;font-weight:700;" title="Confirm order, generate unpaid bill, and move to Bill section">✔️ Confirm Bill</button>
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-cancel-btn" data-order-id="${order.id}" style="border-color:#cbd5e1;color:#64748b;font-weight:700;">✕ Cancel</button>
             <button type="button" class="adm-btn adm-btn-outline adm-btn-sm hold-delete-btn" data-order-id="${order.id}" style="border-color:#fca5a5;color:#ef4444;background:#fef2f2;font-weight:700;" title="Permanently delete this order from database">🗑️ Delete</button>
           </div>
@@ -6604,9 +7183,9 @@ function renderHoldOrdersPanel() {
   });
 
   container.querySelectorAll('.table-final-bill-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const tableNum = parseInt(btn.dataset.table, 10);
-      if (tableNum) openHoldSettleModal({ type: 'table', tableNumber: tableNum });
+      if (tableNum) await confirmHeldTableOrder(tableNum);
     });
   });
 
@@ -6625,14 +7204,15 @@ function renderHoldOrdersPanel() {
       const tableNum = parseInt(btn.dataset.table, 10);
       const session = tableSessions.find(s => s.tableNumber === tableNum);
       if (!session || !session.orders.length) return;
+      if (session.orders.some(ord => isOrderPaidOrClosed(ord))) {
+        showAdminToast(`Cannot cancel Table ${tableNum}: one or more orders are already paid or closed.`, 'error');
+        return;
+      }
       if (!confirm(`Cancel all active orders for Table ${tableNum}? This will remove Table ${tableNum} from active sessions.`)) return;
 
       try {
-        for (const ord of session.orders) {
-          await insforge.database.from('orders').update({ status: 'cancelled' }).eq('id', ord.id);
-          ord.status = 'cancelled';
-          await markOrderNotificationsRead(ord.id);
-        }
+        const res = await cancelTableOrders(tableNum, session.orders);
+        if (!res.success) return;
         showAdminToast(`All orders for Table ${tableNum} cancelled.`, 'success');
         renderOverview();
         renderHoldOrdersPanel();
@@ -6651,13 +7231,18 @@ function renderHoldOrdersPanel() {
       e.stopPropagation();
       const orderId = btn.dataset.orderId;
       const roundLabel = btn.dataset.round || 'Round';
+      const targetOrd = orders.find(x => String(x.id) === String(orderId));
+      if (!targetOrd) return;
+      if (isOrderPaidOrClosed(targetOrd)) {
+        showAdminToast(`Cannot cancel ${roundLabel}: order is already paid or closed.`, 'error');
+        return;
+      }
       if (!confirm(`Cancel ${roundLabel} (#${orderId}) for this table?`)) return;
 
       try {
-        await insforge.database.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
-        const o = orders.find(x => x.id === orderId);
-        if (o) o.status = 'cancelled';
+        await cancelOrderRecord(targetOrd);
         await markOrderNotificationsRead(orderId);
+        persistOrdersCache();
         showAdminToast(`${roundLabel} cancelled successfully.`, 'success');
         renderOverview();
         renderHoldOrdersPanel();
@@ -6701,24 +7286,27 @@ function renderHoldOrdersPanel() {
     });
   });
 
-  container.querySelectorAll('.hold-final-bill-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+  container.querySelectorAll('.hold-final-bill-btn, .hold-confirm-bill-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
       const orderId = btn.dataset.orderId;
-      const order = orders.find(o => String(o.id) === String(orderId));
-      if (order) openHoldSettleModal({ type: 'order', orderId, order });
+      if (orderId) await confirmHeldOrder(orderId);
     });
   });
 
   container.querySelectorAll('.hold-cancel-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Cancel this held order? This cannot be undone.')) return;
       const orderId = btn.dataset.orderId;
+      const o = orders.find(x => String(x.id) === String(orderId));
+      if (!o) return;
+      if (isOrderPaidOrClosed(o)) {
+        showAdminToast('Cannot cancel: order is already paid or closed.', 'error');
+        return;
+      }
+      if (!confirm('Cancel this held order? This cannot be undone.')) return;
       try {
-        const { error } = await insforge.database.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
-        if (error) throw error;
-        const o = orders.find(x => x.id === orderId);
-        if (o) o.status = 'cancelled';
+        await cancelOrderRecord(o);
         await markOrderNotificationsRead(orderId);
+        persistOrdersCache();
         showAdminToast('Held order cancelled.', 'success');
         renderOverview();
         renderHoldOrdersPanel();
@@ -6774,14 +7362,1245 @@ function renderPosHoldOrdersChips(containerEl) {
 // 🪑 TABLES FLOOR PLAN (1-19) & LIVE SESSION ENGINE
 // ═══════════════════════════════════════════════════════════════
 
+let tablesSubtab = 'all'; // 'all' | 'free' | 'occupied' | 'hold' | 'bill' | 'close'
 let tablesFilter = 'all';
+let billTypeFilter = 'all'; // 'all' | 'table' | 'pickup' | 'delivery'
+let closeTypeFilter = 'all'; // 'all' | 'table' | 'pickup' | 'delivery'
+const tableBillSelectedMethods = new Map(); // orderId -> 'cash' | 'online'
+let isConfirmingTableBill = false;
+let isSettlingTableBill = false;
 
-function renderTablesPanel() {
+function getOutstandingBills(typeFilter = 'all') {
+  return orders.filter(o => {
+    if (o.status === 'cancelled' || o.ticket_status === 'CANCELLED') return false;
+    if (o.payment_status === 'paid' || o.ticket_status === 'CLOSED') return false;
+    const isBilled = o.ticket_status === 'BILLED' || o.status === 'billed' || (o.notes && (o.notes.includes('[FINAL_BILL]') || o.notes.includes('[BILLED_UNPAID]')));
+    if (!isBilled) return false;
+
+    if (typeFilter && typeFilter !== 'all') {
+      const meta = parseNotesMetadata(o.notes, o);
+      const isTable = o.order_type === 'table' || meta.type === 'table' || meta.tableNumber || o.table_number;
+      const isDelivery = o.order_type === 'delivery' || meta.type === 'delivery';
+      const isPickup = o.order_type === 'pickup' || o.order_type === 'takeaway' || meta.type === 'pickup' || meta.type === 'takeaway';
+      if (typeFilter === 'table' && !isTable) return false;
+      if (typeFilter === 'delivery' && !isDelivery) return false;
+      if ((typeFilter === 'pickup' || typeFilter === 'takeaway') && !isPickup) return false;
+    }
+    return true;
+  }).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+}
+
+function getOutstandingTableBills() {
+  return getOutstandingBills('table');
+}
+
+function getClosedBills(typeFilter = 'all') {
+  return orders.filter(o => {
+    if (o.status === 'cancelled' || o.ticket_status === 'CANCELLED') return false;
+    const isPaidOrClosed = o.payment_status === 'paid' || o.ticket_status === 'CLOSED' || o.status === 'delivered';
+    if (!isPaidOrClosed) return false;
+    if (o.payment_status === 'unpaid' && o.ticket_status === 'BILLED') return false;
+
+    if (typeFilter && typeFilter !== 'all') {
+      const meta = parseNotesMetadata(o.notes, o);
+      const isTable = o.order_type === 'table' || meta.type === 'table' || meta.tableNumber || o.table_number;
+      const isDelivery = o.order_type === 'delivery' || meta.type === 'delivery';
+      const isPickup = o.order_type === 'pickup' || o.order_type === 'takeaway' || meta.type === 'pickup' || meta.type === 'takeaway';
+      if (typeFilter === 'table' && !isTable) return false;
+      if (typeFilter === 'delivery' && !isDelivery) return false;
+      if ((typeFilter === 'pickup' || typeFilter === 'takeaway') && !isPickup) return false;
+    }
+    return true;
+  }).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+}
+
+function getClosedTableBills() {
+  return getClosedBills('table');
+}
+
+function setTableBillPaymentMethod(billId, method) {
+  tableBillSelectedMethods.set(billId, method);
+}
+
+async function confirmHeldOrder(orderId) {
+  const order = orders.find(o => String(o.id) === String(orderId));
+  if (!order) {
+    showAdminToast('Order not found.', 'error');
+    return;
+  }
+
+  // If order is a table order, route to confirmHeldTableOrder
+  const meta = parseNotesMetadata(order.notes, order);
+  const isTable = order.order_type === 'table' || meta.type === 'table' || meta.tableNumber || order.table_number;
+  if (isTable) {
+    const tableNum = parseInt(String(order.table_number || meta.tableNumber).replace(/\D/g, ''), 10);
+    if (tableNum) return confirmHeldTableOrder(tableNum);
+  }
+
+  // Non-Table Order (Takeaway or Delivery)
+  const rawItems = getItemsForOrder(order.id);
+  const items = consolidateOrderItems(rawItems);
+  const s = getBillSettings();
+  const isDelivery = order.order_type === 'delivery' || meta.type === 'delivery';
+  const deliveryFee = isDelivery ? (meta.deliveryFee ?? s.deliveryCharge ?? 0) : 0;
+
+  const billing = calculateOrderBilling({
+    items,
+    deliveryFee,
+    cgstRate: s.cgstRate ?? 2.5,
+    sgstRate: s.sgstRate ?? 2.5
+  });
+
+  let grandTotal = billing.grandTotal;
+  if (grandTotal <= 0 && Number(order.total_amount || 0) > 0) {
+    grandTotal = Number(order.total_amount);
+  }
+
+  const typeTag = isDelivery ? '[DELIVERY]' : '[SELF PICKUP]';
+  const billNotes = (order.notes || '') + ` ${typeTag} [FINAL_BILL] [BILLED_UNPAID] [CGST: ${billing.cgstRate}%] [SGST: ${billing.sgstRate}%]`;
+  const updatedAt = new Date().toISOString();
+
+  // 1. Cloud Database update
+  const updatePayload = {
+    total_amount: grandTotal,
+    subtotal_amount: billing.subtotal || grandTotal,
+    taxable_amount: billing.taxableAmount || grandTotal,
+    cgst_amount: billing.cgstAmount || 0,
+    sgst_amount: billing.sgstAmount || 0,
+    status: 'confirmed',
+    payment_status: 'unpaid',
+    ticket_status: 'BILLED',
+    notes: billNotes,
+    updated_at: updatedAt
+  };
+
+  try {
+    let uRes = await insforge.database
+      .from('orders')
+      .update(updatePayload)
+      .eq('id', order.id);
+    if (uRes && uRes.error && (uRes.error.message || '').includes('ticket_status')) {
+      const fallbackPayload = { ...updatePayload };
+      delete fallbackPayload.ticket_status;
+      uRes = await insforge.database
+        .from('orders')
+        .update(fallbackPayload)
+        .eq('id', order.id);
+    }
+    if (uRes && uRes.error) throw uRes.error;
+  } catch (err) {
+    console.warn('[Confirm Order] Cloud DB failed (queuing offline):', err);
+    if (typeof offlineSync !== 'undefined' && offlineSync.enqueuePosConfirmBill) {
+      offlineSync.enqueuePosConfirmBill({
+        orderId: order.id,
+        updatePayload,
+        items,
+        idempotencyKey: `confirm-held-${order.id}-${Date.now()}`
+      });
+      offlineSync.updateSyncIndicator();
+    }
+    showAdminToast(`Bill #${order.order_number} saved locally (Offline). Queued for sync. 🧾`, 'info');
+  }
+
+  // 2. In-memory update
+  Object.assign(order, updatePayload);
+
+  persistOrdersCache();
+  if (typeof posState !== 'undefined' && typeof posState.setOrders === 'function') {
+    posState.setOrders(orders);
+  }
+  await markOrderNotificationsRead(order.id);
+
+  // 3. Print Customer Bill (Tax Bill with UNPAID status)
+  try {
+    await printOrderReceiptWithTax(order, items);
+  } catch (printErr) {
+    console.warn('[Confirm Bill Print Warning]:', printErr);
+  }
+
+  const typeName = isDelivery ? 'Delivery' : 'Takeaway';
+  showAdminToast(`${typeName} Bill #${order.order_number} generated (${formatBillAmount(grandTotal)})! Moved to Bill section. 🧾`, 'success');
+
+  // Switch to Bill view inside Tables panel
+  tablesSubtab = 'bill';
+  document.querySelectorAll('#tables-filter-pills button').forEach(p => {
+    p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'bill');
+  });
+
+  renderTablesPanel();
+  renderHoldOrdersPanel();
+  renderOverview();
+  renderOrdersTable();
+}
+
+async function confirmHeldTableOrder(tableNum) {
+  if (isConfirmingTableBill) return;
+  isConfirmingTableBill = true;
+
+  try {
+    const sessions = getActiveTableSessions();
+    const session = sessions.find(s => s.tableNumber === tableNum);
+    if (!session || !session.orders.length) {
+      showAdminToast(`No active orders found for Table ${tableNum}`, 'error');
+      return;
+    }
+
+    const primaryOrder = session.orders[0];
+    const siblingOrders = session.orders.slice(1);
+    const siblingOrderIds = siblingOrders.map(o => o.id);
+
+    const consolidatedItems = session.consolidatedItems || consolidateOrderItems(session.items);
+    const s = getBillSettings();
+    const billing = calculateOrderBilling({
+      items: consolidatedItems,
+      deliveryFee: 0,
+      cgstRate: s.cgstRate ?? 2.5,
+      sgstRate: s.sgstRate ?? 2.5
+    });
+
+    let grandTotal = billing.grandTotal;
+    if (grandTotal <= 0 && Number(session.totalAmount || 0) > 0) {
+      grandTotal = Number(session.totalAmount);
+    } else if (grandTotal <= 0 && Number(primaryOrder.total_amount || 0) > 0) {
+      grandTotal = Number(primaryOrder.total_amount);
+    }
+
+    const kotNumbersText = session.kots.map(k => `#${k.orderNumber}`).join(' + ');
+    const billNotes = `[TABLE: ${tableNum}] [FINAL_BILL] [BILLED_UNPAID] [KOTS: ${kotNumbersText}] [CGST: ${billing.cgstRate}%] [SGST: ${billing.sgstRate}%]`;
+    const updatedAt = new Date().toISOString();
+
+    const pPayload = {
+      order_type: 'table',
+      table_number: tableNum,
+      total_amount: grandTotal,
+      subtotal_amount: billing.subtotal || grandTotal,
+      taxable_amount: billing.taxableAmount || grandTotal,
+      cgst_amount: billing.cgstAmount || 0,
+      sgst_amount: billing.sgstAmount || 0,
+      status: 'confirmed',
+      payment_status: 'unpaid',
+      ticket_status: 'BILLED',
+      notes: billNotes,
+      updated_at: updatedAt
+    };
+
+    // 1. Cloud Database update
+    try {
+      if (siblingOrderIds.length > 0) {
+        await insforge.database
+          .from('order_items')
+          .update({ order_id: primaryOrder.id })
+          .in('order_id', siblingOrderIds);
+
+        for (const ord of siblingOrders) {
+          const sPayload = {
+            status: 'delivered',
+            payment_status: 'paid',
+            ticket_status: 'CLOSED',
+            notes: (ord.notes || '') + ` [CONSOLIDATED_INTO: ${primaryOrder.id}]`
+          };
+          let sRes = await insforge.database
+            .from('orders')
+            .update(sPayload)
+            .eq('id', ord.id);
+          if (sRes && sRes.error && (sRes.error.message || '').includes('ticket_status')) {
+            const sFallback = { ...sPayload };
+            delete sFallback.ticket_status;
+            await insforge.database
+              .from('orders')
+              .update(sFallback)
+              .eq('id', ord.id);
+          }
+        }
+      }
+
+      let pRes = await insforge.database
+        .from('orders')
+        .update(pPayload)
+        .eq('id', primaryOrder.id);
+      if (pRes && pRes.error && (pRes.error.message || '').includes('ticket_status')) {
+        const pFallback = { ...pPayload };
+        delete pFallback.ticket_status;
+        pRes = await insforge.database
+          .from('orders')
+          .update(pFallback)
+          .eq('id', primaryOrder.id);
+      }
+      if (pRes && pRes.error) throw pRes.error;
+    } catch (err) {
+      console.warn('[Confirm Table Order] Cloud DB failed (queuing offline):', err);
+      if (typeof offlineSync !== 'undefined' && offlineSync.enqueuePosConfirmBill) {
+        offlineSync.enqueuePosConfirmBill({
+          orderId: primaryOrder.id,
+          isTable: true,
+          tableNum,
+          siblingOrderIds,
+          updatePayload: pPayload,
+          siblingPayload: { status: 'delivered', payment_status: 'paid', ticket_status: 'CLOSED' },
+          items: consolidatedItems,
+          idempotencyKey: `confirm-tbl-${tableNum}-${primaryOrder.id}-${Date.now()}`
+        });
+        offlineSync.updateSyncIndicator();
+      }
+      showAdminToast(`Table ${tableNum} Bill generated locally (Offline). Queued for sync. 🧾`, 'info');
+    }
+
+    // 2. In-memory state update
+    const localPrimary = orders.find(x => String(x.id) === String(primaryOrder.id));
+    if (localPrimary) {
+      Object.assign(localPrimary, pPayload);
+    } else {
+      orders.unshift({ ...primaryOrder, ...pPayload });
+    }
+
+    siblingOrders.forEach(ord => {
+      const local = orders.find(x => String(x.id) === String(ord.id));
+      if (local) {
+        local.status = 'delivered';
+        local.payment_status = 'paid';
+        local.ticket_status = 'CLOSED';
+      }
+    });
+
+    if (siblingOrderIds.length > 0) {
+      orderItems.forEach(item => {
+        if (siblingOrderIds.some(sId => String(sId) === String(item.order_id))) {
+          item.order_id = primaryOrder.id;
+        }
+      });
+    }
+
+    persistOrdersCache();
+    if (typeof posState !== 'undefined' && typeof posState.setOrders === 'function') {
+      posState.setOrders(orders);
+    }
+    session.orders.forEach(o => markOrderNotificationsRead(o.id));
+
+    // 3. Print Customer Bill (Tax Bill with UNPAID status)
+    try {
+      await printOrderReceiptWithTax(localPrimary || primaryOrder, consolidatedItems);
+    } catch (printErr) {
+      console.warn('[Confirm Bill Print Warning]:', printErr);
+    }
+
+    showAdminToast(`Table ${tableNum} Bill #${(localPrimary || primaryOrder).order_number} generated (₹${grandTotal.toFixed(2)})! Table ${tableNum} is now Available. Bill moved to Tables → Bill. 🧾`, 'success');
+
+    // Automatically switch to Tables -> Bill subsection
+    tablesSubtab = 'bill';
+    document.querySelectorAll('#tables-filter-pills button').forEach(p => {
+      p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'bill');
+    });
+
+    renderTablesPanel();
+    renderHoldOrdersPanel();
+    renderOverview();
+    renderOrdersTable();
+  } catch (ex) {
+    console.error('[Confirm Table Order Error]:', ex);
+    showAdminToast('Failed to confirm order: ' + (ex.message || 'Unknown error'), 'error');
+  } finally {
+    isConfirmingTableBill = false;
+  }
+}
+
+async function settleBill(billId, paymentMethod = 'cash', txnRef = '', idempotencyKey = null) {
+  if (isSettlingTableBill) return { success: false, error: 'SETTLEMENT_IN_PROGRESS' };
+  isSettlingTableBill = true;
+
+  try {
+    const bill = orders.find(o => String(o.id) === String(billId));
+    if (!bill) {
+      showAdminToast('Bill not found.', 'error');
+      return { success: false, error: 'BILL_NOT_FOUND' };
+    }
+
+    if (bill.status === 'cancelled' || bill.ticket_status === 'CANCELLED') {
+      showAdminToast(`Bill #${bill.order_number} is cancelled and cannot be settled.`, 'error');
+      return { success: false, error: 'ORDER_CANCELLED' };
+    }
+
+    if ((bill.payment_status === 'paid' || bill.ticket_status === 'CLOSED') && (!idempotencyKey || bill.idempotency_key !== idempotencyKey)) {
+      showAdminToast(`Bill #${bill.order_number} was already paid.`, 'info');
+      return { success: false, error: 'ORDER_ALREADY_SETTLED', alreadyPaid: true };
+    }
+
+    const validMethod = (paymentMethod === 'online' || paymentMethod === 'upi')
+      ? 'upi'
+      : (['card', 'pay_later'].includes(paymentMethod) ? paymentMethod : 'cash');
+    const methodLabel = validMethod === 'upi' ? 'Online' : (validMethod === 'card' ? 'Card' : 'Cash');
+    const upiRefNote = (validMethod === 'upi' && txnRef) ? ` [UPI_REF: ${txnRef}]` : '';
+    const updatedAt = bill._settleAttemptAt || new Date().toISOString();
+    bill._settleAttemptAt = updatedAt;
+
+    const settleIdempotencyKey = idempotencyKey || bill._settleIdempotencyKey || ((typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? `settle-${bill.id}-${crypto.randomUUID()}`
+      : `settle-${bill.id}`);
+    bill._settleIdempotencyKey = settleIdempotencyKey;
+
+    const baseNotes = String(bill.notes || '')
+      .replace(/\s*\[PAYMENT:[^\]]*\]/gi, '')
+      .replace(/\s*\[UPI_REF:[^\]]*\]/gi, '')
+      .replace(/\s*\[SETTLED_AT:[^\]]*\]/gi, '')
+      .trim();
+    const updatedNotes = `${baseNotes} [PAYMENT: ${validMethod}]${upiRefNote} [SETTLED_AT: ${updatedAt}]`.trim();
+
+    // 1. Atomic database settlement via settle_order_atomic RPC
+    let rpcResult = null;
+    let rpcError = null;
+
+    try {
+      const res = await insforge.database.rpc('settle_order_atomic', {
+        p_order_id: bill.id,
+        p_payment_method: validMethod,
+        p_notes: updatedNotes,
+        p_idempotency_key: settleIdempotencyKey
+      });
+      rpcResult = res.data;
+      rpcError = res.error;
+    } catch (ex) {
+      rpcError = ex;
+    }
+
+    if (rpcError) {
+      const errMsg = String(rpcError.message || '');
+      const errType = typeof classifyError === 'function' ? classifyError(rpcError) : 'NETWORK';
+
+      if (errMsg.includes('ORDER_ALREADY_SETTLED')) {
+        showAdminToast(`Bill #${bill.order_number} was already settled by another cashier.`, 'error');
+        await refreshDashboard(true);
+        return { success: false, error: errMsg, code: 'ORDER_ALREADY_SETTLED' };
+      }
+      if (errMsg.includes('ORDER_CANCELLED')) {
+        showAdminToast(`Bill #${bill.order_number} is cancelled and cannot be settled.`, 'error');
+        return { success: false, error: errMsg, code: 'ORDER_CANCELLED' };
+      }
+
+      // CRITICAL FINANCIAL RULE:
+      // If network failure occurred (or offline):
+      // Queue the settlement mutation in offlineSync!
+      // DO NOT show the order as paid or move to Close view until cloud confirms!
+      if (errType === ERROR_TYPES.NETWORK || errType === ERROR_TYPES.SERVER_ERROR || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        bill._settlementPendingSync = true;
+        bill._pendingPaymentMethod = validMethod;
+        bill.payment_method = validMethod;
+        bill.notes = updatedNotes;
+
+        if (typeof offlineSync !== 'undefined' && offlineSync.enqueuePosSettlement) {
+          offlineSync.enqueuePosSettlement({
+            orderId: bill.id,
+            paymentMethod: validMethod,
+            notes: updatedNotes,
+            idempotencyKey: settleIdempotencyKey,
+            tableNum: bill.table_number || null
+          });
+          offlineSync.updateSyncIndicator();
+        }
+
+        persistOrdersCache();
+
+        showAdminToast(`⚠️ Network Offline: Settlement queued! Bill #${bill.order_number} remains UNPAID until cloud confirms payment.`, 'warning');
+
+        renderTablesPanel();
+        renderHoldOrdersPanel();
+        renderBillingQuickCards();
+        renderBillingTotalBills();
+
+        return {
+          success: false,
+          error: 'SETTLEMENT_QUEUED_OFFLINE',
+          isQueuedOffline: true,
+          bill
+        };
+      }
+
+      console.error('[Settle Bill RPC Error]:', rpcError);
+      showAdminToast('Failed to settle bill: ' + (errMsg || 'Database transaction error'), 'error');
+      return { success: false, error: errMsg || 'RPC_FAILED' };
+    }
+
+    if (rpcResult && rpcResult.success === false) {
+      const errMsg = String(rpcResult.error || 'Atomic settlement rejected');
+      console.error('[Settle Bill Rejected]:', rpcResult);
+      showAdminToast('Failed to settle bill: ' + errMsg, 'error');
+      return { success: false, error: errMsg };
+    }
+
+    // 2. In-memory state update (only after atomic DB commit succeeds)
+    const settledRow = rpcResult?.order || {};
+    const settlePayload = {
+      payment_status: 'paid',
+      ticket_status: 'CLOSED',
+      status: 'delivered',
+      payment_method: validMethod,
+      payment_mode: validMethod,
+      notes: settledRow.notes || updatedNotes,
+      idempotency_key: settleIdempotencyKey,
+      settled_at: rpcResult?.settled_at || settledRow.settled_at || updatedAt,
+      updated_at: settledRow.updated_at || updatedAt
+    };
+    Object.assign(bill, settlePayload);
+    delete bill._settleIdempotencyKey;
+    delete bill._settleAttemptAt;
+
+    persistOrdersCache();
+
+    // 3. Thermal Receipt Printout
+    try {
+      const rawItems = getItemsForOrder(bill.id);
+      const items = consolidateOrderItems(rawItems);
+      await printOrderReceiptWithTax(bill, items);
+    } catch (printErr) {
+      console.warn('[Print Receipt Warning]:', printErr);
+    }
+
+    // 4. Auto-sync to Google Sheet if enabled
+    if (isGoogleSheetAutoSyncEnabled()) {
+      syncOrderToGoogleSheet(bill).catch(e => console.warn('[Google Sheet] Bill auto-sync error:', e));
+    }
+
+    const meta = parseNotesMetadata(bill.notes, bill);
+    const tNum = meta.tableNumber || bill.table_number || '';
+    const isDelivery = bill.order_type === 'delivery' || meta.type === 'delivery';
+    const isPickup = bill.order_type === 'pickup' || bill.order_type === 'takeaway' || meta.type === 'pickup' || meta.type === 'takeaway';
+    const typeLabel = tNum ? `Table ${tNum}` : (isDelivery ? 'Delivery' : (isPickup ? 'Takeaway' : 'Order'));
+
+    showAdminToast(`Bill #${bill.order_number} (${typeLabel}) paid via ${methodLabel}! Moved to Close. ✅`, 'success');
+
+    // Clean up temporary selection state
+    tableBillSelectedMethods.delete(bill.id);
+
+    // Switch to Close subtab so cashier immediately sees the settled order in Close section
+    tablesSubtab = 'close';
+    document.querySelectorAll('#tables-filter-pills button').forEach(p => {
+      p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'close');
+    });
+
+    // Re-render views
+    renderTablesPanel();
+    renderClosedOrdersPanel();
+    renderOverview();
+    renderOrdersTable();
+    renderHoldOrdersPanel();
+    renderBillingQuickCards();
+    renderBillingTotalBills();
+
+    return {
+      success: true,
+      bill,
+      idempotentReplay: Boolean(rpcResult?.idempotent_replay),
+      inventoryDeducted: rpcResult?.inventory || null
+    };
+  } catch (ex) {
+    console.error('[Settle Bill Error]:', ex);
+    showAdminToast('Failed to record payment: ' + (ex.message || 'Unknown error'), 'error');
+    return { success: false, error: ex.message || 'Unknown error' };
+  } finally {
+    isSettlingTableBill = false;
+  }
+}
+
+async function settleTableBill(billId, paymentMethod = 'cash', txnRef = '', idempotencyKey = null) {
+  return settleBill(billId, paymentMethod, txnRef, idempotencyKey);
+}
+
+function renderTablesBillSection(search = '') {
+  const tbody = $('tables-bill-tbody');
+  const gridContainer = $('tables-bill-grid-container');
+  const emptyBox = $('tables-bill-empty');
+  const countBadge = $('tables-bill-count-badge');
+  if (!tbody && !gridContainer) return;
+
+  // Bind type filter pills if available
+  const billFilterWrap = $('tables-bill-type-pills');
+  if (billFilterWrap) {
+    billFilterWrap.querySelectorAll('.bill-type-pill').forEach(p => {
+      p.classList.toggle('active', (p.dataset.type || 'all') === billTypeFilter);
+    });
+    billFilterWrap.querySelectorAll('.bill-type-pill').forEach(pill => {
+      pill.onclick = () => {
+        billFilterWrap.querySelectorAll('.bill-type-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        billTypeFilter = pill.dataset.type || 'all';
+        renderTablesBillSection(search);
+      };
+    });
+  }
+
+  const allUnpaidBills = getOutstandingBills(billTypeFilter);
+  const unpaidBills = allUnpaidBills.filter(b => {
+    if (!search) return true;
+    const meta = parseNotesMetadata(b.notes, b);
+    const tNum = String(meta.tableNumber || b.table_number || '');
+    const num = String(b.order_number || '');
+    const id = String(b.id || '');
+    const cust = (b.customer_name || '').toLowerCase();
+    const phone = (b.customer_phone || '');
+    const addr = (meta.address || '').toLowerCase();
+    return tNum.includes(search) || num.includes(search) || id.includes(search) || cust.includes(search) || phone.includes(search) || addr.includes(search);
+  });
+
+  if (countBadge) countBadge.textContent = `${allUnpaidBills.length} Bill${allUnpaidBills.length === 1 ? '' : 's'}`;
+
+  if (unpaidBills.length === 0) {
+    if (tbody) tbody.innerHTML = '';
+    if (gridContainer) gridContainer.innerHTML = '';
+    if (emptyBox) emptyBox.style.display = 'block';
+    return;
+  }
+
+  if (emptyBox) emptyBox.style.display = 'none';
+
+  let cardsHtml = '';
+  let rowsHtml = '';
+
+  unpaidBills.forEach(b => {
+    const meta = parseNotesMetadata(b.notes, b);
+    const tNum = meta.tableNumber || b.table_number || '';
+    const isDelivery = b.order_type === 'delivery' || meta.type === 'delivery';
+    const isPickup = b.order_type === 'pickup' || b.order_type === 'takeaway' || meta.type === 'pickup' || meta.type === 'takeaway';
+    const isTable = (!isDelivery && !isPickup) || b.order_type === 'table' || meta.type === 'table' || tNum;
+
+    const rawItems = getItemsForOrder(b.id);
+    const items = consolidateOrderItems(rawItems);
+    const itemsSummary = items.length > 0
+      ? items.map(i => `${i.quantity}× ${escapeHtml(i.item_name)}`).join(', ')
+      : (b.items && Array.isArray(b.items) && b.items.length
+          ? b.items.map(i => `${i.quantity || 1}× ${escapeHtml(i.name || i.item_name)}`).join(', ')
+          : 'Dishes ordered');
+
+    let orderTypeBadge = '';
+    let refHtml = '';
+    let typeChip = '';
+    let locationText = '';
+
+    if (isTable && tNum) {
+      const tNumInt = parseInt(String(tNum).replace(/\D/g, ''), 10);
+      let zone = 'Indoor AC (Hall)';
+      if (tNumInt >= 9 && tNumInt <= 14) zone = 'Family Section';
+      else if (tNumInt >= 15) zone = 'Garden Terrace';
+
+      orderTypeBadge = `<span class="order-type-badge order-type-badge-table">🪑 Dine-In</span>`;
+      refHtml = `
+        <span class="table-bill-chip">🪑 Table ${tNum}</span>
+        <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">${escapeHtml(b.customer_name || 'Walk-in')}${b.customer_phone && b.customer_phone !== '9999999999' ? ` · ${b.customer_phone}` : ''}</div>
+      `;
+      typeChip = `<span class="table-number-chip"><span class="table-bill-chip">🪑 Table ${tNum < 10 ? '0' + tNum : tNum}</span></span>`;
+      locationText = `<span>📍 ${zone}</span>`;
+    } else if (isDelivery) {
+      orderTypeBadge = `<span class="order-type-badge order-type-badge-delivery">🚗 Delivery</span>`;
+      refHtml = `
+        <strong style="color:#0f172a;font-size:0.85rem;">Order #${b.order_number}</strong>
+        <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">${escapeHtml(b.customer_name || 'Customer')} · ${escapeHtml(b.customer_phone || '—')}</div>
+        ${meta.address ? `<div style="font-size:0.75rem;color:#0284c7;margin-top:2px;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(meta.address)}">📍 ${escapeHtml(meta.address)}</div>` : ''}
+      `;
+      typeChip = `<span class="table-number-chip"><span class="table-bill-chip" style="background:#e0f2fe;color:#0284c7;border-color:#bae6fd;">🚗 Delivery</span></span>`;
+      locationText = meta.address ? `<span title="${escapeHtml(meta.address)}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;">📍 ${escapeHtml(meta.address)}</span>` : `<span>📍 Delivery</span>`;
+    } else {
+      orderTypeBadge = `<span class="order-type-badge order-type-badge-pickup">🥡 Takeaway</span>`;
+      refHtml = `
+        <strong style="color:#0f172a;font-size:0.85rem;">Order #${b.order_number}</strong>
+        <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">${escapeHtml(b.customer_name || 'Walk-in Guest')}${b.customer_phone && b.customer_phone !== '9999999999' ? ` · ${b.customer_phone}` : ''}</div>
+      `;
+      typeChip = `<span class="table-number-chip"><span class="table-bill-chip" style="background:#fef3c7;color:#d97706;border-color:#fde68a;">🥡 Takeaway</span></span>`;
+      locationText = `<span>📍 Counter Pickup</span>`;
+    }
+
+    const billNum = `BILL-${String(b.order_number || '').padStart(3, '0')}`;
+    const dateStr = formatDateTime(b.updated_at || b.created_at);
+    const currentMethod = tableBillSelectedMethods.get(b.id) || '';
+
+    const isCash = currentMethod === 'cash';
+    const isOnline = currentMethod === 'online' || currentMethod === 'upi';
+
+    // 1. Modern Compact Card
+    cardsHtml += `
+      <div class="pos-table-card billed-card" data-order-id="${b.id}" style="border-top:3px solid #f59e0b;background:#ffffff;border:1.5px solid #fed7aa;border-radius:14px;padding:0.9rem;display:flex;flex-direction:column;justify-content:space-between;gap:0.6rem;box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+        <div class="table-card-head" style="display:flex;justify-content:space-between;align-items:center;">
+          ${typeChip}
+          <span class="table-status-pill" style="font-size:0.75rem;font-weight:800;background:#fffbeb;color:#b45309;border:1px solid #fed7aa;padding:2px 8px;border-radius:999px;">
+            ⏳ Unpaid
+          </span>
+        </div>
+        <div class="table-card-zone" style="display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;color:#64748b;">
+          ${locationText}
+          <span>⏱️ ${timeSince(b.updated_at || b.created_at)}</span>
+        </div>
+        <div class="table-card-body" style="padding:0.25rem 0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem;">
+            <span class="table-bill-num" style="font-size:0.82rem;">${billNum}</span>
+            <strong style="color:#d97706;font-weight:900;font-size:1.08rem;font-family:'Fraunces',Georgia,serif;">
+              ${formatBillAmount(b.total_amount)}
+            </strong>
+          </div>
+          <div style="font-size:0.78rem;color:#475569;margin-bottom:0.3rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            👤 <strong>${escapeHtml(b.customer_name || (isTable ? 'Dine-in Guest' : 'Customer'))}</strong>${b.customer_phone && b.customer_phone !== '9999999999' ? ` · 📞 ${escapeHtml(b.customer_phone)}` : ''}
+          </div>
+          <div style="font-size:0.75rem;color:#64748b;line-height:1.35;max-height:38px;overflow:hidden;background:#f8fafc;padding:4px 8px;border-radius:6px;border:1px solid #f1f5f9;margin-bottom:0.4rem;" title="${escapeHtml(itemsSummary)}">
+            🍽️ ${escapeHtml(itemsSummary)}
+          </div>
+          <div class="bill-method-selector" data-bill-id="${b.id}" style="display:flex;gap:0.35rem;width:100%;">
+            <button type="button" class="bill-method-btn bill-method-cash ${isCash ? 'active' : ''}" data-method="cash" data-bill-id="${b.id}" style="flex:1;text-align:center;padding:0.35rem 0.5rem;font-size:0.78rem;font-weight:700;border-radius:6px;">
+              💵 Cash
+            </button>
+            <button type="button" class="bill-method-btn bill-method-online ${isOnline ? 'active' : ''}" data-method="online" data-bill-id="${b.id}" style="flex:1;text-align:center;padding:0.35rem 0.5rem;font-size:0.78rem;font-weight:700;border-radius:6px;">
+              📱 Online
+            </button>
+          </div>
+        </div>
+        <div class="table-card-actions" style="display:flex;gap:0.35rem;align-items:center;margin-top:0.25rem;">
+          <button type="button" class="adm-btn adm-btn-primary table-card-btn table-bill-pay-btn" data-bill-id="${b.id}" style="background:#10b981;border-color:#10b981;font-weight:800;flex:1.2;padding:0.4rem 0.85rem;" title="Record payment as Paid and move to Close">
+            ✓ Paid
+          </button>
+          <button type="button" class="adm-btn adm-btn-outline table-card-btn table-bill-print-btn" data-bill-id="${b.id}" style="padding:0.4rem 0.65rem;background:#fff;" title="Print Bill Slip">
+            🖨️
+          </button>
+          <button type="button" class="adm-btn adm-btn-outline table-card-btn table-bill-view-btn" data-bill-id="${b.id}" style="padding:0.4rem 0.65rem;background:#fff;" title="View Items">
+            👁️
+          </button>
+        </div>
+      </div>
+    `;
+
+    // 2. Preserved HTML Table Row (for Test Suite backward compatibility)
+    rowsHtml += `
+      <tr data-order-id="${b.id}" style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:0.85rem 1rem;">
+          <span class="table-bill-num">${billNum}</span>
+          <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">#${b.order_number}</div>
+        </td>
+        <td style="padding:0.85rem 1rem;">
+          ${orderTypeBadge}
+        </td>
+        <td style="padding:0.85rem 1rem;">
+          ${refHtml}
+        </td>
+        <td style="padding:0.85rem 1rem;font-size:0.82rem;color:#334155;">
+          ${dateStr}
+        </td>
+        <td style="padding:0.85rem 1rem;text-align:right;">
+          <strong style="font-size:1.05rem;color:#d97706;font-family:'Fraunces',Georgia,serif;">
+            ${formatBillAmount(b.total_amount)}
+          </strong>
+        </td>
+        <td style="padding:0.85rem 1rem;text-align:center;">
+          <div class="bill-method-selector" data-bill-id="${b.id}">
+            <button type="button" class="bill-method-btn bill-method-cash ${isCash ? 'active' : ''}" data-method="cash" data-bill-id="${b.id}">
+              💵 Cash
+            </button>
+            <button type="button" class="bill-method-btn bill-method-online ${isOnline ? 'active' : ''}" data-method="online" data-bill-id="${b.id}">
+              📱 Online
+            </button>
+          </div>
+        </td>
+        <td style="padding:0.85rem 1rem;text-align:center;">
+          <span class="adm-pill" style="background:#fffbeb;color:#b45309;border:1px solid #fed7aa;font-weight:700;">
+            ⏳ Unpaid
+          </span>
+        </td>
+        <td style="padding:0.85rem 1rem;text-align:right;">
+          <div style="display:inline-flex;gap:0.35rem;align-items:center;">
+            <button type="button" class="adm-btn adm-btn-primary table-bill-pay-btn" data-bill-id="${b.id}" style="background:#10b981;border-color:#10b981;font-weight:800;padding:0.35rem 0.85rem;" title="Record payment as Paid and move to Close">
+              ✓ Paid
+            </button>
+            <button type="button" class="adm-btn adm-btn-outline table-bill-print-btn" data-bill-id="${b.id}" style="padding:0.35rem 0.55rem;background:#fff;" title="Print Bill Slip">
+              🖨️
+            </button>
+            <button type="button" class="adm-btn adm-btn-outline table-bill-view-btn" data-bill-id="${b.id}" style="padding:0.35rem 0.55rem;background:#fff;" title="View Items">
+              👁️
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  if (gridContainer) gridContainer.innerHTML = cardsHtml;
+  if (tbody) tbody.innerHTML = rowsHtml;
+
+  // Wire event listeners on bill section (both cards and preserved rows)
+  const billSection = $('tables-bill-view');
+  if (billSection) {
+    billSection.querySelectorAll('.bill-method-btn').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const billId = btn.dataset.billId;
+        const method = btn.dataset.method;
+        setTableBillPaymentMethod(billId, method);
+        renderTablesBillSection(search);
+      };
+    });
+
+    billSection.querySelectorAll('.table-bill-pay-btn').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const billId = btn.dataset.billId;
+        const selected = tableBillSelectedMethods.get(billId);
+        if (!selected) {
+          showAdminToast('Please select Cash or Online before confirming payment.', 'warning');
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Settling...';
+        try {
+          await settleBill(billId, selected);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '✓ Paid';
+        }
+      };
+    });
+
+    billSection.querySelectorAll('.table-bill-print-btn').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const billId = btn.dataset.billId;
+        const bill = orders.find(o => String(o.id) === String(billId));
+        if (!bill) return;
+        const rawItems = getItemsForOrder(bill.id);
+        const items = consolidateOrderItems(rawItems);
+        await printOrderReceiptWithTax(bill, items, { force: true, showDuplicateBanner: false });
+        showAdminToast(`Bill #${bill.order_number} printed 🖨️`, 'info');
+      };
+    });
+
+    billSection.querySelectorAll('.table-bill-view-btn').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const billId = btn.dataset.billId;
+        const bill = orders.find(o => String(o.id) === String(billId));
+        if (!bill) return;
+        if (typeof openOrderDetail === 'function') {
+          openOrderDetail(bill.id);
+        } else if (typeof openOrderModal === 'function') {
+          openOrderModal(bill);
+        } else {
+          showAdminToast(`Bill #${bill.order_number}: ₹${Number(bill.total_amount).toFixed(2)} (${bill.customer_name || 'Guest'})`, 'info');
+        }
+      };
+    });
+
+    billSection.querySelectorAll('.pos-table-card.billed-card').forEach(card => {
+      card.style.cursor = 'pointer';
+      card.onclick = (e) => {
+        if (e.target.closest('button')) return;
+        const orderId = card.dataset.orderId;
+        if (orderId && typeof openOrderDetail === 'function') {
+          openOrderDetail(orderId);
+        }
+      };
+    });
+  }
+}
+
+function renderTablesCloseSection(search = '') {
+  const tbody = $('tables-close-tbody');
+  const gridContainer = $('tables-close-grid-container');
+  const emptyBox = $('tables-close-empty');
+  const countBadge = $('tables-close-count-badge');
+  if (!tbody && !gridContainer) return;
+
+  // Bind close type filter pills if available
+  const closeFilterWrap = $('tables-close-type-pills');
+  if (closeFilterWrap) {
+    closeFilterWrap.querySelectorAll('.close-type-pill').forEach(p => {
+      p.classList.toggle('active', (p.dataset.type || 'all') === closeTypeFilter);
+    });
+    closeFilterWrap.querySelectorAll('.close-type-pill').forEach(pill => {
+      pill.onclick = () => {
+        closeFilterWrap.querySelectorAll('.close-type-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        closeTypeFilter = pill.dataset.type || 'all';
+        renderTablesCloseSection(search);
+      };
+    });
+  }
+
+  const allClosedBills = getClosedBills(closeTypeFilter);
+  const closedBills = allClosedBills.filter(b => {
+    if (!search) return true;
+    const meta = parseNotesMetadata(b.notes, b);
+    const tNum = String(meta.tableNumber || b.table_number || '');
+    const num = String(b.order_number || '');
+    const id = String(b.id || '');
+    const cust = (b.customer_name || '').toLowerCase();
+    const phone = (b.customer_phone || '');
+    const addr = (meta.address || '').toLowerCase();
+    return tNum.includes(search) || num.includes(search) || id.includes(search) || cust.includes(search) || phone.includes(search) || addr.includes(search);
+  });
+
+  if (countBadge) countBadge.textContent = `${allClosedBills.length} Paid Bill${allClosedBills.length === 1 ? '' : 's'}`;
+
+  if (closedBills.length === 0) {
+    if (tbody) tbody.innerHTML = '';
+    if (gridContainer) gridContainer.innerHTML = '';
+    if (emptyBox) emptyBox.style.display = 'block';
+    return;
+  }
+
+  if (emptyBox) emptyBox.style.display = 'none';
+
+  let cardsHtml = '';
+  let rowsHtml = '';
+
+  closedBills.forEach(b => {
+    const meta = parseNotesMetadata(b.notes, b);
+    const tNum = meta.tableNumber || b.table_number || '';
+    const isDelivery = b.order_type === 'delivery' || meta.type === 'delivery';
+    const isPickup = b.order_type === 'pickup' || b.order_type === 'takeaway' || meta.type === 'pickup' || meta.type === 'takeaway';
+    const isTable = (!isDelivery && !isPickup) || b.order_type === 'table' || meta.type === 'table' || tNum;
+
+    const rawItems = getItemsForOrder(b.id);
+    const items = consolidateOrderItems(rawItems);
+    const itemsSummary = items.length > 0
+      ? items.map(i => `${i.quantity}× ${escapeHtml(i.item_name)}`).join(', ')
+      : (b.items && Array.isArray(b.items) && b.items.length
+          ? b.items.map(i => `${i.quantity || 1}× ${escapeHtml(i.name || i.item_name)}`).join(', ')
+          : 'Dishes ordered');
+
+    let orderTypeBadge = '';
+    let refHtml = '';
+    let typeChip = '';
+    let locationText = '';
+
+    if (isTable && tNum) {
+      const tNumInt = parseInt(String(tNum).replace(/\D/g, ''), 10);
+      let zone = 'Indoor AC (Hall)';
+      if (tNumInt >= 9 && tNumInt <= 14) zone = 'Family Section';
+      else if (tNumInt >= 15) zone = 'Garden Terrace';
+
+      orderTypeBadge = `<span class="order-type-badge order-type-badge-table">🪑 Dine-In</span>`;
+      refHtml = `
+        <span class="table-bill-chip">🪑 Table ${tNum}</span>
+        <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">${escapeHtml(b.customer_name || 'Walk-in')}${b.customer_phone && b.customer_phone !== '9999999999' ? ` · ${b.customer_phone}` : ''}</div>
+      `;
+      typeChip = `<span class="table-number-chip"><span class="table-bill-chip">🪑 Table ${tNum < 10 ? '0' + tNum : tNum}</span></span>`;
+      locationText = `<span>📍 ${zone}</span>`;
+    } else if (isDelivery) {
+      orderTypeBadge = `<span class="order-type-badge order-type-badge-delivery">🚗 Delivery</span>`;
+      refHtml = `
+        <strong style="color:#0f172a;font-size:0.85rem;">Order #${b.order_number}</strong>
+        <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">${escapeHtml(b.customer_name || 'Customer')} · ${escapeHtml(b.customer_phone || '—')}</div>
+        ${meta.address ? `<div style="font-size:0.75rem;color:#0284c7;margin-top:2px;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(meta.address)}">📍 ${escapeHtml(meta.address)}</div>` : ''}
+      `;
+      typeChip = `<span class="table-number-chip"><span class="table-bill-chip" style="background:#e0f2fe;color:#0284c7;border-color:#bae6fd;">🚗 Delivery</span></span>`;
+      locationText = meta.address ? `<span title="${escapeHtml(meta.address)}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;">📍 ${escapeHtml(meta.address)}</span>` : `<span>📍 Delivery</span>`;
+    } else {
+      orderTypeBadge = `<span class="order-type-badge order-type-badge-pickup">🥡 Takeaway</span>`;
+      refHtml = `
+        <strong style="color:#0f172a;font-size:0.85rem;">Order #${b.order_number}</strong>
+        <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">${escapeHtml(b.customer_name || 'Walk-in Guest')}${b.customer_phone && b.customer_phone !== '9999999999' ? ` · ${b.customer_phone}` : ''}</div>
+      `;
+      typeChip = `<span class="table-number-chip"><span class="table-bill-chip" style="background:#fef3c7;color:#d97706;border-color:#fde68a;">🥡 Takeaway</span></span>`;
+      locationText = `<span>📍 Counter Pickup</span>`;
+    }
+
+    const billNum = `BILL-${String(b.order_number || '').padStart(3, '0')}`;
+    const dateStr = formatDateTime(b.settled_at || b.updated_at || b.created_at);
+    const pm = (b.payment_method || b.payment_mode || 'cash').toLowerCase();
+    const isOnline = pm === 'upi' || pm === 'online';
+
+    // 1. Modern Compact Closed Card
+    cardsHtml += `
+      <div class="pos-table-card closed-card" data-order-id="${b.id}" style="border-top:3px solid #10b981;background:#ffffff;border:1.5px solid #a7f3d0;border-radius:14px;padding:0.9rem;display:flex;flex-direction:column;justify-content:space-between;gap:0.6rem;box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+        <div class="table-card-head" style="display:flex;justify-content:space-between;align-items:center;">
+          ${typeChip}
+          <span class="table-status-pill" style="font-size:0.75rem;font-weight:800;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:2px 8px;border-radius:999px;">
+            ✅ Paid
+          </span>
+        </div>
+        <div class="table-card-zone" style="display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;color:#64748b;">
+          ${locationText}
+          <span>⏱️ ${timeSince(b.settled_at || b.updated_at || b.created_at)}</span>
+        </div>
+        <div class="table-card-body" style="padding:0.25rem 0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem;">
+            <span class="table-bill-num" style="font-size:0.82rem;">${billNum}</span>
+            <strong style="color:#059669;font-weight:900;font-size:1.08rem;font-family:'Fraunces',Georgia,serif;">
+              ${formatBillAmount(b.total_amount)}
+            </strong>
+          </div>
+          <div style="font-size:0.78rem;color:#475569;margin-bottom:0.3rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            👤 <strong>${escapeHtml(b.customer_name || (isTable ? 'Dine-in Guest' : 'Customer'))}</strong>${b.customer_phone && b.customer_phone !== '9999999999' ? ` · 📞 ${escapeHtml(b.customer_phone)}` : ''}
+          </div>
+          <div style="font-size:0.75rem;color:#64748b;line-height:1.35;max-height:38px;overflow:hidden;background:#f8fafc;padding:4px 8px;border-radius:6px;border:1px solid #f1f5f9;margin-bottom:0.4rem;" title="${escapeHtml(itemsSummary)}">
+            🍽️ ${escapeHtml(itemsSummary)}
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;padding:5px 8px;border-radius:6px;border:1px solid #e2e8f0;font-size:0.75rem;">
+            <span style="color:#64748b;font-weight:600;">Paid Via:</span>
+            <strong style="color:${isOnline ? '#2563eb' : '#166534'};">${isOnline ? '📱 Online / UPI' : '💵 Cash'}</strong>
+          </div>
+        </div>
+        <div class="table-card-actions" style="display:flex;gap:0.35rem;align-items:center;margin-top:0.25rem;">
+          <button type="button" class="adm-btn adm-btn-outline table-card-btn table-close-print-btn" data-bill-id="${b.id}" style="padding:0.4rem 0.65rem;background:#fff;flex:1;" title="Reprint Paid Receipt">
+            🖨️ Receipt
+          </button>
+          <button type="button" class="adm-btn adm-btn-outline table-card-btn table-close-view-btn" data-bill-id="${b.id}" style="padding:0.4rem 0.65rem;background:#fff;flex:1;" title="View Details">
+            👁️ View
+          </button>
+        </div>
+      </div>
+    `;
+
+    // 2. Preserved HTML Table Row (for Test Suite backward compatibility)
+    rowsHtml += `
+      <tr data-order-id="${b.id}" style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:0.85rem 1rem;">
+          <span class="table-bill-num">${billNum}</span>
+          <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">#${b.order_number}</div>
+        </td>
+        <td style="padding:0.85rem 1rem;">
+          ${orderTypeBadge}
+        </td>
+        <td style="padding:0.85rem 1rem;">
+          ${refHtml}
+        </td>
+        <td style="padding:0.85rem 1rem;font-size:0.82rem;color:#334155;">
+          ${dateStr}
+        </td>
+        <td style="padding:0.85rem 1rem;text-align:right;">
+          <strong style="font-size:1.05rem;color:#059669;font-family:'Fraunces',Georgia,serif;">
+            ${formatBillAmount(b.total_amount)}
+          </strong>
+        </td>
+        <td style="padding:0.85rem 1rem;text-align:center;">
+          <span class="adm-pill" style="background:${isOnline ? '#eef2ff' : '#ecfdf5'};color:${isOnline ? '#4f46e5' : '#059669'};border:1px solid ${isOnline ? '#c7d2fe' : '#a7f3d0'};font-weight:700;">
+            ${isOnline ? '📱 Online (UPI)' : '💵 Cash'}
+          </span>
+        </td>
+        <td style="padding:0.85rem 1rem;text-align:center;">
+          <span class="adm-pill" style="background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;font-weight:800;">
+            ✓ Paid
+          </span>
+        </td>
+        <td style="padding:0.85rem 1rem;text-align:right;">
+          <button type="button" class="adm-btn adm-btn-outline table-close-print-btn" data-bill-id="${b.id}" style="padding:0.35rem 0.65rem;background:#fff;" title="Reprint Paid Receipt">
+            🖨️ Receipt
+          </button>
+        </td>
+      </tr>
+    `;
+  });
+
+  if (gridContainer) gridContainer.innerHTML = cardsHtml;
+  if (tbody) tbody.innerHTML = rowsHtml;
+
+  const closeSection = $('tables-close-view');
+  if (closeSection) {
+    closeSection.querySelectorAll('.table-close-print-btn').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const billId = btn.dataset.billId;
+        const bill = orders.find(o => String(o.id) === String(billId));
+        if (!bill) return;
+        const rawItems = getItemsForOrder(bill.id);
+        const items = consolidateOrderItems(rawItems);
+        await printOrderReceiptWithTax(bill, items, { force: true, showDuplicateBanner: false });
+        showAdminToast(`Receipt for Bill #${bill.order_number} printed 🖨️`, 'info');
+      };
+    });
+
+    closeSection.querySelectorAll('.table-close-view-btn').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const billId = btn.dataset.billId;
+        const bill = orders.find(o => String(o.id) === String(billId));
+        if (!bill) return;
+        if (typeof openOrderDetail === 'function') {
+          openOrderDetail(bill.id);
+        } else if (typeof openOrderModal === 'function') {
+          openOrderModal(bill);
+        } else {
+          showAdminToast(`Invoice #${bill.order_number}: ₹${Number(bill.total_amount).toFixed(2)} (${bill.customer_name || 'Guest'})`, 'info');
+        }
+      };
+    });
+
+    closeSection.querySelectorAll('.pos-table-card.closed-card').forEach(card => {
+      card.style.cursor = 'pointer';
+      card.onclick = (e) => {
+        if (e.target.closest('button')) return;
+        const orderId = card.dataset.orderId;
+        if (orderId && typeof openOrderDetail === 'function') {
+          openOrderDetail(orderId);
+        }
+      };
+    });
+  }
+}
+
+function renderTablesHoldSection(search = '') {
+  const container = $('tables-hold-container');
+  if (!container) return;
+
+  const tableSessions = getActiveTableSessions().filter(sess => {
+    const isHold = sess.orders.some(o => o.status === 'hold' || o.ticket_status === 'HOLD');
+    if (!isHold) return false;
+    if (!search) return true;
+    const tStr = String(sess.tableNumber);
+    const cust = (sess.customerName || '').toLowerCase();
+    const phone = sess.customerPhone || '';
+    return tStr.includes(search) || cust.includes(search) || phone.includes(search);
+  });
+
+  if (tableSessions.length === 0) {
+    container.innerHTML = `
+      <div class="adm-card adm-empty" style="grid-column:1/-1;padding:2.5rem 1rem;text-align:center;">
+        <p style="font-size:1.2rem;margin-bottom:0.25rem;">🟠</p>
+        <p style="font-weight:700;color:var(--adm-text);margin:0;">No Tables on Hold</p>
+        <p style="font-size:0.82rem;color:var(--adm-muted);margin:4px 0 0;">When dining tables are held from POS, they will appear here awaiting confirmation.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const s = getBillSettings();
+  container.innerHTML = tableSessions.map(sess => {
+    const itemsHtml = sess.consolidatedItems.map(i => `
+      <li style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #f1f5f9;">
+        <span style="font-weight:600;color:#1e293b;">${i.quantity}× ${escapeHtml(i.item_name)}</span>
+        <span style="color:var(--adm-muted);font-size:.8rem;font-weight:700;">₹${Number(i.line_total).toFixed(2)}</span>
+      </li>
+    `).join('');
+
+    const subtotal = sess.consolidatedItems.reduce((sum, i) => sum + Number(i.line_total), 0);
+    const cgst = subtotal * s.cgstRate / 100;
+    const sgst = subtotal * s.sgstRate / 100;
+    const grandTotal = subtotal + cgst + sgst;
+
+    return `
+      <div class="adm-hold-card" data-table-number="${sess.tableNumber}" style="border-top:4px solid #f97316;">
+        <div class="adm-hold-card-head">
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+              <span style="background:#fff7ed;color:#c2410c;font-size:.85rem;font-weight:900;padding:.2rem .65rem;border-radius:999px;border:1px solid #fed7aa;">
+                🪑 Table ${sess.tableNumber}
+              </span>
+              <span class="adm-pill" style="background:#fff3e6;color:#f2994a;border:1px solid #fed7aa;font-weight:700;">
+                🟠 On Hold
+              </span>
+            </div>
+            <div style="font-size:.75rem;color:var(--adm-muted);margin-top:4px;">
+              ${escapeHtml(sess.customerName)} ${sess.customerPhone ? `· ${escapeHtml(sess.customerPhone)}` : ''}
+            </div>
+          </div>
+          <span class="adm-hold-time">⏱ ${timeSince(sess.earliestTime)}</span>
+        </div>
+
+        <ul class="adm-hold-items" style="list-style:none;padding:0;margin:.4rem 0;max-height:160px;overflow-y:auto;">
+          ${itemsHtml}
+        </ul>
+
+        <div style="border-top:1px dashed var(--adm-border);padding-top:.5rem;margin-top:.25rem;font-size:.78rem;color:var(--adm-muted);">
+          <div style="display:flex;justify-content:space-between;"><span>Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span>GST (5%)</span><span>₹${(cgst + sgst).toFixed(2)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:900;color:var(--adm-text);margin-top:.3rem;font-size:.95rem;">
+            <span>Grand Total</span>
+            <span style="color:#d97706;">₹${grandTotal.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div class="adm-hold-card-footer" style="margin-top:.85rem;">
+          <div class="adm-hold-actions" style="flex-wrap:wrap;gap:.4rem;width:100%;justify-content:space-between;">
+            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;">
+              <button type="button" class="adm-btn adm-btn-outline adm-btn-sm table-edit-items-btn" data-table="${sess.tableNumber}" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;font-weight:700;">
+                ✏️ Edit
+              </button>
+              <button type="button" class="adm-btn adm-btn-outline adm-btn-sm table-add-kot-btn" data-table="${sess.tableNumber}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;font-weight:700;">
+                ➕ Dishes
+              </button>
+              <button type="button" class="adm-btn adm-btn-outline adm-btn-sm table-print-kot-btn" data-table="${sess.tableNumber}">
+                🖨️ KOT
+              </button>
+            </div>
+            <div style="display:flex;gap:0.35rem;align-items:center;">
+              <button type="button" class="adm-btn adm-btn-primary adm-btn-sm table-hold-confirm-btn" data-table="${sess.tableNumber}" style="background:#10b981;border-color:#10b981;font-weight:800;padding:.35rem .85rem;" title="Confirm held order, generate unpaid bill, and release Table ${sess.tableNumber}">
+                ✔️ Confirm Bill
+              </button>
+              <button type="button" class="adm-btn adm-btn-outline adm-btn-sm table-cancel-btn" data-table="${sess.tableNumber}" style="border-color:#fca5a5;color:#ef4444;" title="Cancel Table">
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Wire buttons in Tables -> Hold
+  container.querySelectorAll('.table-hold-confirm-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const tNum = parseInt(btn.dataset.table, 10);
+      if (tNum) await confirmHeldTableOrder(tNum);
+    });
+  });
+
+  container.querySelectorAll('.table-edit-items-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tableNum = parseInt(btn.dataset.table, 10);
+      if (tableNum) openHoldEditModal(tableNum, 'edit');
+    });
+  });
+
+  container.querySelectorAll('.table-add-kot-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tableNum = parseInt(btn.dataset.table, 10);
+      if (tableNum) openHoldEditModal(tableNum, 'add');
+    });
+  });
+
+  container.querySelectorAll('.table-print-kot-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tableNum = parseInt(btn.dataset.table, 10);
+      const session = getActiveTableSessions().find(s => s.tableNumber === tableNum);
+      if (!session) return;
+      await printKOT(session.orders[0], session.consolidatedItems, { isReprint: true });
+    });
+  });
+
+  container.querySelectorAll('.table-cancel-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tableNum = parseInt(btn.dataset.table, 10);
+      const session = getActiveTableSessions().find(s => s.tableNumber === tableNum);
+      if (!session || !session.orders.length) return;
+      if (session.orders.some(ord => isOrderPaidOrClosed(ord))) {
+        showAdminToast(`Cannot cancel Table ${tableNum}: one or more orders are already paid or closed.`, 'error');
+        return;
+      }
+      if (!confirm(`Cancel all active orders for Table ${tableNum}?`)) return;
+      try {
+        const res = await cancelTableOrders(tableNum, session.orders);
+        if (!res.success) return;
+        showAdminToast(`Orders for Table ${tableNum} cancelled.`, 'success');
+        renderTablesPanel();
+        renderHoldOrdersPanel();
+      } catch (err) {
+        showAdminToast('Failed to cancel table orders: ' + err.message, 'error');
+      }
+    });
+  });
+}
+
+export function getTotalTablesCount() {
+  const fromSettings = parseInt(printerSettings?.total_tables ?? localStorage.getItem('qz-total-tables'), 10);
+  return (!isNaN(fromSettings) && fromSettings > 0) ? fromSettings : 19;
+}
+
+export function renderTablesPanel() {
   const container = $('tables-grid-container');
   if (!container) return;
 
+  const totalTables = getTotalTablesCount();
+  const titleEl = document.querySelector('#panel-tables .adm-page-title');
+  if (titleEl) titleEl.textContent = `🪑 Tables 1–${totalTables} Live Floor Plan`;
+  const allTabBtn = document.querySelector('#tables-filter-pills button[data-subtab="all"]');
+  if (allTabBtn) allTabBtn.textContent = `All Tables (${totalTables})`;
+
   const search = ($('tables-search')?.value || '').toLowerCase().trim();
   const tableSessions = getActiveTableSessions();
+  const unpaidBills = typeof getOutstandingBills === 'function' ? getOutstandingBills('all') : getOutstandingTableBills();
+  const unpaidTableBills = typeof getOutstandingBills === 'function' ? getOutstandingBills('table') : getOutstandingTableBills();
+  const closedBills = typeof getClosedBills === 'function' ? getClosedBills('all') : getClosedTableBills();
 
   let freeCount = 0;
   let occupiedCount = 0;
@@ -6790,27 +8609,32 @@ function renderTablesPanel() {
 
   const tableDataList = [];
 
-  for (let tNum = 1; tNum <= 19; tNum++) {
+  for (let tNum = 1; tNum <= totalTables; tNum++) {
     let zone = 'Indoor AC (Hall)';
     if (tNum >= 9 && tNum <= 14) zone = 'Family Section';
     else if (tNum >= 15) zone = 'Garden Terrace';
 
     const sess = tableSessions.find(s => s.tableNumber === tNum);
+    const tableBill = unpaidTableBills.find(b => {
+      const meta = parseNotesMetadata(b.notes, b);
+      const bNum = parseInt(String(meta.tableNumber || b.table_number || '').replace(/\D/g, ''), 10);
+      return bNum === tNum;
+    });
+
     let state = 'free';
 
     if (sess && sess.orders.length > 0) {
-      const allHold = sess.orders.every(o => o.status === 'hold');
-      const hasBilled = sess.orders.some(o => o.ticket_status === 'BILLED');
-      if (allHold) {
+      const isExplicitHold = sess.orders.every(o => o.status === 'hold');
+      if (isExplicitHold) {
         state = 'hold';
         holdCount++;
-      } else if (hasBilled) {
-        state = 'billed';
-        billedCount++;
       } else {
         state = 'occupied';
         occupiedCount++;
       }
+    } else if (tableBill) {
+      state = 'billed';
+      billedCount++;
     } else {
       state = 'free';
       freeCount++;
@@ -6820,7 +8644,8 @@ function renderTablesPanel() {
       tableNumber: tNum,
       zone,
       state,
-      session: sess
+      session: sess,
+      bill: tableBill
     });
   }
 
@@ -6830,17 +8655,101 @@ function renderTablesPanel() {
   if ($('tables-stat-billed')) $('tables-stat-billed').textContent = billedCount;
   if ($('tables-stat-hold')) $('tables-stat-hold').textContent = holdCount;
 
+  // Update pill badges
+  const bFree = $('tables-badge-free');
+  if (bFree) {
+    bFree.textContent = freeCount;
+    bFree.style.display = freeCount > 0 ? 'inline-block' : 'none';
+  }
+  const bOcc = $('tables-badge-occupied');
+  if (bOcc) {
+    bOcc.textContent = occupiedCount;
+    bOcc.style.display = occupiedCount > 0 ? 'inline-block' : 'none';
+  }
+  const bHold = $('tables-badge-hold');
+  if (bHold) {
+    bHold.textContent = holdCount;
+    bHold.style.display = holdCount > 0 ? 'inline-block' : 'none';
+  }
+  const bBill = $('tables-badge-bill');
+  if (bBill) {
+    bBill.textContent = unpaidBills.length;
+    bBill.style.display = unpaidBills.length > 0 ? 'inline-block' : 'none';
+  }
+  const bClose = $('tables-badge-close');
+  if (bClose) {
+    bClose.textContent = closedBills.length;
+    bClose.style.display = closedBills.length > 0 ? 'inline-block' : 'none';
+  }
+
+  // Toggle Subsection Containers
+  const gridView = $('tables-grid-view');
+  const holdView = $('tables-hold-view');
+  const billView = $('tables-bill-view');
+  const closeView = $('tables-close-view');
+
+  if (tablesSubtab === 'bill') {
+    if (gridView) gridView.style.display = 'none';
+    if (holdView) holdView.style.display = 'none';
+    if (billView) billView.style.display = 'block';
+    if (closeView) closeView.style.display = 'none';
+    renderTablesBillSection(search);
+    return;
+  }
+
+  if (tablesSubtab === 'close') {
+    if (gridView) gridView.style.display = 'none';
+    if (holdView) holdView.style.display = 'none';
+    if (billView) billView.style.display = 'none';
+    if (closeView) closeView.style.display = 'block';
+    renderTablesCloseSection(search);
+    return;
+  }
+
+  if (tablesSubtab === 'hold') {
+    if (gridView) gridView.style.display = 'none';
+    if (holdView) holdView.style.display = 'block';
+    if (billView) billView.style.display = 'none';
+    if (closeView) closeView.style.display = 'none';
+    renderTablesHoldSection(search);
+    return;
+  }
+
+  // 'all', 'free', or 'occupied'
+  if (gridView) gridView.style.display = 'block';
+  if (holdView) holdView.style.display = 'none';
+  if (billView) billView.style.display = 'none';
+  if (closeView) closeView.style.display = 'none';
+
   // Filter tables
   const filtered = tableDataList.filter(item => {
-    if (tablesFilter !== 'all' && item.state !== tablesFilter) return false;
+    if (tablesSubtab === 'free' && item.state !== 'free') return false;
+    if (tablesSubtab === 'occupied' && item.state !== 'occupied' && item.state !== 'hold') return false;
     if (search) {
       const matchNum = String(item.tableNumber).includes(search);
-      const matchCust = item.session && (
-        item.session.customerName.toLowerCase().includes(search) ||
-        item.session.customerPhone.includes(search)
+      const sess = item.session;
+      const matchCust = sess && (
+        (sess.customerName || '').toLowerCase().includes(search) ||
+        (sess.customerPhone || '').includes(search)
+      );
+      const matchOrderNum = sess && sess.orders.some(o => 
+        String(o.order_number || '').includes(search) || 
+        String(o.id || '').includes(search)
+      );
+      const matchItem = sess && sess.consolidatedItems.some(i => 
+        (i.item_name || '').toLowerCase().includes(search)
+      );
+      const bill = item.bill;
+      const matchBillCust = bill && (
+        (bill.customer_name || '').toLowerCase().includes(search) ||
+        (bill.customer_phone || '').includes(search)
+      );
+      const matchBillNum = bill && (
+        String(bill.order_number || '').includes(search) ||
+        String(bill.id || '').includes(search)
       );
       const matchZone = item.zone.toLowerCase().includes(search);
-      return matchNum || matchCust || matchZone;
+      return matchNum || matchCust || matchOrderNum || matchItem || matchBillCust || matchBillNum || matchZone;
     }
     return true;
   });
@@ -6866,7 +8775,7 @@ function renderTablesPanel() {
             <span>Ready for guests</span>
           </div>
           <div class="table-card-actions">
-            <button type="button" class="adm-btn adm-btn-primary table-card-btn table-open-pos-btn" data-table="${tNum}" style="background:#10b981;border-color:#10b981;">
+            <button type="button" class="adm-btn adm-btn-primary table-card-btn table-open-pos-btn" data-table="${tNum}" style="background:#10b981;border-color:#10b981;width:100%;">
               <span>+</span> New Order
             </button>
           </div>
@@ -6875,30 +8784,49 @@ function renderTablesPanel() {
     }
 
     if (t.state === 'occupied') {
-      const itemsSummary = sess.consolidatedItems.slice(0, 3).map(i => `${i.quantity}× ${escapeHtml(i.item_name)}`).join(', ');
-      const moreCount = sess.consolidatedItems.length - 3;
+      const primaryOrder = sess.orders[0];
+      const activeOrderNum = primaryOrder ? formatDailyOrderNumber(primaryOrder) : '';
+      const orderNumsText = sess.kots.length > 1
+        ? sess.kots.map(k => `#${k.orderNumber}`).join(', ')
+        : `#${activeOrderNum}`;
+      
+      const orderStatusBadge = primaryOrder?.status === 'preparing'
+        ? `<span class="table-status-pill preparing" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;">🍳 In Kitchen</span>`
+        : `<span class="table-status-pill occupied">🟡 Dining</span>`;
+
+      const itemsSummary = sess.consolidatedItems.map(i => `${i.quantity}× ${escapeHtml(i.item_name)}`).join(', ');
+
       return `
-        <div class="pos-table-card occupied" data-table="${tNum}">
+        <div class="pos-table-card occupied" data-table="${tNum}" style="border-top:3px solid #eab308;">
           <div class="table-card-head">
             <span class="table-number-chip">🪑 Table ${tNum < 10 ? '0' + tNum : tNum}</span>
-            <span class="table-status-pill occupied">🟡 Dining</span>
+            ${orderStatusBadge}
           </div>
-          <div class="table-card-zone">📍 ${t.zone} · ⏱️ ${timeSince(sess.earliestTime)}</div>
-          <div class="table-card-body">
-            <div style="font-weight:800;color:#0f172a;display:flex;justify-content:space-between;align-items:center;">
-              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px;">${escapeHtml(sess.customerName)}</span>
-              <span style="color:#b45309;font-weight:900;font-size:.92rem;">₹${sess.totalAmount.toFixed(0)}</span>
+          <div class="table-card-zone" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>📍 ${t.zone}</span>
+            <span style="font-size:0.75rem;color:#64748b;">⏱️ ${timeSince(sess.earliestTime)}</span>
+          </div>
+          <div class="table-card-body" style="padding:0.4rem 0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem;">
+              <span style="font-size:0.78rem;font-weight:800;color:#0f172a;" title="${orderNumsText}">Order ${orderNumsText}</span>
+              <strong style="color:#d97706;font-weight:900;font-size:1.02rem;font-family:'Fraunces',Georgia,serif;">₹${sess.totalAmount.toFixed(2)}</strong>
             </div>
-            <div style="font-size:0.75rem;color:#64748b;line-height:1.3;max-height:36px;overflow:hidden;">
-              ${sess.kots.length} KOT${sess.kots.length > 1 ? 's' : ''} · ${itemsSummary}${moreCount > 0 ? ` +${moreCount} more` : ''}
+            <div style="font-size:0.75rem;color:#475569;margin-bottom:0.25rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              👤 <strong>${escapeHtml(sess.customerName || 'Dine-in Guest')}</strong>${sess.customerPhone && sess.customerPhone !== '9999999999' ? ` · 📞 ${escapeHtml(sess.customerPhone)}` : ''}
+            </div>
+            <div style="font-size:0.75rem;color:#64748b;line-height:1.35;max-height:42px;overflow:hidden;background:#f8fafc;padding:3px 6px;border-radius:6px;border:1px solid #f1f5f9;" title="${escapeHtml(itemsSummary)}">
+              🍽️ ${escapeHtml(itemsSummary || 'Dishes ordered')}
             </div>
           </div>
-          <div class="table-card-actions" style="flex-wrap:wrap;">
-            <button type="button" class="adm-btn adm-btn-outline table-card-btn table-add-round-btn" data-table="${tNum}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;">
+          <div class="table-card-actions" style="flex-wrap:wrap;gap:0.35rem;margin-top:0.35rem;">
+            <button type="button" class="adm-btn adm-btn-outline table-card-btn table-add-round-btn" data-table="${tNum}" style="background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;flex:1;" title="Add new dishes (Round)">
               + Round
             </button>
-            <button type="button" class="adm-btn adm-btn-primary table-card-btn table-final-bill-btn" data-table="${tNum}" style="background:#10b981;border-color:#10b981;">
-              🧾 Settle
+            <button type="button" class="adm-btn adm-btn-outline table-card-btn table-transfer-btn" data-table="${tNum}" style="background:#f8fafc;color:#475569;border-color:#cbd5e1;flex:1;" title="Transfer or Swap Table ${tNum}">
+              🔁 Transfer
+            </button>
+            <button type="button" class="adm-btn adm-btn-primary table-card-btn table-confirm-bill-btn" data-table="${tNum}" style="background:#10b981;border-color:#10b981;font-weight:800;flex:1.2;" title="Confirm order, generate unpaid bill, release Table ${tNum}, and move bill to Tables → Bill">
+              🧾 Confirm Bill
             </button>
           </div>
         </div>
@@ -6906,22 +8834,48 @@ function renderTablesPanel() {
     }
 
     if (t.state === 'billed') {
+      const bill = t.bill;
       return `
-        <div class="pos-table-card billed" data-table="${tNum}">
+        <div class="pos-table-card billed" data-table="${tNum}" style="border-top:3px solid #3b82f6;">
           <div class="table-card-head">
             <span class="table-number-chip">🪑 Table ${tNum < 10 ? '0' + tNum : tNum}</span>
-            <span class="table-status-pill billed">🔵 Billed</span>
+            <span class="table-status-pill billed">🔵 Billed (Unpaid)</span>
           </div>
-          <div class="table-card-zone">📍 ${t.zone}</div>
-          <div class="table-card-body">
-            <div style="font-weight:800;color:#0f172a;">${escapeHtml(sess.customerName)}</div>
-            <div style="font-size:0.92rem;font-weight:900;color:#1d4ed8;">Bill: ₹${sess.totalAmount.toFixed(2)}</div>
-            <div style="font-size:0.75rem;color:#64748b;">Awaiting Cash / UPI payment</div>
+          <div class="table-card-zone" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>📍 ${t.zone}</span>
+            <span style="font-size:0.75rem;color:#64748b;">⏱️ ${timeSince(bill.updated_at || bill.created_at)}</span>
           </div>
-          <div class="table-card-actions">
-            <button type="button" class="adm-btn adm-btn-primary table-card-btn table-final-bill-btn" data-table="${tNum}" style="background:#2563eb;border-color:#2563eb;">
-              💳 Settle Payment
+          <div class="table-card-body" style="padding:0.4rem 0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem;">
+              <span style="font-size:0.78rem;font-weight:800;color:#0f172a;">Bill #${bill.order_number || bill.id}</span>
+              <strong style="color:#2563eb;font-weight:900;font-size:1.02rem;font-family:'Fraunces',Georgia,serif;">₹${Number(bill.total_amount || 0).toFixed(2)}</strong>
+            </div>
+            <div style="font-size:0.75rem;color:#475569;margin-bottom:0.25rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              👤 <strong>${escapeHtml(bill.customer_name || 'Dine-in Guest')}</strong>${bill.customer_phone && bill.customer_phone !== '9999999999' ? ` · 📞 ${escapeHtml(bill.customer_phone)}` : ''}
+            </div>
+            ${bill._settlementPendingSync ? `
+            <div style="font-size:0.75rem;color:#b45309;line-height:1.35;background:#fef3c7;padding:3px 6px;border-radius:6px;border:1px solid #fde68a;font-weight:700;">
+              ⏳ Settlement Queued Offline (${(bill._pendingPaymentMethod || 'cash').toUpperCase()}) · Cloud confirmation pending
+            </div>
+            ` : `
+            <div style="font-size:0.75rem;color:#1e40af;line-height:1.35;background:#eff6ff;padding:3px 6px;border-radius:6px;border:1px solid #bfdbfe;">
+              ⏳ Bill generated · Awaiting settlement
+            </div>
+            `}
+          </div>
+          <div class="table-card-actions" style="flex-wrap:wrap;gap:0.35rem;margin-top:0.35rem;">
+            <button type="button" class="adm-btn adm-btn-outline table-card-btn table-view-bill-btn" data-bill-id="${bill.id}" style="background:#eff6ff;color:#2563eb;border-color:#bfdbfe;flex:1;" title="View Bill details">
+              👁️ View Bill
             </button>
+            ${bill._settlementPendingSync ? `
+            <button type="button" class="adm-btn adm-btn-outline table-card-btn" disabled style="background:#fef3c7;color:#92400e;border-color:#fde68a;font-weight:800;flex:1.2;cursor:not-allowed;" title="Settlement is queued offline and pending cloud confirmation">
+              ⏳ Sync Pending
+            </button>
+            ` : `
+            <button type="button" class="adm-btn adm-btn-primary table-card-btn table-settle-bill-btn" data-bill-id="${bill.id}" data-table="${tNum}" style="background:#2563eb;border-color:#2563eb;font-weight:800;flex:1.2;" title="Settle bill payment for Table ${tNum}">
+              💳 Settle Pay
+            </button>
+            `}
           </div>
         </div>
       `;
@@ -6939,9 +8893,15 @@ function renderTablesPanel() {
           <div style="font-weight:800;color:#0f172a;">${escapeHtml(sess.customerName)}</div>
           <div style="font-size:0.88rem;font-weight:900;color:#c2410c;">Held: ₹${sess.totalAmount.toFixed(0)}</div>
         </div>
-        <div class="table-card-actions">
-          <button type="button" class="adm-btn adm-btn-outline table-card-btn table-resume-hold-btn" data-table="${tNum}" style="background:#fff7ed;color:#c2410c;border-color:#fed7aa;">
+        <div class="table-card-actions" style="flex-wrap:wrap;gap:0.35rem;">
+          <button type="button" class="adm-btn adm-btn-outline table-card-btn table-resume-hold-btn" data-table="${tNum}" style="background:#fff7ed;color:#c2410c;border-color:#fed7aa;flex:1;">
             ▶️ Resume
+          </button>
+          <button type="button" class="adm-btn adm-btn-outline table-card-btn table-transfer-btn" data-table="${tNum}" style="background:#f8fafc;color:#475569;border-color:#cbd5e1;flex:1;" title="Transfer or Swap Table ${tNum}">
+            🔁 Transfer
+          </button>
+          <button type="button" class="adm-btn adm-btn-primary table-card-btn table-confirm-bill-btn" data-table="${tNum}" style="background:#10b981;border-color:#10b981;font-weight:800;flex:1.2;" title="Confirm held order, generate unpaid bill, and release Table ${tNum}">
+            ✔️ Confirm
           </button>
         </div>
       </div>
@@ -6965,25 +8925,401 @@ function renderTablesPanel() {
     });
   });
 
-  container.querySelectorAll('.table-final-bill-btn').forEach(btn => {
+  container.querySelectorAll('.table-transfer-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const tNum = parseInt(btn.dataset.table, 10);
-      if (tNum) openHoldSettleModal({ type: 'table', tableNumber: tNum });
+      if (tNum) openTableTransferModal(tNum);
+    });
+  });
+
+  container.querySelectorAll('.table-view-bill-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const bId = btn.dataset.billId;
+      if (bId) openOrderDetailDrawer(bId);
+    });
+  });
+
+  container.querySelectorAll('.table-settle-bill-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const bId = btn.dataset.billId;
+      const bObj = orders.find(o => String(o.id) === String(bId));
+      if (bObj) openHoldSettleModal({ type: 'order', orderId: bId, order: bObj });
+    });
+  });
+
+  container.querySelectorAll('.table-confirm-bill-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const tNum = parseInt(btn.dataset.table, 10);
+      if (tNum) await confirmHeldTableOrder(tNum);
     });
   });
 
   container.querySelectorAll('.table-resume-hold-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      switchPanel('hold-orders');
-      const searchInp = $('hold-orders-search');
-      if (searchInp) {
-        searchInp.value = `Table ${btn.dataset.table}`;
-        renderHoldOrdersPanel();
-      }
+      tablesSubtab = 'hold';
+      document.querySelectorAll('#tables-filter-pills button').forEach(p => {
+        p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'hold');
+      });
+      renderTablesPanel();
     });
   });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 🔁 TABLE TRANSFER & TABLE SWAP SYSTEM (TASK 2.3)
+// ═══════════════════════════════════════════════════════════════
+
+let currentTransferSourceTable = null;
+
+export function openTableTransferModal(sourceTableNum) {
+  const modal = $('adm-table-transfer-modal');
+  if (!modal) return;
+
+  const tableSessions = getActiveTableSessions();
+  const sess = tableSessions.find(s => s.tableNumber === sourceTableNum);
+  if (!sess || !sess.orders.length) {
+    showAdminToast(`Table ${sourceTableNum} has no active session to transfer.`, 'warning');
+    return;
+  }
+
+  currentTransferSourceTable = sourceTableNum;
+
+  // Populate source table card
+  if ($('transfer-source-table-badge')) {
+    $('transfer-source-table-badge').textContent = `🪑 Source: Table ${sourceTableNum < 10 ? '0' + sourceTableNum : sourceTableNum}`;
+  }
+  if ($('transfer-source-amount')) {
+    $('transfer-source-amount').textContent = `₹${sess.totalAmount.toFixed(2)}`;
+  }
+  if ($('transfer-source-customer')) {
+    $('transfer-source-customer').innerHTML = `👤 Guest: <strong>${escapeHtml(sess.customerName || 'Dine-in Guest')}</strong>${sess.customerPhone && sess.customerPhone !== '9999999999' ? ` · 📞 ${escapeHtml(sess.customerPhone)}` : ''}`;
+  }
+  if ($('transfer-source-items')) {
+    const totalItemsCount = (sess.consolidatedItems || []).reduce((acc, i) => acc + (i.quantity || 1), 0);
+    $('transfer-source-items').textContent = `🍽️ Orders: ${sess.orders.length} Ticket${sess.orders.length > 1 ? 's' : ''} · ${totalItemsCount} Items`;
+  }
+  if ($('table-transfer-reason')) {
+    $('table-transfer-reason').value = '';
+  }
+
+  // Populate target table select
+  const select = $('table-transfer-target-select');
+  if (select) {
+    const totalTables = getTotalTablesCount();
+    const unpaidTableBills = typeof getOutstandingBills === 'function' ? getOutstandingBills('table') : getOutstandingTableBills();
+    
+    let optionsHtml = '';
+    for (let tNum = 1; tNum <= totalTables; tNum++) {
+      if (tNum === sourceTableNum) continue;
+
+      const targetSess = tableSessions.find(s => s.tableNumber === tNum);
+      const targetBill = unpaidTableBills.find(b => {
+        const meta = parseNotesMetadata(b.notes, b);
+        const bNum = parseInt(String(meta.tableNumber || b.table_number || '').replace(/\D/g, ''), 10);
+        return bNum === tNum;
+      });
+
+      const padNum = tNum < 10 ? '0' + tNum : tNum;
+
+      if (targetSess && targetSess.orders.length > 0) {
+        optionsHtml += `<option value="${tNum}" data-state="occupied">Table ${padNum} (🟡 Occupied — ₹${targetSess.totalAmount.toFixed(0)})</option>`;
+      } else if (targetBill) {
+        optionsHtml += `<option value="${tNum}" data-state="billed">Table ${padNum} (🔵 Billed Unpaid — ₹${Number(targetBill.total_amount || 0).toFixed(0)})</option>`;
+      } else {
+        optionsHtml += `<option value="${tNum}" data-state="free">Table ${padNum} (🟢 Free)</option>`;
+      }
+    }
+    select.innerHTML = optionsHtml;
+    updateTransferModalTargetState();
+  }
+
+  modal.style.display = 'flex';
+}
+
+export function closeTableTransferModal() {
+  const modal = $('adm-table-transfer-modal');
+  if (modal) modal.style.display = 'none';
+  currentTransferSourceTable = null;
+}
+
+export function updateTransferModalTargetState() {
+  const select = $('table-transfer-target-select');
+  const notice = $('table-transfer-status-notice');
+  const transferBtn = $('btn-do-table-transfer');
+  const swapBtn = $('btn-do-table-swap');
+  if (!select || !notice) return;
+
+  const selectedOpt = select.selectedOptions[0];
+  if (!selectedOpt) return;
+
+  const targetState = selectedOpt.dataset.state;
+  const targetNum = parseInt(select.value, 10);
+
+  if (targetState === 'free') {
+    notice.style.background = '#f0fdf4';
+    notice.style.borderColor = '#bbf7d0';
+    notice.style.color = '#166534';
+    notice.innerHTML = `🟢 <strong>Table ${targetNum} is Free:</strong> Active orders, items, and KOT history will be transferred to Table ${targetNum}. Source Table ${currentTransferSourceTable} will become Available.`;
+    if (transferBtn) {
+      transferBtn.style.display = 'inline-flex';
+      transferBtn.disabled = false;
+    }
+    if (swapBtn) {
+      swapBtn.style.display = 'none';
+    }
+  } else if (targetState === 'occupied') {
+    notice.style.background = '#fffbeb';
+    notice.style.borderColor = '#fde68a';
+    notice.style.color = '#92400e';
+    notice.innerHTML = `🟡 <strong>Table ${targetNum} is currently Occupied:</strong> Direct transfer is prohibited. Click <strong>Confirm Table Swap</strong> to safely interchange Table ${currentTransferSourceTable} and Table ${targetNum} sessions.`;
+    if (transferBtn) {
+      transferBtn.style.display = 'none';
+    }
+    if (swapBtn) {
+      swapBtn.style.display = 'inline-flex';
+      swapBtn.disabled = false;
+    }
+  } else if (targetState === 'billed') {
+    notice.style.background = '#eff6ff';
+    notice.style.borderColor = '#bfdbfe';
+    notice.style.color = '#1e40af';
+    notice.innerHTML = `🔵 <strong>Table ${targetNum} has an Unpaid Bill:</strong> Cannot transfer or swap to Table ${targetNum} while an outstanding bill is awaiting payment. Settle the bill first.`;
+    if (transferBtn) {
+      transferBtn.style.display = 'inline-flex';
+      transferBtn.disabled = true;
+    }
+    if (swapBtn) {
+      swapBtn.style.display = 'none';
+    }
+  }
+}
+
+export function updateNotesTableNumber(notes = '', newTableNum, oldTableNum = null, staff = 'Staff', isSwap = false) {
+  let result = String(notes || '');
+  if (/\[TABLE:\s*(?:Table\s*)?\d+\]/i.test(result)) {
+    result = result.replace(/\[TABLE:\s*(?:Table\s*)?\d+\]/gi, `[TABLE: Table ${newTableNum}]`);
+  } else {
+    result = `[TABLE: Table ${newTableNum}] ` + result;
+  }
+  const tag = isSwap
+    ? ` [SWAPPED_FROM_TABLE_${oldTableNum || 'UNK'}_BY_${staff}]`
+    : ` [TRANSFERRED_FROM_TABLE_${oldTableNum || 'UNK'}_BY_${staff}]`;
+  return result + tag;
+}
+
+export async function executeTableTransfer(sourceTableNum = currentTransferSourceTable, targetTableNum = null, reason = '') {
+  if (!sourceTableNum) {
+    showAdminToast('Source table not specified', 'error');
+    return false;
+  }
+  if (!targetTableNum) {
+    const sel = $('table-transfer-target-select');
+    targetTableNum = sel ? parseInt(sel.value, 10) : null;
+  }
+  if (!targetTableNum || isNaN(targetTableNum)) {
+    showAdminToast('Please select a valid target table', 'error');
+    return false;
+  }
+  if (sourceTableNum === targetTableNum) {
+    showAdminToast('Source and target tables cannot be the same', 'error');
+    return false;
+  }
+
+  const staffReason = reason || $('table-transfer-reason')?.value?.trim() || '';
+  const currentStaff = currentAdminUser?.name || currentAdminUser?.email || 'Staff';
+
+  const transferBtn = $('btn-do-table-transfer');
+  if (transferBtn) {
+    transferBtn.disabled = true;
+    transferBtn.innerHTML = '<span>⏳</span> Transferring...';
+  }
+
+  try {
+    // 1. Call atomic database RPC
+    let rpcSuccess = false;
+    try {
+      const { data: rpcRes, error: rpcErr } = await insforge.database.rpc('transfer_table_session_atomic', {
+        p_source_table: sourceTableNum,
+        p_target_table: targetTableNum,
+        p_staff_name: currentStaff,
+        p_reason: staffReason
+      });
+
+      if (rpcErr) {
+        if (rpcErr.message && rpcErr.message.includes('TARGET_TABLE_OCCUPIED')) {
+          showAdminToast(`Table ${targetTableNum} is occupied! Use Table Swap instead.`, 'error');
+          return false;
+        }
+        console.warn('[Table Transfer RPC Warning]:', rpcErr.message);
+      } else if (rpcRes && rpcRes.success) {
+        rpcSuccess = true;
+      }
+    } catch (rpcEx) {
+      console.warn('[Table Transfer RPC Exception]:', rpcEx.message);
+    }
+
+    // 2. Direct database update fallback
+    if (!rpcSuccess) {
+      try {
+        const updatePayload = {
+          table_number: targetTableNum,
+          updated_at: new Date().toISOString()
+        };
+        await insforge.database
+          .from('orders')
+          .update(updatePayload)
+          .eq('table_number', sourceTableNum)
+          .not('status', 'in', '("delivered","cancelled")')
+          .not('ticket_status', 'in', '("CLOSED","CANCELLED")');
+      } catch (dbErr) {
+        console.warn('[Table Transfer Direct DB Warning]:', dbErr.message);
+      }
+    }
+
+    // 3. In-memory update
+    const activeOrders = orders.filter(o => {
+      if (o.status === 'delivered' || o.status === 'cancelled' || o.ticket_status === 'CLOSED' || o.ticket_status === 'CANCELLED') return false;
+      const meta = parseNotesMetadata(o.notes, o);
+      const tNum = parseInt(String(meta.tableNumber || o.table_number || '').replace(/\D/g, ''), 10);
+      return tNum === sourceTableNum;
+    });
+
+    activeOrders.forEach(ord => {
+      ord.table_number = targetTableNum;
+      ord.notes = updateNotesTableNumber(ord.notes, targetTableNum, sourceTableNum, currentStaff);
+      ord.updated_at = new Date().toISOString();
+    });
+
+    persistOrdersCache();
+
+    showAdminToast(`Table ${sourceTableNum} successfully transferred to Table ${targetTableNum}! 🪑➡️🪑`, 'success');
+    closeTableTransferModal();
+    renderTablesPanel();
+    renderOverview();
+    return true;
+  } catch (err) {
+    showAdminToast('Failed to transfer table: ' + err.message, 'error');
+    return false;
+  } finally {
+    if (transferBtn) {
+      transferBtn.disabled = false;
+      transferBtn.innerHTML = '<span>➡️</span> Transfer Table';
+    }
+  }
+}
+
+export async function executeTableSwap(tableA = currentTransferSourceTable, tableB = null, reason = '') {
+  if (!tableA) {
+    showAdminToast('Source table not specified', 'error');
+    return false;
+  }
+  if (!tableB) {
+    const sel = $('table-transfer-target-select');
+    tableB = sel ? parseInt(sel.value, 10) : null;
+  }
+  if (!tableB || isNaN(tableB)) {
+    showAdminToast('Please select a valid table to swap with', 'error');
+    return false;
+  }
+  if (tableA === tableB) {
+    showAdminToast('Cannot swap table with itself', 'error');
+    return false;
+  }
+
+  const staffReason = reason || $('table-transfer-reason')?.value?.trim() || '';
+  const currentStaff = currentAdminUser?.name || currentAdminUser?.email || 'Staff';
+
+  const swapBtn = $('btn-do-table-swap');
+  if (swapBtn) {
+    swapBtn.disabled = true;
+    swapBtn.innerHTML = '<span>⏳</span> Swapping...';
+  }
+
+  try {
+    // 1. Call atomic database RPC
+    let rpcSuccess = false;
+    try {
+      const { data: rpcRes, error: rpcErr } = await insforge.database.rpc('swap_table_sessions_atomic', {
+        p_table_a: tableA,
+        p_table_b: tableB,
+        p_staff_name: currentStaff,
+        p_reason: staffReason
+      });
+
+      if (rpcErr) {
+        showAdminToast('Failed to swap tables: ' + rpcErr.message, 'error');
+        return false;
+      } else if (rpcRes && rpcRes.success) {
+        rpcSuccess = true;
+      }
+    } catch (rpcEx) {
+      console.warn('[Table Swap RPC Exception]:', rpcEx.message);
+    }
+
+    // 2. In-memory update
+    const activeOrdersA = orders.filter(o => {
+      if (o.status === 'delivered' || o.status === 'cancelled' || o.ticket_status === 'CLOSED' || o.ticket_status === 'CANCELLED') return false;
+      const meta = parseNotesMetadata(o.notes, o);
+      const tNum = parseInt(String(meta.tableNumber || o.table_number || '').replace(/\D/g, ''), 10);
+      return tNum === tableA;
+    });
+
+    const activeOrdersB = orders.filter(o => {
+      if (o.status === 'delivered' || o.status === 'cancelled' || o.ticket_status === 'CLOSED' || o.ticket_status === 'CANCELLED') return false;
+      const meta = parseNotesMetadata(o.notes, o);
+      const tNum = parseInt(String(meta.tableNumber || o.table_number || '').replace(/\D/g, ''), 10);
+      return tNum === tableB;
+    });
+
+    activeOrdersA.forEach(ord => {
+      ord.table_number = tableB;
+      ord.notes = updateNotesTableNumber(ord.notes, tableB, tableA, currentStaff, true);
+      ord.updated_at = new Date().toISOString();
+    });
+
+    activeOrdersB.forEach(ord => {
+      ord.table_number = tableA;
+      ord.notes = updateNotesTableNumber(ord.notes, tableA, tableB, currentStaff, true);
+      ord.updated_at = new Date().toISOString();
+    });
+
+    persistOrdersCache();
+
+    showAdminToast(`Table ${tableA} and Table ${tableB} successfully swapped! 🔄`, 'success');
+    closeTableTransferModal();
+    renderTablesPanel();
+    renderOverview();
+    return true;
+  } catch (err) {
+    showAdminToast('Failed to swap tables: ' + err.message, 'error');
+    return false;
+  } finally {
+    if (swapBtn) {
+      swapBtn.disabled = false;
+      swapBtn.innerHTML = '<span>🔄</span> Confirm Table Swap';
+    }
+  }
+}
+
+export function initTableTransferModalListeners() {
+  $('btn-close-table-transfer')?.addEventListener('click', closeTableTransferModal);
+  $('btn-cancel-table-transfer')?.addEventListener('click', closeTableTransferModal);
+
+  const modal = $('adm-table-transfer-modal');
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeTableTransferModal();
+    });
+  }
+
+  $('table-transfer-target-select')?.addEventListener('change', updateTransferModalTargetState);
+  $('btn-do-table-transfer')?.addEventListener('click', () => executeTableTransfer());
+  $('btn-do-table-swap')?.addEventListener('click', () => executeTableSwap());
 }
 
 function openPosForTable(tableNum, customerName = '', customerPhone = '') {
@@ -7013,6 +9349,245 @@ function openPosForTable(tableNum, customerName = '', customerPhone = '') {
 // ═══════════════════════════════════════════════════════════════
 
 let kitchenFilter = 'all';
+let kdsBumpHistory = [];
+let kdsTallySearchTerm = '';
+
+// Load bump history from sessionStorage
+try {
+  const savedBump = sessionStorage.getItem('limra_kds_bump_history');
+  if (savedBump) kdsBumpHistory = JSON.parse(savedBump) || [];
+} catch (e) {
+  kdsBumpHistory = [];
+}
+
+// ═════════════════════════════════════════════════════════════════
+// KDS CHECKOFF & PRODUCTION TALLY ENGINE
+// ═════════════════════════════════════════════════════════════════
+
+function getKitchenCheckedItems() {
+  try {
+    const raw = localStorage.getItem('limra_kds_checked_items');
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveKitchenCheckedItems(data) {
+  try {
+    localStorage.setItem('limra_kds_checked_items', JSON.stringify(data));
+  } catch (e) {
+    console.warn('[KDS Storage Warn]:', e);
+  }
+}
+
+function isKitchenItemChecked(orderId, itemIdx) {
+  const store = getKitchenCheckedItems();
+  return Boolean(store[orderId] && store[orderId][itemIdx]);
+}
+
+function toggleKitchenItemCheckoff(orderId, itemIdx, forceState) {
+  const store = getKitchenCheckedItems();
+  if (!store[orderId]) store[orderId] = {};
+  if (typeof forceState === 'boolean') {
+    store[orderId][itemIdx] = forceState;
+  } else {
+    store[orderId][itemIdx] = !store[orderId][itemIdx];
+  }
+  saveKitchenCheckedItems(store);
+  renderKitchenProductionTally();
+  return store[orderId][itemIdx];
+}
+
+function toggleAllKitchenItems(orderId, shouldCheck) {
+  const order = orders.find(o => String(o.id) === String(orderId));
+  if (!order) return;
+  const items = consolidateOrderItems(getItemsForOrder(order.id));
+  const store = getKitchenCheckedItems();
+  if (!store[orderId]) store[orderId] = {};
+  items.forEach((_, idx) => {
+    store[orderId][idx] = shouldCheck;
+  });
+  saveKitchenCheckedItems(store);
+  renderKitchenPanel();
+}
+
+function cleanKitchenCheckedItemsForClosedOrders() {
+  const store = getKitchenCheckedItems();
+  let modified = false;
+  const activeIds = new Set(
+    orders
+      .filter(o => o.ticket_status !== 'CLOSED' && o.ticket_status !== 'CANCELLED' && o.status !== 'delivered' && o.status !== 'cancelled')
+      .map(o => String(o.id))
+  );
+  Object.keys(store).forEach(id => {
+    if (!activeIds.has(String(id))) {
+      delete store[id];
+      modified = true;
+    }
+  });
+  if (modified) saveKitchenCheckedItems(store);
+}
+
+function renderKitchenProductionTally() {
+  const listEl = $('kitchen-tally-list');
+  const totalBadgeEl = $('kitchen-tally-total-qty');
+  if (!listEl) return;
+
+  // Active cooking/pending orders
+  const activeOrders = orders.filter(o => {
+    if (o.ticket_status === 'CLOSED' || o.ticket_status === 'CANCELLED') return false;
+    if (o.status === 'delivered' || o.status === 'cancelled') return false;
+    return ['pending', 'confirmed', 'preparing'].includes(o.status);
+  });
+
+  const dishTally = {};
+  let grandTotalQty = 0;
+  let grandRemainingQty = 0;
+
+  activeOrders.forEach(order => {
+    const rawItems = getItemsForOrder(order.id);
+    const items = consolidateOrderItems(rawItems);
+    items.forEach((item, idx) => {
+      const name = item.item_name || 'Unnamed Dish';
+      const qty = Number(item.quantity) || 1;
+      const isChecked = isKitchenItemChecked(order.id, idx);
+      if (!dishTally[name]) {
+        dishTally[name] = { totalQty: 0, remainingQty: 0 };
+      }
+      dishTally[name].totalQty += qty;
+      grandTotalQty += qty;
+      if (!isChecked) {
+        dishTally[name].remainingQty += qty;
+        grandRemainingQty += qty;
+      }
+    });
+  });
+
+  if (totalBadgeEl) {
+    totalBadgeEl.textContent = `${grandRemainingQty} left / ${grandTotalQty} total`;
+    totalBadgeEl.style.background = grandRemainingQty > 15 ? '#fee2e2' : '#dbeafe';
+    totalBadgeEl.style.color = grandRemainingQty > 15 ? '#b91c1c' : '#1e40af';
+  }
+
+  const entries = Object.entries(dishTally).sort((a, b) => b[1].remainingQty - a[1].remainingQty || b[1].totalQty - a[1].totalQty);
+  const search = (kdsTallySearchTerm || '').trim().toLowerCase();
+  const filtered = entries.filter(([name]) => !search || name.toLowerCase().includes(search));
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = `
+      <div style="text-align:center;padding:1.5rem 0.5rem;color:var(--pos-text-muted,#64748b);font-size:0.8rem;">
+        ${search ? 'No matching dishes' : 'No active items to cook'}
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(([name, data]) => {
+    const isHighVolume = data.remainingQty >= 5;
+    const isDone = data.remainingQty === 0;
+    return `
+      <div class="kitchen-tally-row ${isDone ? 'done' : ''}" style="${isDone ? 'opacity:0.45;' : ''}">
+        <div class="kitchen-tally-row-left" style="display:flex;align-items:center;gap:0.4rem;min-width:0;">
+          <span style="font-size:0.9rem;">${isDone ? '✅' : '🍲'}</span>
+          <span class="kitchen-tally-dish-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.35rem;">
+          ${data.totalQty !== data.remainingQty ? `<span style="font-size:0.75rem;color:var(--pos-text-muted,#64748b);font-weight:700;">${data.totalQty - data.remainingQty} done</span>` : ''}
+          <span class="kitchen-tally-qty-badge ${isHighVolume ? 'high-volume' : ''}">
+            ${data.remainingQty}
+          </span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ═════════════════════════════════════════════════════════════════
+// RECALL LAST BUMPED TICKET & KDS TOOL CONTROLS
+// ═════════════════════════════════════════════════════════════════
+
+async function recallLastBumpedKitchenOrder() {
+  if (!Array.isArray(kdsBumpHistory) || kdsBumpHistory.length === 0) {
+    showAdminToast('No recently bumped tickets to recall.', 'info');
+    return;
+  }
+
+  const lastBump = kdsBumpHistory.pop();
+  try {
+    sessionStorage.setItem('limra_kds_bump_history', JSON.stringify(kdsBumpHistory));
+  } catch (e) {}
+
+  const order = orders.find(o => String(o.id) === String(lastBump.orderId));
+  const targetStatus = lastBump.previousStatus || 'preparing';
+
+  try {
+    const { error } = await insforge.database
+      .from('orders')
+      .update({ status: targetStatus, updated_at: new Date().toISOString() })
+      .eq('id', lastBump.orderId);
+    if (error) throw error;
+
+    if (order) {
+      order.status = targetStatus;
+    }
+
+    const orderNum = order ? formatDailyOrderNumber(order) : lastBump.orderId;
+    showAdminToast(`Order #${orderNum} recalled back to ${targetStatus.toUpperCase()}! ↩`, 'success');
+
+    renderKitchenPanel();
+    updateKitchenBadges();
+    renderTablesPanel();
+    renderOverview();
+  } catch (err) {
+    showAdminToast('Failed to recall ticket: ' + err.message, 'error');
+  }
+}
+
+function toggleKitchenDarkMode(force) {
+  const panel = $('panel-kitchen');
+  if (!panel) return;
+  const isDark = typeof force === 'boolean' ? force : !panel.classList.contains('dark-kds');
+  panel.classList.toggle('dark-kds', isDark);
+
+  const icon = $('kitchen-dark-icon');
+  const label = $('kitchen-dark-label');
+  if (icon) icon.textContent = isDark ? '☀️' : '🌙';
+  if (label) label.textContent = isDark ? 'Light KDS' : 'Dark KDS';
+
+  try {
+    localStorage.setItem('limra_kds_dark_mode', isDark ? 'true' : 'false');
+  } catch (e) {}
+}
+
+function toggleKitchenFullscreen() {
+  const panel = $('panel-kitchen');
+  if (!panel) return;
+  if (!document.fullscreenElement) {
+    if (panel.requestFullscreen) {
+      panel.requestFullscreen().catch(err => {
+        console.warn('Fullscreen failed:', err);
+      });
+    }
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen().catch(err => {
+        console.warn('Exit fullscreen failed:', err);
+      });
+    }
+  }
+}
+
+function toggleKitchenTallyRail() {
+  const rail = $('kitchen-production-tally-rail');
+  if (rail) {
+    rail.classList.toggle('collapsed');
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════
+// MAIN KITCHEN PANEL RENDERER
+// ═════════════════════════════════════════════════════════════════
 
 function renderKitchenPanel() {
   const container = $('kitchen-kot-container');
@@ -7023,6 +9598,33 @@ function renderKitchenPanel() {
     if (o.status === 'delivered' || o.status === 'cancelled') return false;
     return ['pending', 'confirmed', 'preparing', 'ready'].includes(o.status);
   });
+
+  // Calculate Urgency Counts
+  let urgentCount = 0;
+  let warningCount = 0;
+  let freshCount = 0;
+  const now = Date.now();
+
+  activeKitchenOrders.forEach(o => {
+    const elapsed = Math.max(0, Math.floor((now - new Date(o.created_at).getTime()) / 60000));
+    if (elapsed >= 20) urgentCount++;
+    else if (elapsed >= 10) warningCount++;
+    else freshCount++;
+  });
+
+  const urgentEl = $('kitchen-urgent-count');
+  if (urgentEl) urgentEl.textContent = urgentCount;
+  const warningEl = $('kitchen-warning-count');
+  if (warningEl) warningEl.textContent = warningCount;
+  const freshEl = $('kitchen-fresh-count');
+  if (freshEl) freshEl.textContent = freshCount;
+
+  // Update Recall button state
+  const recallBtn = $('btn-kitchen-recall');
+  if (recallBtn) {
+    recallBtn.disabled = !Array.isArray(kdsBumpHistory) || kdsBumpHistory.length === 0;
+    recallBtn.title = recallBtn.disabled ? 'No recently bumped tickets to recall' : `Recall last bumped ticket (${kdsBumpHistory.length} available)`;
+  }
 
   // Update badge in kitchen header
   const badge = $('kitchen-active-badge');
@@ -7045,12 +9647,13 @@ function renderKitchenPanel() {
 
   if (filtered.length === 0) {
     container.innerHTML = `
-      <div class="adm-card adm-empty" style="grid-column:1/-1;padding:2.5rem 1rem;text-align:center;">
+      <div class="adm-card adm-empty kitchen-empty-state" style="grid-column:1/-1;padding:2.5rem 1rem;text-align:center;">
         <div style="font-size:2.5rem;margin-bottom:0.5rem;">👨‍🍳✨</div>
-        <h3 style="font-size:1.1rem;font-weight:800;color:#0f172a;margin:0 0 .25rem 0;">Kitchen Queue is Clear!</h3>
-        <p style="font-size:0.85rem;color:#64748b;margin:0;">No active tickets waiting in kitchen. New orders will appear here automatically.</p>
+        <h3 style="font-size:1.1rem;font-weight:800;color:inherit;margin:0 0 .25rem 0;">Kitchen Queue is Clear!</h3>
+        <p style="font-size:0.85rem;color:var(--pos-text-muted,#64748b);margin:0;">No active tickets waiting in kitchen. New orders will appear here automatically.</p>
       </div>
     `;
+    renderKitchenProductionTally();
     return;
   }
 
@@ -7060,7 +9663,7 @@ function renderKitchenPanel() {
     const parsedMeta = parseNotesMetadata(order.notes, order);
     const orderNum = formatDailyOrderNumber(order);
 
-    const elapsedMins = Math.max(0, Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000));
+    const elapsedMins = Math.max(0, Math.floor((now - new Date(order.created_at).getTime()) / 60000));
     let timerClass = 'green';
     let timerText = `⏱️ ${elapsedMins}m ago`;
     if (elapsedMins >= 20) {
@@ -7090,9 +9693,15 @@ function renderKitchenPanel() {
     if (order.status === 'preparing') statusLabel = '🔥 COOKING';
     else if (order.status === 'ready') statusLabel = '🍽️ READY';
 
-    const itemsHtml = items.map(i => {
+    let checkedCount = 0;
+    const itemsHtml = items.map((i, idx) => {
+      const isChecked = isKitchenItemChecked(order.id, idx);
+      if (isChecked) checkedCount++;
       return `
-        <div class="kot-item-row">
+        <div class="kot-item-row ${isChecked ? 'kot-item-struck' : ''}" data-order-id="${order.id}" data-item-idx="${idx}" title="Tap to check off cooked dish">
+          <button type="button" class="kot-item-checkbox ${isChecked ? 'checked' : ''}" aria-label="Toggle dish preparation status">
+            ${isChecked ? '✓' : ''}
+          </button>
           <span class="kot-qty-pill">${i.quantity}×</span>
           <div style="flex:1;">
             <div class="kot-item-name">${escapeHtml(i.item_name)}</div>
@@ -7101,6 +9710,8 @@ function renderKitchenPanel() {
         </div>
       `;
     }).join('');
+
+    const allChecked = items.length > 0 && checkedCount === items.length;
 
     const kitchenNoteHtml = parsedMeta.cleanNotes ? `
       <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:0.4rem 0.6rem;font-size:0.8rem;color:#b45309;font-weight:700;">
@@ -7111,19 +9722,19 @@ function renderKitchenPanel() {
     let bumpBtnHtml = '';
     if (order.status === 'pending' || order.status === 'confirmed') {
       bumpBtnHtml = `
-        <button type="button" class="kitchen-bump-btn kitchen-bump-prep-btn" data-id="${order.id}" style="flex:2;background:#3b82f6;color:#fff;">
+        <button type="button" class="kitchen-bump-btn kitchen-bump-prep-btn" data-id="${order.id}" style="background:#3b82f6;color:#fff;">
           👨‍🍳 Start Cooking
         </button>
       `;
     } else if (order.status === 'preparing') {
       bumpBtnHtml = `
-        <button type="button" class="kitchen-bump-btn kitchen-bump-ready-btn" data-id="${order.id}" style="flex:2;background:#10b981;color:#fff;">
+        <button type="button" class="kitchen-bump-btn kitchen-bump-ready-btn" data-id="${order.id}" style="background:#10b981;color:#fff;">
           🍽️ Mark Ready
         </button>
       `;
     } else if (order.status === 'ready') {
       bumpBtnHtml = `
-        <button type="button" class="kitchen-bump-btn kitchen-bump-served-btn" data-id="${order.id}" style="flex:2;background:#059669;color:#fff;">
+        <button type="button" class="kitchen-bump-btn kitchen-bump-served-btn" data-id="${order.id}" style="background:#059669;color:#fff;">
           ✓ Mark Served
         </button>
       `;
@@ -7133,14 +9744,22 @@ function renderKitchenPanel() {
       <div class="kitchen-kot-card ${cardStatusClass}" data-id="${order.id}">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.35rem;">
           <div style="display:flex;align-items:center;gap:.4rem;">
-            <span style="font-size:1.05rem;font-weight:900;color:#0f172a;">KOT #${orderNum}</span>
+            <span class="kot-card-title" style="font-size:1.05rem;font-weight:900;color:inherit;">KOT #${orderNum}</span>
             ${typeBadge}
           </div>
-          <span class="kot-timer-badge ${timerClass}">${timerText}</span>
+          <div style="display:flex;align-items:center;gap:0.35rem;">
+            <span class="kot-timer-badge ${timerClass}">${timerText}</span>
+            <button type="button" class="adm-btn adm-btn-outline kitchen-toggle-all-items-btn" data-id="${order.id}" data-all-checked="${allChecked ? 'true' : 'false'}" style="min-height:30px;min-width:30px;padding:0.15rem 0.45rem;font-size:0.75rem;" title="${allChecked ? 'Unmark all items' : 'Mark all items complete'}">
+              ${allChecked ? '✕ Clear' : '✓ All'}
+            </button>
+            <button type="button" class="adm-btn adm-btn-outline kitchen-reprint-kot-btn" data-id="${order.id}" style="min-height:30px;min-width:30px;padding:0.15rem 0.45rem;font-size:0.8rem;" title="Reprint thermal KOT ticket">
+              🖨️
+            </button>
+          </div>
         </div>
 
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;color:#64748b;">
-          <span>Guest: <strong>${escapeHtml(order.customer_name || 'Dine-in')}</strong></span>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;color:var(--pos-text-muted,#64748b);">
+          <span>Guest: <strong style="color:inherit;">${escapeHtml(order.customer_name || 'Dine-in')}</strong></span>
           <span style="font-weight:800;color:${cardStatusClass === 'ready' ? '#10b981' : (cardStatusClass === 'preparing' ? '#3b82f6' : '#d97706')}">${statusLabel}</span>
         </div>
 
@@ -7150,15 +9769,51 @@ function renderKitchenPanel() {
           ${itemsHtml}
         </div>
 
-        <div style="display:flex;gap:.45rem;margin-top:0.25rem;">
+        <div style="margin-top:0.25rem;">
           ${bumpBtnHtml}
-          <button type="button" class="adm-btn adm-btn-outline kitchen-reprint-kot-btn" data-id="${order.id}" style="min-height:46px;min-width:44px;font-weight:800;" title="Reprint thermal KOT ticket">
-            🖨️
-          </button>
         </div>
       </div>
     `;
   }).join('');
+
+  // Wire item row click listeners for tap-to-strike checkoff
+  container.querySelectorAll('.kot-item-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      // Don't trigger if clicked on nested link if any
+      const orderId = row.dataset.orderId;
+      const itemIdx = Number(row.dataset.itemIdx);
+      const isStruck = toggleKitchenItemCheckoff(orderId, itemIdx);
+      
+      row.classList.toggle('kot-item-struck', isStruck);
+      const checkbox = row.querySelector('.kot-item-checkbox');
+      if (checkbox) {
+        checkbox.classList.toggle('checked', isStruck);
+        checkbox.textContent = isStruck ? '✓' : '';
+      }
+
+      // Check card's toggle-all state
+      const card = row.closest('.kitchen-kot-card');
+      if (card) {
+        const rows = Array.from(card.querySelectorAll('.kot-item-row'));
+        const allChecked = rows.every(r => r.classList.contains('kot-item-struck'));
+        const toggleAllBtn = card.querySelector('.kitchen-toggle-all-items-btn');
+        if (toggleAllBtn) {
+          toggleAllBtn.dataset.allChecked = allChecked ? 'true' : 'false';
+          toggleAllBtn.textContent = allChecked ? '✕ Clear' : '✓ All';
+        }
+      }
+    });
+  });
+
+  // Wire toggle-all button listeners
+  container.querySelectorAll('.kitchen-toggle-all-items-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const orderId = btn.dataset.id;
+      const allChecked = btn.dataset.allChecked === 'true';
+      toggleAllKitchenItems(orderId, !allChecked);
+    });
+  });
 
   // Wire bump bar listeners
   container.querySelectorAll('.kitchen-bump-prep-btn').forEach(btn => {
@@ -7183,25 +9838,44 @@ function renderKitchenPanel() {
   });
 
   container.querySelectorAll('.kitchen-reprint-kot-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const order = orders.find(o => String(o.id) === String(btn.dataset.id));
       if (!order) return;
       const items = getItemsForOrder(order.id);
       await printKOT(order, items, { isReprint: true });
     });
   });
+
+  // Render batch production summary rail and clean up closed items
+  cleanKitchenCheckedItemsForClosedOrders();
+  renderKitchenProductionTally();
 }
 
 async function updateKitchenOrderStatus(orderId, newStatus, toastMsg) {
   try {
+    const o = orders.find(x => String(x.id) === String(orderId));
+    const prevStatus = o ? o.status : 'pending';
+
     const { error } = await insforge.database
       .from('orders')
       .update({ status: newStatus, updated_at: new Date().toISOString() })
       .eq('id', orderId);
     if (error) throw error;
 
-    const o = orders.find(x => String(x.id) === String(orderId));
     if (o) o.status = newStatus;
+
+    // Track in bump history for 1-click recall
+    kdsBumpHistory.push({
+      orderId,
+      previousStatus: prevStatus,
+      bumpedStatus: newStatus,
+      timestamp: Date.now()
+    });
+    if (kdsBumpHistory.length > 10) kdsBumpHistory.shift();
+    try {
+      sessionStorage.setItem('limra_kds_bump_history', JSON.stringify(kdsBumpHistory));
+    } catch (e) {}
 
     showAdminToast(toastMsg, 'success');
     renderKitchenPanel();
@@ -7212,6 +9886,18 @@ async function updateKitchenOrderStatus(orderId, newStatus, toastMsg) {
     showAdminToast('Failed to update kitchen status: ' + err.message, 'error');
   }
 }
+
+// Global window exposures for KDS
+window.renderKitchenPanel = renderKitchenPanel;
+window.renderKitchenProductionTally = renderKitchenProductionTally;
+window.toggleKitchenItemCheckoff = toggleKitchenItemCheckoff;
+window.toggleAllKitchenItems = toggleAllKitchenItems;
+window.recallLastBumpedKitchenOrder = recallLastBumpedKitchenOrder;
+window.toggleKitchenDarkMode = toggleKitchenDarkMode;
+window.toggleKitchenFullscreen = toggleKitchenFullscreen;
+window.toggleKitchenTallyRail = toggleKitchenTallyRail;
+window.updateKitchenOrderStatus = updateKitchenOrderStatus;
+window.kdsBumpHistory = kdsBumpHistory;
 
 function updateKitchenBadges() {
   const activeKitchen = orders.filter(o => {
@@ -7231,11 +9917,12 @@ function updateKitchenBadges() {
 }
 
 function initTablesAndKitchenUI() {
-  // Tables filter pills
+  // Tables filter & subtab pills
   document.querySelectorAll('#tables-filter-pills button').forEach(pill => {
     pill.addEventListener('click', () => {
       document.querySelectorAll('#tables-filter-pills button').forEach(p => p.classList.remove('active'));
       pill.classList.add('active');
+      tablesSubtab = pill.dataset.subtab || pill.dataset.filter || 'all';
       tablesFilter = pill.dataset.filter || 'all';
       renderTablesPanel();
     });
@@ -7244,7 +9931,6 @@ function initTablesAndKitchenUI() {
   $('tables-search')?.addEventListener('input', renderTablesPanel);
   $('btn-tables-refresh')?.addEventListener('click', () => {
     renderTablesPanel();
-    showAdminToast('Tables refreshed 🔄', 'info');
   });
   $('btn-tables-new-order')?.addEventListener('click', () => {
     openPosForTable(1);
@@ -7262,8 +9948,25 @@ function initTablesAndKitchenUI() {
 
   $('btn-kitchen-refresh')?.addEventListener('click', () => {
     renderKitchenPanel();
-    showAdminToast('Kitchen KOTs refreshed 🔄', 'info');
   });
+
+  // Kitchen Toolbar Action Buttons
+  $('btn-kitchen-recall')?.addEventListener('click', recallLastBumpedKitchenOrder);
+  $('btn-kitchen-dark-mode')?.addEventListener('click', () => toggleKitchenDarkMode());
+  $('btn-kitchen-fullscreen')?.addEventListener('click', toggleKitchenFullscreen);
+  $('btn-kitchen-tally-toggle')?.addEventListener('click', toggleKitchenTallyRail);
+
+  $('kitchen-tally-search')?.addEventListener('input', (e) => {
+    kdsTallySearchTerm = e.target.value;
+    renderKitchenProductionTally();
+  });
+
+  // Restore dark mode state
+  try {
+    if (localStorage.getItem('limra_kds_dark_mode') === 'true') {
+      toggleKitchenDarkMode(true);
+    }
+  } catch (e) {}
 
   // POS 9-Hub Quick Tiles
   document.querySelectorAll('.pos-hub-tile[data-hub]').forEach(tile => {
@@ -7703,7 +10406,7 @@ function renderItemsReport() {
             <img src="${item.image}" alt="${escapeHtml(item.name)}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;background:#f1f5f9;" onerror="this.src='/images/food_starters.png'" loading="lazy" />
             <div>
               <strong style="font-size:.88rem;color:#111827;">${escapeHtml(item.name)}</strong>
-              <div style="font-size:.72rem;color:var(--adm-muted);">${item.orderCount ? `Ordered in ${item.orderCount} ${item.orderCount === 1 ? 'bill' : 'bills'}` : 'Not ordered in this period'}</div>
+              <div style="font-size:0.75rem;color:var(--adm-muted);">${item.orderCount ? `Ordered in ${item.orderCount} ${item.orderCount === 1 ? 'bill' : 'bills'}` : 'Not ordered in this period'}</div>
             </div>
           </div>
         </td>
@@ -7722,7 +10425,7 @@ function renderItemsReport() {
             <div style="flex:1;height:7px;background:#e2e8f0;border-radius:999px;overflow:hidden;">
               <div style="width:${Math.min(100, Math.max(0, share))}%;height:100%;background:#10b981;border-radius:999px;"></div>
             </div>
-            <span style="font-size:.72rem;font-weight:700;color:#374151;min-width:38px;text-align:right;">${share.toFixed(1)}%</span>
+            <span style="font-size:0.75rem;font-weight:700;color:#374151;min-width:38px;text-align:right;">${share.toFixed(1)}%</span>
           </div>
         </td>
       </tr>
@@ -7950,21 +10653,44 @@ let foodMenuSort = 'default';
 let foodMenuSearch = '';
 let customCreatedFoods = [];
 
+export function isComboActiveAndValid(c, now = new Date()) {
+  if (!c || typeof c !== 'object') return false;
+  if (c.available === false || c.active === false) return false;
+  const price = parseFloat(c.price || 0);
+  if (isNaN(price) || price <= 0) return false;
+  const expRaw = c.expiry_date || c.valid_until || c.expires_at;
+  if (expRaw) {
+    const expDate = new Date(expRaw);
+    if (!isNaN(expDate.getTime()) && expDate < now) return false;
+  }
+  return true;
+}
+window.isComboActiveAndValid = isComboActiveAndValid;
+
 function getCombinedFoodItems() {
-  const formattedCombos = (adminCombos || []).filter(c => c.available !== false).map(c => ({
-    id: `combo-${c.id}`,
-    name: c.name,
-    price: parseFloat(c.price || 0),
-    mrp: parseFloat(c.mrp || 0),
-    category: 'combo',
-    emoji: '🍱',
-    image: c.image_url || c.image || '/images/food_biryani.png',
-    description: c.description || (Array.isArray(c.items) ? c.items.map(i => `${i.qty || 1}x ${i.name}`).join(', ') : 'Special Combo Deal'),
-    isCombo: true,
-    is_combo: true,
-    combo_id: c.id,
-    gst_applicable: c.gst_applicable !== false
-  }));
+  const formattedCombos = (adminCombos || []).filter(c => isComboActiveAndValid(c)).map(c => {
+    const comboItems = Array.isArray(c.items) ? c.items : [];
+    const comboItemsSummary = comboItems.length > 0
+      ? comboItems.map(i => `${i.qty || 1}× ${i.name}`).join(' + ')
+      : '';
+    return {
+      id: `combo-${c.id}`,
+      name: c.name,
+      price: parseFloat(c.price || 0),
+      mrp: parseFloat(c.mrp || 0),
+      category: 'combo',
+      emoji: '🍱',
+      image: c.image_url || c.image || '/images/food_biryani.png',
+      description: c.description || comboItemsSummary || 'Special Combo Deal',
+      comboItems,
+      comboItemsSummary,
+      isCombo: true,
+      is_combo: true,
+      combo_id: c.id,
+      available: true,
+      gst_applicable: c.gst_applicable !== false
+    };
+  });
 
   let customList = customCreatedFoods;
   if (!customList || customList.length === 0) {
@@ -7977,33 +10703,52 @@ function getCombinedFoodItems() {
   }
 
   const combined = [...formattedCombos, ...menuItems, ...(customList || [])];
-  return combined.map(item => {
+  const items = [];
+
+  for (const item of combined) {
     const override = activeMenuOverrides.find(o => String(o.id) === String(item.id));
+    
+    // Check if soft-deleted / archived
+    const isDeleted = (item.is_deleted === true) || (override && (override.is_deleted === true || (typeof override.description === 'string' && override.description.includes('[DELETED]'))));
+    if (isDeleted) {
+      continue; // Exclude deleted dishes from active menus
+    }
+
     const isOverrideNoGst = override && typeof override.description === 'string' && override.description.includes('[NO_GST]');
     const gstApp = override && override.gst_applicable !== undefined
       ? override.gst_applicable
       : (isOverrideNoGst ? false : (item.gst_applicable !== false));
 
     if (override) {
-      return {
+      const isVeg = override.diet ? (override.diet === 'veg') : (item.is_veg !== false && (item.diet === 'veg' || (item.category && item.category.includes('veg'))));
+      items.push({
         ...item,
+        name: override.name || item.name,
+        category: override.category || item.category,
+        diet: override.diet || item.diet || (isVeg ? 'veg' : 'nonveg'),
+        is_veg: isVeg,
         price: override.price !== null && override.price !== undefined ? parseFloat(override.price) : item.price,
         mrp: override.mrp !== null && override.mrp !== undefined ? parseFloat(override.mrp) : item.mrp,
         available: override.available !== undefined ? override.available : (item.available !== false),
         featured: override.featured !== undefined ? override.featured : (item.featured || false),
         image: override.image || item.image,
         description: override.description !== undefined ? override.description : (item.description || ''),
-        gst_applicable: gstApp
-      };
+        gst_applicable: gstApp,
+        is_deleted: false
+      });
+    } else {
+      items.push({
+        ...item,
+        available: item.available !== false,
+        featured: item.featured || false,
+        description: item.description || '',
+        gst_applicable: item.gst_applicable !== false,
+        is_deleted: false
+      });
     }
-    return {
-      ...item,
-      available: item.available !== false,
-      featured: item.featured || false,
-      description: item.description || '',
-      gst_applicable: item.gst_applicable !== false
-    };
-  });
+  }
+
+  return items;
 }
 
 function initFoodsFilters() {
@@ -8147,16 +10892,16 @@ function renderFoods() {
             : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:3.5rem;">${item.emoji || '🍽️'}</div>`}
           
           <div style="position:absolute;top:8px;left:8px;display:flex;gap:4px;flex-wrap:wrap;">
-            <span style="background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);color:#fff;font-size:.7rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">
+            <span style="background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);color:#fff;font-size:0.75rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">
               ${dietIcon}
             </span>
-            ${item.gst_applicable === false ? '<span style="background:#0284c7;color:#fff;font-size:.7rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">🧾 No GST</span>' : '<span style="background:rgba(16,185,129,0.85);color:#fff;font-size:.7rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">🧾 5% GST</span>'}
-            ${isFeatured ? '<span style="background:#f59e0b;color:#fff;font-size:.7rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">⭐ Special</span>' : ''}
-            ${isCustom ? '<span style="background:#6366f1;color:#fff;font-size:.7rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">✨ Custom Dish</span>' : ''}
+            ${item.gst_applicable === false ? '<span style="background:#0284c7;color:#fff;font-size:0.75rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">🧾 No GST</span>' : '<span style="background:rgba(16,185,129,0.85);color:#fff;font-size:0.75rem;font-weight:700;padding:.15rem .45rem;border-radius:6px;">🧾 5% GST</span>'}
+            ${isFeatured ? '<span style="background:#f59e0b;color:#fff;font-size:0.75rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">⭐ Special</span>' : ''}
+            ${isCustom ? '<span style="background:#6366f1;color:#fff;font-size:0.75rem;font-weight:800;padding:.15rem .45rem;border-radius:6px;">✨ Custom Dish</span>' : ''}
           </div>
 
           <div style="position:absolute;top:8px;right:8px;">
-            <span style="background:${isAvailable ? '#10b981' : '#ef4444'};color:#fff;font-size:.7rem;font-weight:800;padding:.15rem .5rem;border-radius:6px;">
+            <span style="background:${isAvailable ? '#10b981' : '#ef4444'};color:#fff;font-size:0.75rem;font-weight:800;padding:.15rem .5rem;border-radius:6px;">
               ${isAvailable ? 'In Stock' : 'Out of Stock'}
             </span>
           </div>
@@ -8198,14 +10943,12 @@ function renderFoods() {
             </div>
 
             <div style="display:flex;gap:.4rem;width:100%;">
-              <button type="button" class="adm-btn adm-btn-outline adm-btn-sm adm-food-btn-edit" style="flex:1;font-size:.78rem;padding:.3rem;justify-content:center;">
-                ✏️ Edit Price &amp; Details
+              <button type="button" class="adm-btn adm-btn-outline adm-btn-sm adm-food-btn-edit" style="flex:1;font-size:.78rem;padding:.3rem;justify-content:center;" title="Edit dish details, price, name, and photo">
+                ✏️ Edit Dish
               </button>
-              ${isCustom ? `
-                <button type="button" class="adm-btn adm-btn-outline adm-btn-sm adm-food-btn-delete" style="color:#ef4444;border-color:#fecaca;padding:.3rem .55rem;font-size:.78rem;" title="Delete custom dish permanently from database">
-                  🗑️
-                </button>
-              ` : ''}
+              <button type="button" class="adm-btn adm-btn-outline adm-btn-sm adm-food-btn-delete" style="color:#ef4444;border-color:#fecaca;padding:.3rem .55rem;font-size:.78rem;" title="Delete dish from menu">
+                🗑️
+              </button>
             </div>
           </div>
 
@@ -8248,10 +10991,14 @@ function setupFoodControlListeners() {
             const staticItem = all.find(m => String(m.id) === String(itemId));
             override = {
               id: itemId,
-              price: staticItem.price,
-              mrp: staticItem.mrp || null,
+              name: staticItem ? staticItem.name : undefined,
+              category: staticItem ? staticItem.category : undefined,
+              diet: staticItem ? staticItem.diet : undefined,
+              price: staticItem ? staticItem.price : 0,
+              mrp: staticItem ? staticItem.mrp || null : null,
               available: isChecked,
-              featured: staticItem.featured || false
+              featured: staticItem ? staticItem.featured || false : false,
+              description: staticItem ? staticItem.description || '' : ''
             };
             activeMenuOverrides.push(override);
           } else {
@@ -8295,10 +11042,14 @@ function setupFoodControlListeners() {
             const staticItem = all.find(m => String(m.id) === String(itemId));
             override = {
               id: itemId,
-              price: staticItem.price,
-              mrp: staticItem.mrp || null,
-              available: staticItem.available !== false,
-              featured: isChecked
+              name: staticItem ? staticItem.name : undefined,
+              category: staticItem ? staticItem.category : undefined,
+              diet: staticItem ? staticItem.diet : undefined,
+              price: staticItem ? staticItem.price : 0,
+              mrp: staticItem ? staticItem.mrp || null : null,
+              available: staticItem ? staticItem.available !== false : true,
+              featured: isChecked,
+              description: staticItem ? staticItem.description || '' : ''
             };
             activeMenuOverrides.push(override);
           } else {
@@ -8319,7 +11070,7 @@ function setupFoodControlListeners() {
     });
   });
 
-  // 3. Edit Button
+  // 3. Edit Button (Populate all editable attributes: Name, Price, Category, Diet, Photo, Description, Stock, GST)
   grid.querySelectorAll('.adm-food-btn-edit').forEach(btn => {
     btn.addEventListener('click', () => {
       const card = btn.closest('.adm-food-card');
@@ -8329,21 +11080,28 @@ function setupFoodControlListeners() {
       const item = all.find(m => String(m.id) === String(itemId));
       if (!item) return;
 
-      $('edit-modal-item-id').value = item.id;
-      $('edit-modal-item-name').textContent = `✏️ Edit Dish: ${item.name}`;
-      $('edit-modal-item-price').value = item.price;
-      $('edit-modal-item-mrp').value = item.mrp || '';
-      $('edit-modal-item-image').value = item.image || '';
-      $('edit-modal-item-desc').value = item.description || '';
-      $('edit-modal-available').checked = item.available !== false;
-      $('edit-modal-featured').checked = item.featured === true;
+      if ($('edit-modal-item-id')) $('edit-modal-item-id').value = item.id;
+      if ($('edit-modal-item-name')) $('edit-modal-item-name').textContent = `✏️ Edit Dish: ${item.name}`;
+      if ($('edit-modal-item-name-input')) $('edit-modal-item-name-input').value = item.name || '';
+      if ($('edit-modal-item-category')) $('edit-modal-item-category').value = item.category || 'biryani';
+      if ($('edit-modal-item-diet')) $('edit-modal-item-diet').value = item.diet || (item.is_veg ? 'veg' : 'nonveg');
+      if ($('edit-modal-item-price')) $('edit-modal-item-price').value = item.price;
+      if ($('edit-modal-item-mrp')) $('edit-modal-item-mrp').value = item.mrp || '';
+      if ($('edit-modal-item-desc')) $('edit-modal-item-desc').value = item.description || '';
+      if ($('edit-modal-available')) $('edit-modal-available').checked = item.available !== false;
+      if ($('edit-modal-featured')) $('edit-modal-featured').checked = item.featured === true;
       if ($('edit-modal-gst')) $('edit-modal-gst').checked = item.gst_applicable !== false;
+
+      // Set existing image into photo upload component
+      if (editPhotoUpload) {
+        editPhotoUpload.setExistingImage(item.image || null);
+      }
 
       $('adm-edit-modal').classList.add('active');
     });
   });
 
-  // 4. Delete Custom Dish Button
+  // 4. Delete Dish Button (Available for ALL dishes: Custom & Base)
   grid.querySelectorAll('.adm-food-btn-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       const card = btn.closest('.adm-food-card');
@@ -8352,16 +11110,47 @@ function setupFoodControlListeners() {
       const item = all.find(m => String(m.id) === String(itemId));
       if (!item) return;
 
-      const confirmed = window.confirm(`Are you sure you want to permanently delete "${item.name}" from database?`);
+      const confirmed = window.confirm(
+        `Are you sure you want to delete "${item.name}" from the active menu?\n\n` +
+        `This dish will be removed from POS billing, Table QR ordering, and customer storefront.\n` +
+        `(Past invoices and historical sales reports remain safe and unchanged).`
+      );
       if (!confirmed) return;
 
       try {
         btn.disabled = true;
         btn.textContent = '...';
-        await deleteCustomDish(item.db_id || item.id);
-        customCreatedFoods = customCreatedFoods.filter(d => String(d.id) !== String(itemId) && String(d.db_id) !== String(item.db_id));
-        try { localStorage.setItem('limra_custom_foods', JSON.stringify(customCreatedFoods)); } catch {}
-        showAdminToast(`Dish "${item.name}" deleted from database permanently! 🗑️✅`, 'success');
+
+        const isCustomDish = String(itemId).startsWith('custom_') || item.is_custom === true;
+        if (isCustomDish) {
+          await deleteCustomDish(item.db_id || item.id);
+          customCreatedFoods = customCreatedFoods.filter(d => String(d.id) !== String(itemId) && String(d.db_id) !== String(item.db_id));
+          try { localStorage.setItem('limra_custom_foods', JSON.stringify(customCreatedFoods)); } catch {}
+        } else {
+          // Soft-delete / archive base menu item via menu_overrides
+          let override = activeMenuOverrides.find(o => String(o.id) === String(itemId));
+          if (!override) {
+            override = {
+              id: itemId,
+              name: item.name,
+              category: item.category,
+              diet: item.diet,
+              price: item.price,
+              mrp: item.mrp || null,
+              available: false,
+              featured: false,
+              is_deleted: true,
+              description: item.description || ''
+            };
+            activeMenuOverrides.push(override);
+          } else {
+            override.is_deleted = true;
+            override.available = false;
+          }
+          await saveMenuOverride(override);
+        }
+
+        showAdminToast(`Dish "${item.name}" deleted from menu! 🗑️✅`, 'success');
         initFoodsFilters();
         renderFoods();
         if (typeof isGoogleSheetAutoSyncEnabled === 'function' && isGoogleSheetAutoSyncEnabled()) {
@@ -8376,28 +11165,175 @@ function setupFoodControlListeners() {
   });
 }
 
+/**
+ * Dish Photo Upload & Compression Component Controller
+ */
+function setupDishPhotoUploadUI({
+  fileInputId,
+  dropzoneId,
+  previewWrapId,
+  previewImgId,
+  statusId,
+  sizeBadgeId,
+  replaceBtnId,
+  removeBtnId,
+  hiddenInputId,
+  urlInputId
+}) {
+  const fileInput = $(fileInputId);
+  const dropzone = $(dropzoneId);
+  const previewWrap = $(previewWrapId);
+  const previewImg = $(previewImgId);
+  const statusEl = $(statusId);
+  const sizeBadge = $(sizeBadgeId);
+  const replaceBtn = $(replaceBtnId);
+  const removeBtn = $(removeBtnId);
+  const hiddenInput = $(hiddenInputId);
+  const urlInput = $(urlInputId);
+
+  let pendingFile = null;
+  let pendingDataUrl = null;
+
+  const showPreview = (src, sizeText, statusText) => {
+    if (previewImg) previewImg.src = src;
+    if (sizeBadge) sizeBadge.textContent = sizeText || 'Image selected';
+    if (statusEl) statusEl.textContent = statusText || 'Ready';
+    if (dropzone) dropzone.style.display = 'none';
+    if (previewWrap) previewWrap.style.display = 'flex';
+  };
+
+  const clearPhoto = () => {
+    pendingFile = null;
+    pendingDataUrl = null;
+    if (fileInput) fileInput.value = '';
+    if (hiddenInput) hiddenInput.value = '';
+    if (urlInput) urlInput.value = '';
+    if (previewImg) previewImg.src = '';
+    if (dropzone) dropzone.style.display = 'block';
+    if (previewWrap) previewWrap.style.display = 'none';
+  };
+
+  const handleFile = async (rawFile) => {
+    if (!rawFile) return;
+    if (statusEl) statusEl.textContent = 'Compressing image... ⏳';
+    if (previewWrap) previewWrap.style.display = 'flex';
+    if (dropzone) dropzone.style.display = 'none';
+
+    try {
+      showAdminToast('Compressing dish photo (Target: 30–80 KB)... ⏳', 'info');
+      const result = await compressDishImage(rawFile);
+      pendingFile = result.file;
+      pendingDataUrl = result.dataUrl;
+      showPreview(
+        result.dataUrl,
+        `${result.sizeKB} KB (WebP • ${result.compressionRatio})`,
+        `Optimized (${result.width}×${result.height})`
+      );
+      showAdminToast(`Photo compressed to ${result.sizeKB} KB (${result.compressionRatio}) ✅`, 'success');
+      if (hiddenInput) hiddenInput.value = result.dataUrl;
+    } catch (err) {
+      clearPhoto();
+      showAdminToast(err.message || 'Image compression failed', 'error');
+    }
+  };
+
+  dropzone?.addEventListener('click', () => fileInput?.click());
+  replaceBtn?.addEventListener('click', () => fileInput?.click());
+  removeBtn?.addEventListener('click', clearPhoto);
+
+  fileInput?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+  });
+
+  dropzone?.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('dragover');
+  });
+  dropzone?.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+  dropzone?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleFile(file);
+  });
+
+  urlInput?.addEventListener('input', () => {
+    const url = urlInput.value.trim();
+    if (url) {
+      pendingFile = null;
+      pendingDataUrl = null;
+      if (hiddenInput) hiddenInput.value = url;
+      showPreview(url, 'External URL', 'Linked image');
+    }
+  });
+
+  return {
+    getPendingFile: () => pendingFile,
+    getPendingDataUrl: () => pendingDataUrl,
+    setExistingImage: (url) => {
+      if (url) {
+        pendingFile = null;
+        pendingDataUrl = null;
+        if (hiddenInput) hiddenInput.value = url;
+        if (urlInput) urlInput.value = url;
+        showPreview(url, 'Active photo', 'Ready');
+      } else {
+        clearPhoto();
+      }
+    },
+    clear: clearPhoto
+  };
+}
+
+let editPhotoUpload = null;
+let addPhotoUpload = null;
+
 function setupEditModalListeners() {
   const modal = $('adm-edit-modal');
   const form = $('adm-edit-form');
   const cancelBtn = $('edit-modal-cancel');
+  const closeX = $('edit-modal-close-x');
   if (!modal || !form) return;
 
-  cancelBtn.addEventListener('click', () => {
-    modal.classList.remove('active');
+  editPhotoUpload = setupDishPhotoUploadUI({
+    fileInputId: 'edit-modal-file-input',
+    dropzoneId: 'edit-modal-dropzone',
+    previewWrapId: 'edit-modal-preview-wrap',
+    previewImgId: 'edit-modal-preview-img',
+    statusId: 'edit-modal-preview-status',
+    sizeBadgeId: 'edit-modal-preview-size',
+    replaceBtnId: 'edit-modal-replace-btn',
+    removeBtnId: 'edit-modal-remove-btn',
+    hiddenInputId: 'edit-modal-item-image',
+    urlInputId: 'edit-modal-item-image-url'
   });
+
+  const closeModal = () => {
+    modal.classList.remove('active');
+  };
+
+  cancelBtn?.addEventListener('click', closeModal);
+  closeX?.addEventListener('click', closeModal);
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const itemId = $('edit-modal-item-id').value;
+    const newName = $('edit-modal-item-name-input').value.trim();
+    const newCategory = $('edit-modal-item-category').value;
+    const newDiet = $('edit-modal-item-diet').value;
     const newPrice = parseFloat($('edit-modal-item-price').value);
     const newMrpVal = $('edit-modal-item-mrp').value;
     const newMrp = newMrpVal ? parseFloat(newMrpVal) : null;
-    const newImage = $('edit-modal-item-image').value.trim();
     const newDesc = $('edit-modal-item-desc').value.trim();
     const newAvail = $('edit-modal-available').checked;
     const newFeat = $('edit-modal-featured').checked;
     const newGst = $('edit-modal-gst') ? $('edit-modal-gst').checked : true;
 
+    if (!newName) {
+      showAdminToast('Please enter a dish name.', 'error');
+      return;
+    }
     if (isNaN(newPrice) || newPrice <= 0) {
       showAdminToast('Please enter a valid price.', 'error');
       return;
@@ -8408,19 +11344,34 @@ function setupEditModalListeners() {
     saveBtn.textContent = 'Saving to Database... ⏳';
 
     try {
+      // 1. Resolve photo upload if a new file is pending
+      let finalImageUrl = $('edit-modal-item-image').value.trim();
+      const pendingFile = editPhotoUpload?.getPendingFile();
+      const pendingDataUrl = editPhotoUpload?.getPendingDataUrl();
+
+      if (pendingFile) {
+        saveBtn.textContent = 'Uploading photo... ⏳';
+        try {
+          finalImageUrl = await uploadDishPhotoToStorage(pendingFile, `${newName.replace(/\s+/g, '_')}.webp`, pendingDataUrl);
+        } catch (upErr) {
+          console.warn('[EditModal] Upload fallback notice:', upErr.message);
+          finalImageUrl = pendingDataUrl;
+        }
+      }
+
       const isCustomDish = String(itemId).startsWith('custom_');
       if (isCustomDish) {
         const existingCustom = customCreatedFoods.find(d => String(d.id) === String(itemId));
         const updatedCustom = {
           id: itemId,
           db_id: existingCustom?.db_id,
-          name: existingCustom?.name || 'Custom Dish',
-          category: existingCustom?.category || 'General',
-          diet: existingCustom?.diet || (existingCustom?.is_veg ? 'veg' : 'nonveg'),
-          is_veg: existingCustom?.is_veg !== false,
+          name: newName,
+          category: newCategory,
+          diet: newDiet,
+          is_veg: newDiet === 'veg',
           price: newPrice,
           mrp: newMrp,
-          image: newImage || null,
+          image: finalImageUrl || null,
           description: newDesc,
           available: newAvail,
           featured: newFeat,
@@ -8432,13 +11383,17 @@ function setupEditModalListeners() {
         else customCreatedFoods.push(saved);
         try { localStorage.setItem('limra_custom_foods', JSON.stringify(customCreatedFoods)); } catch {}
       } else {
+        // Base dish override: updates name, category, diet, price, mrp, image, desc, stock, gst
         let override = activeMenuOverrides.find(o => String(o.id) === String(itemId));
         if (!override) {
           override = {
             id: itemId,
+            name: newName,
+            category: newCategory,
+            diet: newDiet,
             price: newPrice,
             mrp: newMrp,
-            image: newImage || null,
+            image: finalImageUrl || null,
             description: newDesc,
             available: newAvail,
             featured: newFeat,
@@ -8446,9 +11401,12 @@ function setupEditModalListeners() {
           };
           activeMenuOverrides.push(override);
         } else {
+          override.name = newName;
+          override.category = newCategory;
+          override.diet = newDiet;
           override.price = newPrice;
           override.mrp = newMrp;
-          override.image = newImage || null;
+          override.image = finalImageUrl || null;
           override.description = newDesc;
           override.available = newAvail;
           override.featured = newFeat;
@@ -8458,8 +11416,9 @@ function setupEditModalListeners() {
         await saveMenuOverride(override);
       }
 
-      showAdminToast('Dish details updated permanently in database! ✅', 'success');
-      modal.classList.remove('active');
+      showAdminToast(`Dish "${newName}" updated permanently in database! ✅`, 'success');
+      closeModal();
+      initFoodsFilters();
       renderFoods();
       if (typeof isGoogleSheetAutoSyncEnabled === 'function' && isGoogleSheetAutoSyncEnabled()) {
         syncFoodMenuToGoogleSheet().catch(e => console.warn('[AutoSync] Menu sync err:', e));
@@ -8480,8 +11439,22 @@ function setupAddDishModalListeners() {
   const closeBtn = $('add-dish-close-btn');
   const cancelBtn = $('add-dish-cancel-btn');
 
+  addPhotoUpload = setupDishPhotoUploadUI({
+    fileInputId: 'add-dish-file-input',
+    dropzoneId: 'add-dish-dropzone',
+    previewWrapId: 'add-dish-preview-wrap',
+    previewImgId: 'add-dish-preview-img',
+    statusId: 'add-dish-preview-status',
+    sizeBadgeId: 'add-dish-preview-size',
+    replaceBtnId: 'add-dish-replace-btn',
+    removeBtnId: 'add-dish-remove-btn',
+    hiddenInputId: 'add-dish-image',
+    urlInputId: 'add-dish-image-url'
+  });
+
   openBtn?.addEventListener('click', () => {
     if (form) form.reset();
+    if (addPhotoUpload) addPhotoUpload.clear();
     if (modal) modal.style.display = 'flex';
   });
 
@@ -8503,7 +11476,6 @@ function setupAddDishModalListeners() {
     const price = parseFloat($('add-dish-price').value);
     const mrpVal = $('add-dish-mrp').value;
     const mrp = mrpVal ? parseFloat(mrpVal) : null;
-    const image = $('add-dish-image').value.trim();
     const desc = $('add-dish-desc').value.trim();
     const gstApplicable = $('add-dish-gst') ? $('add-dish-gst').checked : true;
 
@@ -8519,6 +11491,21 @@ function setupAddDishModalListeners() {
     }
 
     try {
+      // 1. Resolve photo upload if a file is pending
+      let finalImageUrl = $('add-dish-image').value.trim();
+      const pendingFile = addPhotoUpload?.getPendingFile();
+      const pendingDataUrl = addPhotoUpload?.getPendingDataUrl();
+
+      if (pendingFile) {
+        if (saveBtn) saveBtn.textContent = 'Uploading photo... ⏳';
+        try {
+          finalImageUrl = await uploadDishPhotoToStorage(pendingFile, `${name.replace(/\s+/g, '_')}.webp`, pendingDataUrl);
+        } catch (upErr) {
+          console.warn('[AddDishModal] Upload fallback notice:', upErr.message);
+          finalImageUrl = pendingDataUrl;
+        }
+      }
+
       const newDish = {
         name,
         category,
@@ -8526,7 +11513,7 @@ function setupAddDishModalListeners() {
         is_veg: diet === 'veg',
         price,
         mrp,
-        image: image || null,
+        image: finalImageUrl || null,
         description: desc,
         available: true,
         featured: false,
@@ -8554,7 +11541,7 @@ function setupAddDishModalListeners() {
     } finally {
       if (saveBtn) {
         saveBtn.disabled = false;
-        saveBtn.textContent = 'Save Dish to Menu';
+        saveBtn.textContent = '➕ Add Dish to Menu';
       }
     }
   });
@@ -8632,12 +11619,133 @@ const PANEL_TITLES = {
   stock: 'Stock',
 };
 
-function switchPanel(panelId, pushHistory = true) {
+let currentActivePanel = 'dashboard';
+const dirtyPanels = new Set();
+const ALL_RENDERABLE_PANELS = [
+  'dashboard',
+  'orders',
+  'order-detail',
+  'tables',
+  'kitchen',
+  'hold-orders',
+  'closed-orders',
+  'customers',
+  'customer-analysis',
+  'analytics',
+  'bookings',
+  'foods',
+];
+
+function getActivePanelId() {
+  if (typeof document !== 'undefined') {
+    const activeSection = document.querySelector('.adm-panel.active');
+    if (activeSection && activeSection.id && activeSection.id.startsWith('panel-')) {
+      const id = activeSection.id.replace(/^panel-/, '');
+      currentActivePanel = id;
+      return id;
+    }
+  }
+  return currentActivePanel || 'dashboard';
+}
+
+function updateSidebarBadges() {
+  const pendingOrdersCount = orders.filter(o => o.status === 'pending').length;
+  const orderBadge = $('pending-orders-badge');
+  if (orderBadge) {
+    if (pendingOrdersCount > 0) {
+      orderBadge.textContent = pendingOrdersCount;
+      show(orderBadge);
+    } else {
+      hide(orderBadge);
+    }
+  }
+
+  const pendingBookingsCount = bookings.filter(b => b.status === 'pending').length;
+  const bookingBadge = $('pending-bookings-badge');
+  if (bookingBadge) {
+    if (pendingBookingsCount > 0) {
+      bookingBadge.textContent = pendingBookingsCount;
+      show(bookingBadge);
+    } else {
+      hide(bookingBadge);
+    }
+  }
+
+  const holdBadge = $('pending-hold-badge');
+  if (holdBadge && typeof getHeldOrders === 'function') {
+    const heldCount = getHeldOrders().length;
+    if (heldCount > 0) {
+      holdBadge.textContent = heldCount;
+      holdBadge.classList.remove('adm-hidden');
+    } else {
+      holdBadge.classList.add('adm-hidden');
+    }
+  }
+
+  updateKitchenBadges();
+}
+
+export function switchPanel(panelId, pushHistory = true) {
+  if (panelId === 'printer') {
+    switchPanel('settings', pushHistory);
+    switchSettingsSubtab('printer');
+    return;
+  }
+  if (panelId === 'profile') {
+    switchPanel('settings', pushHistory);
+    switchSettingsSubtab('profile');
+    return;
+  }
+
+  // 9 Consolidated Workspaces Parent Mapping
+  const workspaceMap = {
+    'dashboard': 'dashboard',
+    'order-detail': 'order-detail',
+    'orders': 'orders',
+    'hold-orders': 'orders',
+    'closed-orders': 'orders',
+    'tables': 'tables',
+    'kitchen': 'kitchen',
+    'foods': 'foods',
+    'combos': 'foods',
+    'coupons': 'foods',
+    'places': 'foods',
+    'stock': 'stock',
+    'daily-sales-report': 'daily-sales-report',
+    'customer-analysis': 'daily-sales-report',
+    'analytics': 'daily-sales-report',
+    'settings': 'settings',
+    'customers': 'settings',
+    'bookings': 'settings',
+    'printer': 'settings',
+    'profile': 'settings'
+  };
+  const activeWorkspace = workspaceMap[panelId] || panelId;
+
+  // RBAC Permission Check
+  if (currentAdminUser && typeof hasStaffPermission === 'function' && !hasStaffPermission(activeWorkspace)) {
+    showAdminToast(`Access Denied: Role "${currentAdminUser.role}" is not authorized to access "${activeWorkspace}".`, 'error');
+    const userRole = normalizeStaffRole(currentAdminUser.role);
+    const fallback = ROLE_WORKSPACE_PERMISSIONS[userRole]?.[0] || 'kitchen';
+    if (fallback !== panelId) {
+      switchPanel(fallback, pushHistory);
+    }
+    return;
+  }
+
+  currentActivePanel = panelId;
+  dirtyPanels.delete(panelId);
+
   document.body.classList.toggle('pos-mode-active', panelId === 'order-detail');
   document.querySelectorAll('.adm-panel').forEach(p => p.classList.remove('active'));
   document.querySelector(`#panel-${panelId}`)?.classList.add('active');
   document.querySelectorAll('.adm-nav-item').forEach(n => n.classList.remove('active'));
-  document.querySelector(`.adm-nav-item[data-panel="${panelId}"]`)?.classList.add('active');
+  document.querySelector(`.adm-nav-item[data-panel="${activeWorkspace}"]`)?.classList.add('active');
+
+  // Highlight active subnav tab across consolidated workspace bars
+  document.querySelectorAll('.adm-workspace-subnav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-subnav-panel') === panelId);
+  });
 
   if (pushHistory) {
     if (window.location.hash !== `#panel=${panelId}`) {
@@ -8667,10 +11775,14 @@ function switchPanel(panelId, pushHistory = true) {
     loadSalesReportData();
   }
 
+  if (panelId === 'customers') renderCustomers();
   if (panelId === 'customer-analysis') renderCustomerAnalysis();
   if (panelId === 'analytics') renderAnalytics();
   if (panelId === 'foods') { initFoodsFilters(); loadAndRenderFoods(); }
-  if (panelId === 'bookings') renderBookingCalendar();
+  if (panelId === 'bookings') {
+    renderBookingCalendar();
+    renderBookingsList();
+  }
   if (panelId === 'coupons') { loadAndRenderCoupons(); }
   if (panelId === 'combos') { loadAndRenderCombos(); }
   if (panelId === 'places') { loadAndRenderPlaces(); }
@@ -8679,32 +11791,26 @@ function switchPanel(panelId, pushHistory = true) {
   if (panelId === 'hold-orders') renderHoldOrdersPanel();
   if (panelId === 'closed-orders') renderClosedOrdersPanel();
   if (panelId === 'settings') initSettingsPanel();
-  if (panelId === 'printer') {
-    switchPanel('settings');
-    switchSettingsSubtab('printer');
-    return;
-  }
-  if (panelId === 'profile') {
-    switchPanel('settings');
-    switchSettingsSubtab('profile');
-    return;
-  }
   if (panelId === 'orders') {
     renderOrdersTable();
     renderBillingTotalBills();
   }
   if (panelId === 'order-detail') {
+    const wasAlreadyMounted = posBillingMounted;
     renderOrderDetailPicker();
+    renderBillingQuickCards();
     initBillingPanel();
     const posEl = $('billing-pos');
-    const detailEl = $('billing-detail-view');
     if (posEl) posEl.style.display = 'block';
-    if (detailEl) detailEl.style.display = 'none';
-    if (!posEditingOrderId && (!posCart || posCart.length === 0)) {
-      $('billing-new-btn')?.click();
+    // Only initialize blank state on very first mount if cart is empty and no inputs are filled
+    if (!wasAlreadyMounted && !posEditingOrderId && (!posCart || posCart.length === 0)) {
+      syncPosOrderTypeState(posOrderType || 'table');
     }
+  } else {
+    closeOrderDetailDrawer();
   }
   if (panelId === 'dashboard') {
+    renderOverview();
     if (dashboardMap) {
       setTimeout(() => {
         dashboardMap.invalidateSize();
@@ -8717,6 +11823,7 @@ function switchPanel(panelId, pushHistory = true) {
     hide($('sidebar-overlay'));
   }
 }
+window.switchPanel = switchPanel;
 
 
 // ── Closed Orders & Audit Panel ─────────────────────────────────────────────
@@ -8907,33 +12014,79 @@ function renderClosedPagination(totalCount, totalPages, currentPage) {
   });
 }
 
-async function ensureOrderItemsLoaded(orderIds) {
-  if (!Array.isArray(orderIds) || !orderIds.length) return;
-  const knownItemOrderIds = new Set(orderItems.map(i => String(i.order_id)));
-  const missingOrderIds = orderIds.map(String).filter(id => !knownItemOrderIds.has(id));
-  if (missingOrderIds.length === 0) return;
+const loadedItemOrderIds = new Set();
+const inFlightOrderItemPromises = new Map();
 
-  const batchSize = 100;
-  for (let i = 0; i < missingOrderIds.length; i += batchSize) {
-    const batch = missingOrderIds.slice(i, i + batchSize);
-    try {
-      const { data: batchItems, error: itemErr } = await insforge.database
-        .from('order_items')
-        .select('id, order_id, menu_item_id, item_name, quantity, unit_price, line_total, created_at')
-        .in('order_id', batch);
-      if (!itemErr && Array.isArray(batchItems) && batchItems.length > 0) {
-        const itemMap = new Map();
-        orderItems.forEach(item => itemMap.set(String(item.id), item));
-        batchItems.forEach(item => itemMap.set(String(item.id), item));
-        orderItems = Array.from(itemMap.values());
-      }
-    } catch (itemFetchErr) {
-      console.warn('[Closed Orders] Item fetch warning:', itemFetchErr);
+async function ensureOrderItemsLoaded(orderIds, options = {}) {
+  if (!Array.isArray(orderIds) || !orderIds.length) return false;
+  const force = Boolean(options && options.force);
+
+  // Sync known item order IDs from any existing orderItems in memory
+  orderItems.forEach(i => {
+    if (i && i.order_id) loadedItemOrderIds.add(String(i.order_id));
+  });
+
+  const uniqueIds = Array.from(new Set(orderIds.map(String).filter(Boolean)));
+  const pendingPromises = [];
+  const idsToFetch = [];
+
+  for (const id of uniqueIds) {
+    if (!force && loadedItemOrderIds.has(id)) continue;
+    if (inFlightOrderItemPromises.has(id)) {
+      pendingPromises.push(inFlightOrderItemPromises.get(id));
+    } else {
+      idsToFetch.push(id);
     }
   }
+
+  if (idsToFetch.length === 0) {
+    if (pendingPromises.length > 0) {
+      await Promise.all(pendingPromises);
+      return true;
+    }
+    return false;
+  }
+
+  const batchSize = 100;
+  for (let i = 0; i < idsToFetch.length; i += batchSize) {
+    const batch = idsToFetch.slice(i, i + batchSize);
+    const batchPromise = (async () => {
+      try {
+        const { data: batchItems, error: itemErr } = await insforge.database
+          .from('order_items')
+          .select(ORDER_ITEM_SELECT_COLUMNS)
+          .in('order_id', batch);
+        if (!itemErr && Array.isArray(batchItems)) {
+          const batchOrderSet = new Set(batch);
+          const preservedItems = force
+            ? orderItems.filter(item => !batchOrderSet.has(String(item.order_id)))
+            : orderItems;
+          const itemMap = new Map();
+          preservedItems.forEach(item => itemMap.set(String(item.id), item));
+          batchItems.forEach(item => itemMap.set(String(item.id), item));
+          orderItems = Array.from(itemMap.values());
+          batch.forEach(id => loadedItemOrderIds.add(id));
+        }
+      } catch (itemFetchErr) {
+        console.warn('[Order Items] Scoped item fetch warning:', itemFetchErr);
+      } finally {
+        batch.forEach(id => inFlightOrderItemPromises.delete(id));
+      }
+    })();
+
+    batch.forEach(id => inFlightOrderItemPromises.set(id, batchPromise));
+    pendingPromises.push(batchPromise);
+  }
+
+  await Promise.all(pendingPromises);
+  return true;
 }
 
 async function renderClosedOrdersPanel() {
+  if (getActivePanelId() !== 'closed-orders') {
+    dirtyPanels.add('closed-orders');
+    return;
+  }
   const tbody = $('closed-orders-table-body');
   if (!tbody) return;
 
@@ -8946,11 +12099,15 @@ async function renderClosedOrdersPanel() {
     o.status === 'completed' ||
     o.status === 'closed' ||
     o.status === 'cancelled' ||
-    o.payment_status === 'paid'
+    o.payment_status === 'paid' ||
+    o.payment_status === 'refunded' ||
+    o.ticket_status === 'CLOSED'
   );
   const consolidatedClosed = getConsolidatedClosedBills(allClosed);
-  const deliveredOrders = consolidatedClosed.filter(o => o.status === 'delivered' || o.status === 'completed' || o.status === 'closed' || o.payment_status === 'paid');
-  const cancelledOrders = consolidatedClosed.filter(o => o.status === 'cancelled');
+  const deliveredOrders = consolidatedClosed.filter(
+    o => (o.status === 'delivered' || o.status === 'completed' || o.status === 'closed' || o.payment_status === 'paid') && !isOrderVoided(o)
+  );
+  const cancelledOrders = consolidatedClosed.filter(o => o.status === 'cancelled' || isOrderVoided(o));
 
   const totalClosedRev = deliveredOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
   const totalClosedCount = deliveredOrders.length;
@@ -9041,8 +12198,8 @@ async function renderClosedOrdersPanel() {
   // Sort newest first
   list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-  // Update Summary Bar with standard Restaurant GST breakdown
-  const activeDelivered = list.filter(o => o.status !== 'cancelled');
+  // Update Summary Bar with standard Restaurant GST breakdown (excluding cancelled & voided bills)
+  const activeDelivered = list.filter(o => o.status !== 'cancelled' && !isOrderVoided(o));
   let sumGrand = 0;
   let sumTaxable = 0;
   let sumCgst = 0;
@@ -9095,14 +12252,19 @@ async function renderClosedOrdersPanel() {
       : '<span style="color:var(--adm-muted);">No items recorded</span>';
 
     const isPaid = o.payment_status === 'paid';
+    const isVoided = isOrderVoided(o);
     const isCancelled = o.status === 'cancelled';
-    const statusPill = isCancelled
-      ? '<span class="closed-status-badge cancelled"><span class="badge-dot red"></span>Cancelled</span>'
-      : '<span class="closed-status-badge settled"><span class="badge-dot green"></span>Settled</span>';
+    const statusPill = isVoided
+      ? '<span class="closed-status-badge cancelled"><span class="badge-dot red"></span>Voided</span>'
+      : (isCancelled
+          ? '<span class="closed-status-badge cancelled"><span class="badge-dot red"></span>Cancelled</span>'
+          : '<span class="closed-status-badge settled"><span class="badge-dot green"></span>Settled</span>');
 
-    const payPill = isPaid
-      ? `<span class="closed-pay-mode">Paid · ${escapeHtml(parsed.paymentMode || o.payment_mode || 'Cash/UPI')}</span>`
-      : '<span class="closed-pay-mode unpaid">Unpaid</span>';
+    const payPill = isVoided
+      ? '<span class="closed-pay-mode unpaid">Voided / Refunded</span>'
+      : (isPaid
+          ? `<span class="closed-pay-mode">Paid · ${escapeHtml(parsed.paymentMode || o.payment_mode || 'Cash/UPI')}</span>`
+          : '<span class="closed-pay-mode unpaid">Unpaid</span>');
 
     const d = new Date(o.created_at);
     const dateStr = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) + ', ' + d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
@@ -9127,7 +12289,7 @@ async function renderClosedOrdersPanel() {
         <td style="text-align:right;" class="closed-num-cell closed-tax-muted">₹${taxDetails.sgstAmt.toFixed(2)}</td>
         <td style="text-align:right;" class="closed-num-cell closed-tax-highlight">₹${taxDetails.totalGst.toFixed(2)}</td>
         <td style="text-align:right;">
-          <strong class="closed-total-cell ${isCancelled ? 'cancelled' : ''}">${formatBillAmount(taxDetails.grandTotal)}</strong>
+          <strong class="closed-total-cell ${(isCancelled || isVoided) ? 'cancelled' : ''}">${formatBillAmount(taxDetails.grandTotal)}</strong>
         </td>
         <td>
           <div class="closed-status-wrap">
@@ -9147,8 +12309,8 @@ async function renderClosedOrdersPanel() {
             <button type="button" class="closed-action-btn kot closed-kot-btn" data-id="${o.id}" title="Reprint kitchen ticket">
               🗒️ KOT
             </button>
-            <button type="button" class="closed-action-btn delete closed-delete-btn" data-id="${o.id}" title="Permanently delete this closed order">
-              🗑️
+            <button type="button" class="closed-action-btn delete closed-delete-btn" data-id="${o.id}" title="Void this closed invoice with audit trail (Manager Required)">
+              🚫
             </button>
           </div>
         </td>
@@ -9326,7 +12488,6 @@ function renderClosedEditFoodGrid(filterText) {
       }
       renderClosedEditItems();
       renderClosedEditFoodGrid($('closed-edit-dish-search')?.value);
-      showAdminToast(`Added "${name}" to bill 🛒`, 'success');
     });
   });
 }
@@ -9366,6 +12527,7 @@ async function openClosedOrderEditModal(orderId) {
     showAdminToast('Order not found or no longer available.', 'error');
     return;
   }
+  closeOrderDetailDrawer();
   closedEditingOrderId = orderId;
   closedEditingDeletedItemIds = [];
 
@@ -9428,6 +12590,7 @@ async function openClosedOrderEditModal(orderId) {
   if ($('closed-edit-custom-qty')) $('closed-edit-custom-qty').value = '1';
   if ($('closed-edit-add-price')) $('closed-edit-add-price').value = '';
   if ($('closed-edit-add-qty')) $('closed-edit-add-qty').value = '1';
+  if ($('closed-edit-reason-input')) $('closed-edit-reason-input').value = '';
 
   closedEditActiveCat = 'all';
   switchClosedEditAddTab('menu');
@@ -9546,52 +12709,41 @@ window.closedEditRemoveItem = function(idx) {
   renderClosedEditItems();
 };
 
-async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
+function isOrderVoided(order) {
+  if (!order) return false;
+  const payStatus = String(order.payment_status || '').toLowerCase().trim();
+  const notes = String(order.notes || '');
+  return payStatus === 'refunded' || notes.includes('[VOIDED]');
+}
+
+async function saveClosedOrderCorrections(orderId, shouldReprint = false, providedReason = null, providedIdempotencyKey = null) {
   const order = orders.find(o => String(o.id) === String(orderId));
-  if (!order) return;
+  if (!order) return { ok: false, error: 'ORDER_NOT_FOUND' };
+
+  if (isOrderVoided(order)) {
+    showAdminToast(`Order #${formatDailyOrderNumber(order)} has already been voided and cannot be amended.`, 'error');
+    return { ok: false, error: 'ORDER_ALREADY_VOIDED' };
+  }
+
   if (!closedEditingCart.length) {
-    showAdminToast('Order must contain at least one item.', 'error');
-    return;
+    showAdminToast('Order must contain at least one item. To cancel all items, use Void Invoice.', 'error');
+    return { ok: false, error: 'ITEMS_REQUIRED' };
+  }
+
+  let cleanReason = String(providedReason ?? ($('closed-edit-reason-input')?.value || '')).trim();
+  if (cleanReason.length < 3 && typeof prompt === 'function') {
+    const prompted = prompt(`Enter mandatory financial audit reason for amending Order #${formatDailyOrderNumber(order)} (minimum 3 characters):`);
+    if (prompted === null) return { ok: false, cancelled: true };
+    cleanReason = String(prompted || '').trim();
+  }
+
+  if (cleanReason.length < 3) {
+    showAdminToast('REASON_REQUIRED: Please enter a valid reason (minimum 3 characters) to amend a closed invoice.', 'error');
+    return { ok: false, error: 'REASON_REQUIRED' };
   }
 
   try {
-    // 1. Delete removed order items from DB
-    if (closedEditingDeletedItemIds.length > 0) {
-      for (const delId of closedEditingDeletedItemIds) {
-        await insforge.database.from('order_items').delete().eq('id', delId);
-      }
-    }
-
-    // 2. Upsert / Insert items
-    for (const item of closedEditingCart) {
-      const sanitizedMenuItemId = (item.id && !isNaN(Number(item.id)) && Number(item.id) < 9000) ? Number(item.id) : null;
-      if (item.order_item_id && !String(item.order_item_id).startsWith('temp-')) {
-        // Update existing item
-        await insforge.database.from('order_items').update({
-          item_name: item.name,
-          quantity: item.qty,
-          unit_price: item.price,
-          line_total: item.price * item.qty,
-          menu_item_id: sanitizedMenuItemId
-        }).eq('id', item.order_item_id);
-      } else {
-        // Insert newly added item
-        const { data: newRow, error: insErr } = await insforge.database.from('order_items').insert([{
-          order_id: orderId,
-          item_name: item.name,
-          quantity: item.qty,
-          unit_price: item.price,
-          line_total: item.price * item.qty,
-          menu_item_id: sanitizedMenuItemId
-        }]).select();
-        if (insErr) throw insErr;
-        if (newRow && newRow[0]) {
-          item.order_item_id = newRow[0].id;
-        }
-      }
-    }
-
-    // 3. Recalculate order total & gather updated fields
+    // 1. Recalculate authoritative order total & gather updated fields
     const s = getBillSettings();
     const parsed = parseNotesMetadata(order.notes, order);
     const billingMeta = parseNotesBillingMetadata(order.notes);
@@ -9600,8 +12752,6 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
     const custPhone = $('closed-edit-cust-phone-input')?.value?.trim() || order.customer_phone || '';
     const newType = $('closed-edit-type-select')?.value || order.order_type || 'table';
     const newTableNum = $('closed-edit-table-input')?.value?.trim() || '';
-    const newPaymentStatus = $('closed-edit-payment-status-select')?.value || order.payment_status || 'paid';
-    const newStatus = $('closed-edit-order-status-select')?.value || order.status || 'delivered';
 
     const isDelivery = newType === 'delivery';
     const deliveryFee = isDelivery
@@ -9634,46 +12784,78 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
       updatedNotes = `[SELF PICKUP] ${updatedNotes}`.trim();
     }
 
-    const orderUpdates = {
+    const updatedItemsPayload = closedEditingCart.map(item => ({
+      menu_item_id: (item.id && !isNaN(Number(item.id)) && Number(item.id) < 9000) ? Number(item.id) : null,
+      item_name: item.name,
+      quantity: Math.max(1, Number(item.qty || 1)),
+      unit_price: Math.max(0, Number(item.price || 0)),
+      line_total: Number((Math.max(0, Number(item.price || 0)) * Math.max(1, Number(item.qty || 1))).toFixed(2))
+    }));
+
+    const updatedFieldsPayload = {
       customer_name: custName,
       customer_phone: custPhone,
       total_amount: newGrandTotal,
       order_type: newType,
       table_number: newType === 'table' ? (newTableNum || null) : null,
-      payment_status: newPaymentStatus,
-      status: newStatus,
       notes: updatedNotes
     };
 
-    try {
-      const { error: updErr } = await insforge.database.from('orders').update(orderUpdates).eq('id', orderId);
-      if (updErr && (updErr.message || '').includes('table_number')) {
-        delete orderUpdates.table_number;
-        await insforge.database.from('orders').update(orderUpdates).eq('id', orderId);
-      }
-    } catch(dbErr) {
-      console.warn('[Closed Edit] Failed updating order metadata in DB:', dbErr);
+    const idempotencyKey =
+      providedIdempotencyKey ||
+      order._amendIdempotencyKey ||
+      `amend-${orderId}-${Date.now()}`;
+    order._amendIdempotencyKey = idempotencyKey;
+
+    // 2. Execute server-side atomic closed-order amendment RPC (enforces manager auth, audit snapshot & trigger safety)
+    const { data: rpcResult, error: rpcError } = await insforge.database.rpc('amend_closed_order_atomic', {
+      p_order_id: orderId,
+      p_updated_items: updatedItemsPayload,
+      p_updated_fields: updatedFieldsPayload,
+      p_reason: cleanReason,
+      p_idempotency_key: idempotencyKey
+    });
+
+    if (rpcError) {
+      throw rpcError;
     }
 
-    // 4. Update in-memory arrays
-    Object.assign(order, orderUpdates);
+    // 3. Synchronize in-memory state from authoritative RPC result
+    order.customer_name = rpcResult?.customer_name || custName;
+    order.customer_phone = rpcResult?.customer_phone || custPhone;
+    order.total_amount = rpcResult?.total_amount !== undefined ? Number(rpcResult.total_amount) : newGrandTotal;
+    order.order_type = rpcResult?.order_type || newType;
+    order.table_number = rpcResult?.table_number !== undefined ? rpcResult.table_number : updatedFieldsPayload.table_number;
+    order.notes = rpcResult?.notes || updatedNotes;
+    order._amendIdempotencyKey = null;
+
     const otherItems = orderItems.filter(i => String(i.order_id) !== String(orderId));
-    const freshOrderItems = closedEditingCart.map(i => ({
-      id: i.order_item_id || `temp-edit-${Date.now()}`,
-      order_id: orderId,
-      item_name: i.name,
-      quantity: i.qty,
-      unit_price: i.price,
-      line_total: i.price * i.qty,
-      menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null
-    }));
+    const freshOrderItems = Array.isArray(rpcResult?.items) && rpcResult.items.length > 0
+      ? rpcResult.items.map(i => ({
+          id: i.id || `amend-item-${Date.now()}`,
+          order_id: orderId,
+          item_name: i.item_name || i.name,
+          quantity: Number(i.quantity || i.qty || 1),
+          unit_price: Number(i.unit_price || i.price || 0),
+          line_total: Number(i.line_total || 0),
+          menu_item_id: i.menu_item_id ?? null
+        }))
+      : closedEditingCart.map(i => ({
+          id: i.order_item_id || `temp-edit-${Date.now()}`,
+          order_id: orderId,
+          item_name: i.name,
+          quantity: i.qty,
+          unit_price: i.price,
+          line_total: i.price * i.qty,
+          menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null
+        }));
     orderItems.length = 0;
     orderItems.push(...otherItems, ...freshOrderItems);
 
-    showAdminToast(`Order #${formatDailyOrderNumber(order)} corrected and updated successfully! ✅`, 'success');
+    showAdminToast(`Order #${formatDailyOrderNumber(order)} amended and recorded in audit log! ✅`, 'success');
 
     if (shouldReprint) {
-      await printOrderReceiptWithTax(order, freshOrderItems);
+      await printOrderReceiptWithTax(order, freshOrderItems, { isReprint: true });
     }
 
     closeClosedOrderEditModal();
@@ -9683,75 +12865,95 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false) {
     renderBillingTotalBills();
     renderOverview();
     if (selectedOrderId) renderOrderDetail(selectedOrderId);
-  } catch(err) {
-    console.error('[Closed Order Save Error]', err);
-    showAdminToast('Failed to save order corrections: ' + err.message, 'error');
+    return { ok: true, data: rpcResult };
+  } catch (err) {
+    console.error('[Closed Order Amendment Error]', err);
+    showAdminToast('Failed to amend closed invoice: ' + (err.message || String(err)), 'error');
+    return { ok: false, error: err.message || String(err) };
   }
 }
 
-async function deleteUniversalOrder(orderId) {
+async function voidClosedOrder(orderId, providedReason = null, providedIdempotencyKey = null) {
   const order = orders.find(o => String(o.id) === String(orderId));
   if (!order) {
-    showAdminToast('Order not found or already deleted.', 'error');
-    return;
+    showAdminToast('Order not found.', 'error');
+    return { ok: false, error: 'ORDER_NOT_FOUND' };
   }
 
   const orderNum = formatDailyOrderNumber(order);
   const amountStr = Number(order.total_amount || 0).toFixed(2);
-  const confirmed = confirm(`Are you sure you want to permanently delete Order #${orderNum} (₹${amountStr})?\n\nThis will permanently remove the order and all associated items from the database. This action cannot be undone.`);
-  if (!confirmed) return;
+
+  // Prevent duplicate void unless replaying an idempotent request
+  if (isOrderVoided(order) && !providedIdempotencyKey) {
+    showAdminToast(`ORDER_ALREADY_VOIDED: Order #${orderNum} has already been voided.`, 'error');
+    return { ok: false, error: 'ORDER_ALREADY_VOIDED' };
+  }
+
+  let cleanReason = String(providedReason ?? ($('closed-edit-reason-input')?.value || '')).trim();
+  if (cleanReason.length < 3 && typeof prompt === 'function') {
+    const prompted = prompt(
+      `Enter mandatory financial audit reason to VOID Invoice #${orderNum} (₹${amountStr}) (minimum 3 characters):\n\nNote: Original invoice and payment history will be preserved for audit compliance.`
+    );
+    if (prompted === null) return { ok: false, cancelled: true };
+    cleanReason = String(prompted || '').trim();
+  }
+
+  if (cleanReason.length < 3) {
+    showAdminToast('REASON_REQUIRED: A recorded reason (minimum 3 characters) is required to void an invoice.', 'error');
+    return { ok: false, error: 'REASON_REQUIRED' };
+  }
 
   try {
-    // 1. Delete associated items from order_items
-    const { error: itemsErr } = await insforge.database.from('order_items').delete().eq('order_id', orderId);
-    if (itemsErr) console.warn('[Delete Order] Items delete warning:', itemsErr.message);
+    const idempotencyKey =
+      providedIdempotencyKey ||
+      order._voidIdempotencyKey ||
+      `void-${orderId}-${Date.now()}`;
+    order._voidIdempotencyKey = idempotencyKey;
 
-    // 2. Delete associated notifications
-    try {
-      await insforge.database.from('notifications').delete().eq('order_id', orderId);
-    } catch (ne) {}
+    // Route through server-side atomic void RPC (enforces manager role, preserves invoice & payment_history, records audit trail)
+    const { data: rpcResult, error: rpcError } = await insforge.database.rpc('void_closed_order_atomic', {
+      p_order_id: orderId,
+      p_reason: cleanReason,
+      p_idempotency_key: idempotencyKey
+    });
 
-    // 3. Delete order row from orders
-    const { error: orderErr } = await insforge.database.from('orders').delete().eq('id', orderId);
-    if (orderErr) throw orderErr;
+    if (rpcError) {
+      throw rpcError;
+    }
 
-    // 4. Update in-memory collections
-    const oIdx = orders.findIndex(o => String(o.id) === String(orderId));
-    if (oIdx !== -1) orders.splice(oIdx, 1);
+    // Preserve original invoice and its order_items in memory; mark as voided/refunded
+    order.payment_status = rpcResult?.payment_status || 'refunded';
+    order.ticket_status = rpcResult?.ticket_status || 'CLOSED';
+    order.notes = rpcResult?.notes || `${order.notes || ''} [VOIDED] [VOID_REASON: ${cleanReason}]`.trim();
 
-    const remainingItems = orderItems.filter(i => String(i.order_id) !== String(orderId));
-    orderItems.length = 0;
-    orderItems.push(...remainingItems);
-
-    const remainingNotifs = notifications.filter(n => String(n.order_id) !== String(orderId));
-    notifications.length = 0;
-    notifications.push(...remainingNotifs);
-
-    // 5. Close modal if currently editing this order
     if (String(closedEditingOrderId) === String(orderId)) {
       closeClosedOrderEditModal();
     }
 
-    showAdminToast(`Order #${orderNum} permanently deleted 🗑️`, 'success');
+    showAdminToast(`Invoice #${orderNum} voided and recorded in financial audit log 🚫`, 'success');
 
-    // 6. Refresh all views & summaries
     renderClosedOrdersPanel();
     renderOrdersTable();
     renderBillingQuickCards();
     renderBillingTotalBills();
     renderOverview();
     if (selectedOrderId === orderId) {
-      selectedOrderId = null;
-      renderOrderDetail(null);
-      switchPanel('orders');
+      renderOrderDetail(orderId);
     }
+    return { ok: true, data: rpcResult };
   } catch (err) {
-    console.error('[Delete Order Error]', err);
-    showAdminToast('Failed to delete order: ' + err.message, 'error');
+    console.error('[Void Closed Order Error]', err);
+    showAdminToast('Failed to void invoice: ' + (err.message || String(err)), 'error');
+    return { ok: false, error: err.message || String(err) };
   }
 }
 
-const deleteClosedOrder = deleteUniversalOrder;
+async function deleteUniversalOrder(orderId, providedReason = null, providedIdempotencyKey = null) {
+  return voidClosedOrder(orderId, providedReason, providedIdempotencyKey);
+}
+
+const deleteClosedOrder = voidClosedOrder;
+window.voidClosedOrder = voidClosedOrder;
 window.deleteUniversalOrder = deleteUniversalOrder;
 window.deleteClosedOrder = deleteClosedOrder;
 window.deleteOrder = deleteUniversalOrder;
@@ -10176,7 +13378,6 @@ function initClosedOrdersListeners() {
     if ($('closed-edit-add-qty')) $('closed-edit-add-qty').value = '1';
 
     renderClosedEditItems();
-    showAdminToast(`Added "${dish.name}" to order ✅`, 'success');
   });
 
   // Add Custom / Manual Dish
@@ -10216,7 +13417,6 @@ function initClosedOrdersListeners() {
     if ($('closed-edit-custom-qty')) $('closed-edit-custom-qty').value = '1';
 
     renderClosedEditItems();
-    showAdminToast(`Added custom dish "${name}" ✅`, 'success');
   });
 
   // Save & Delete Buttons
@@ -10236,74 +13436,132 @@ function initClosedOrdersListeners() {
   });
 }
 
-function renderAll() {
-  renderOverview();
-  renderOrdersTable();
-  renderOrderDetailPicker();
-  renderHoldOrdersPanel();
-  renderClosedOrdersPanel();
-  renderBillingQuickCards();
-  renderBillingTotalBills();
-  renderCustomers();
-  renderCustomerAnalysis();
-  renderBookingCalendar();
-  renderBookingsList();
-  initFoodsFilters();
-  renderFoods();
-  if (selectedOrderId) renderOrderDetail(selectedOrderId);
+function renderActivePanel(activePanelId) {
+  dirtyPanels.delete(activePanelId);
+  switch (activePanelId) {
+    case 'dashboard':
+      renderOverview();
+      break;
+    case 'orders':
+      renderOrdersTable();
+      renderBillingTotalBills();
+      break;
+    case 'order-detail':
+      renderOrderDetailPicker();
+      renderBillingQuickCards();
+      if (selectedOrderId) renderOrderDetail(selectedOrderId);
+      break;
+    case 'tables':
+      renderTablesPanel();
+      break;
+    case 'kitchen':
+      renderKitchenPanel();
+      break;
+    case 'hold-orders':
+      renderHoldOrdersPanel();
+      break;
+    case 'closed-orders':
+      renderClosedOrdersPanel();
+      break;
+    case 'customers':
+      renderCustomers();
+      break;
+    case 'customer-analysis':
+      renderCustomerAnalysis();
+      break;
+    case 'analytics':
+      renderAnalytics();
+      break;
+    case 'bookings':
+      renderBookingCalendar();
+      renderBookingsList();
+      break;
+    case 'foods':
+      initFoodsFilters();
+      renderFoods();
+      break;
+    default:
+      renderOverview();
+      break;
+  }
+}
 
-  const activePanel = document.querySelector('.adm-panel.active')?.id;
-  if (activePanel === 'panel-tables') renderTablesPanel();
-  if (activePanel === 'panel-kitchen') renderKitchenPanel();
-  updateKitchenBadges();
+function renderAll() {
+  updateSidebarBadges();
+
+  const activePanelId = getActivePanelId();
+  for (const panel of ALL_RENDERABLE_PANELS) {
+    if (panel !== activePanelId) {
+      dirtyPanels.add(panel);
+    }
+  }
+
+  renderActivePanel(activePanelId);
 }
 
 let isDashboardSyncing = false;
+let activeSyncPromise = null;
+let pendingDeltaRefresh = false;
+let pendingManualRefresh = false;
+let resetAdminPollingTimer = null;
 
 async function refreshDashboard(isManual = false) {
-  if (isDashboardSyncing) return;
   if (!isManual && typeof document !== 'undefined' && document.hidden) return;
 
-  isDashboardSyncing = true;
-  const syncIndicator = $('sync-indicator');
-  if (syncIndicator && isManual) {
-    show(syncIndicator);
-    syncIndicator.textContent = 'Syncing...';
-    syncIndicator.style.background = 'rgba(242,153,74,0.12)';
-    syncIndicator.style.color = '#f2994a';
-  }
-  
-  try {
-    await loadData(isManual);
-  } catch (err) {
-    console.error('Auto sync error:', err);
-    if (syncIndicator && isManual) {
-      syncIndicator.textContent = 'Sync Failed';
-      syncIndicator.style.background = 'rgba(255,91,91,0.12)';
-      syncIndicator.style.color = '#ff5b5b';
-    }
+  if (isDashboardSyncing) {
     if (isManual) {
-      alert('Failed to load remote data. Rendering local/cached view.');
+      pendingManualRefresh = true;
+    } else {
+      pendingDeltaRefresh = true;
+    }
+    return activeSyncPromise;
+  }
+
+  isDashboardSyncing = true;
+  if (typeof offlineSync !== 'undefined' && offlineSync.updateSyncIndicator) {
+    offlineSync.updateSyncIndicator();
+  }
+
+  activeSyncPromise = (async () => {
+    try {
+      if (typeof offlineSync !== 'undefined' && offlineSync.triggerSync && offlineSync.isOnline()) {
+        await offlineSync.triggerSync();
+      }
+      await loadData(isManual);
+    } catch (err) {
+      console.error('Auto sync error:', err);
+      if (isManual) {
+        alert('Failed to load remote data. Rendering local/cached view.');
+      }
+    }
+
+    try {
+      renderAll();
+    } catch (renderErr) {
+      console.error('renderAll error:', renderErr);
+    }
+
+    if (typeof offlineSync !== 'undefined' && offlineSync.updateSyncIndicator) {
+      offlineSync.updateSyncIndicator();
+    }
+  })();
+
+  try {
+    await activeSyncPromise;
+  } finally {
+    isDashboardSyncing = false;
+    activeSyncPromise = null;
+    if (typeof resetAdminPollingTimer === 'function') {
+      resetAdminPollingTimer();
     }
   }
 
-  try {
-    renderAll();
-  } catch (renderErr) {
-    console.error('renderAll error:', renderErr);
+  if (pendingManualRefresh || pendingDeltaRefresh) {
+    const runManual = pendingManualRefresh;
+    pendingManualRefresh = false;
+    pendingDeltaRefresh = false;
+    return await refreshDashboard(runManual);
   }
-    
-  if (syncIndicator && isManual && syncIndicator.textContent !== 'Sync Failed') {
-    syncIndicator.textContent = 'Synced';
-    syncIndicator.style.background = 'rgba(0,176,116,0.12)';
-    syncIndicator.style.color = 'var(--adm-green)';
-    setTimeout(() => {
-      if (syncIndicator.textContent === 'Synced') {
-        hide(syncIndicator);
-      }
-    }, 2000);
-  }
-  isDashboardSyncing = false;
 }
 
 // ── Auth flow ───────────────────────────────────────────
@@ -10428,6 +13686,43 @@ function initDashboardAuth() {
   $('logout-btn')?.addEventListener('click', doLogout);
   $('unauth-logout-btn')?.addEventListener('click', doLogout);
 }
+
+// ── Unified Sidebar Toggle (On / Off) ──────────────────────
+export function toggleSidebar(forceState) {
+  const dashboard = $('dashboard');
+  const sidebar = $('sidebar');
+  const overlay = $('sidebar-overlay');
+  if (!dashboard || !sidebar) return;
+
+  if (window.innerWidth >= 1024) {
+    // Desktop: Collapse / Expand sidebar
+    const isCurrentlyCollapsed = dashboard.classList.contains('sidebar-collapsed');
+    const shouldCollapse = (typeof forceState === 'boolean') ? forceState : !isCurrentlyCollapsed;
+
+    if (shouldCollapse) {
+      dashboard.classList.add('sidebar-collapsed');
+      localStorage.setItem('adm_sidebar_collapsed', 'true');
+      $('sidebar-toggle')?.setAttribute('title', 'Turn on sidebar (Ctrl+B)');
+      $('pos-sidebar-toggle-btn')?.setAttribute('title', 'Turn on sidebar (Ctrl+B)');
+    } else {
+      dashboard.classList.remove('sidebar-collapsed');
+      localStorage.setItem('adm_sidebar_collapsed', 'false');
+      $('sidebar-toggle')?.setAttribute('title', 'Turn off sidebar (Ctrl+B)');
+      $('pos-sidebar-toggle-btn')?.setAttribute('title', 'Turn off sidebar (Ctrl+B)');
+    }
+  } else {
+    // Mobile / Tablet: Open / Close sidebar drawer
+    const shouldOpen = (typeof forceState === 'boolean') ? forceState : !sidebar.classList.contains('open');
+    if (shouldOpen) {
+      sidebar.classList.add('open');
+      show(overlay);
+    } else {
+      sidebar.classList.remove('open');
+      hide(overlay);
+    }
+  }
+}
+window.toggleSidebar = toggleSidebar;
 
 function initDashboardUI() {
   document.querySelectorAll('.adm-nav-item[data-panel]').forEach(btn => {
@@ -10615,20 +13910,10 @@ function initDashboardUI() {
   $('order-detail-picker')?.addEventListener('change', e => {
     const id = e.target.value;
     if (id) {
-      selectedOrderId = id;
-      renderOrderDetail(id);
-      // Sync billing panel: show detail, hide POS creator
-      const posEl = $('billing-pos');
-      const detailEl = $('billing-detail-view');
-      if (posEl) posEl.style.display = 'none';
-      if (detailEl) detailEl.style.display = 'block';
-      show($('billing-print-btn'));
-      show($('billing-print-kot-btn'));
-      const bp = $('billing-order-picker');
-      if (bp) bp.value = id;
+      openOrderDetailDrawer(id);
     } else {
       selectedOrderId = null;
-      renderOrderDetail(null);
+      closeOrderDetailDrawer();
     }
   });
 
@@ -10639,42 +13924,6 @@ function initDashboardUI() {
     renderCustomers();
     renderCustomerAnalysis();
   });
-
-  // ── Unified Sidebar Toggle (On / Off) ──────────────────────
-  function toggleSidebar(forceState) {
-    const dashboard = $('dashboard');
-    const sidebar = $('sidebar');
-    const overlay = $('sidebar-overlay');
-    if (!dashboard || !sidebar) return;
-
-    if (window.innerWidth >= 1024) {
-      // Desktop: Collapse / Expand sidebar
-      const isCurrentlyCollapsed = dashboard.classList.contains('sidebar-collapsed');
-      const shouldCollapse = (typeof forceState === 'boolean') ? forceState : !isCurrentlyCollapsed;
-
-      if (shouldCollapse) {
-        dashboard.classList.add('sidebar-collapsed');
-        localStorage.setItem('adm_sidebar_collapsed', 'true');
-        $('sidebar-toggle')?.setAttribute('title', 'Turn on sidebar (Ctrl+B)');
-        $('pos-sidebar-toggle-btn')?.setAttribute('title', 'Turn on sidebar (Ctrl+B)');
-      } else {
-        dashboard.classList.remove('sidebar-collapsed');
-        localStorage.setItem('adm_sidebar_collapsed', 'false');
-        $('sidebar-toggle')?.setAttribute('title', 'Turn off sidebar (Ctrl+B)');
-        $('pos-sidebar-toggle-btn')?.setAttribute('title', 'Turn off sidebar (Ctrl+B)');
-      }
-    } else {
-      // Mobile / Tablet: Open / Close sidebar drawer
-      const shouldOpen = (typeof forceState === 'boolean') ? forceState : !sidebar.classList.contains('open');
-      if (shouldOpen) {
-        sidebar.classList.add('open');
-        show(overlay);
-      } else {
-        sidebar.classList.remove('open');
-        hide(overlay);
-      }
-    }
-  }
 
   // Restore saved desktop sidebar collapsed preference on load
   if (window.innerWidth >= 1024 && localStorage.getItem('adm_sidebar_collapsed') === 'true') {
@@ -10754,6 +14003,16 @@ function initDashboardUI() {
     lastUserActivityTime = Date.now();
   }
 
+  let realtimeDebounceTimer = null;
+
+  function scheduleRealtimeRefresh(delayMs = 120) {
+    if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
+    realtimeDebounceTimer = setTimeout(() => {
+      realtimeDebounceTimer = null;
+      refreshDashboard(false);
+    }, delayMs);
+  }
+
   function initAdminRealtime() {
     if (adminRealtimeSubscription) return;
     try {
@@ -10764,21 +14023,25 @@ function initDashboardUI() {
         .channel('limra-admin-realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
           console.log('[Realtime] Instant order event:', payload.eventType);
-          refreshDashboard(false);
+          scheduleRealtimeRefresh();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, (payload) => {
+          console.log('[Realtime] Instant order_items event:', payload.eventType);
+          scheduleRealtimeRefresh();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, (payload) => {
           console.log('[Realtime] Instant notification event:', payload.eventType);
-          refreshDashboard(false);
+          scheduleRealtimeRefresh();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, (payload) => {
           console.log('[Realtime] Instant booking event:', payload.eventType);
-          refreshDashboard(false);
+          scheduleRealtimeRefresh();
         })
         .subscribe((status) => {
           console.log('[Realtime] Admin live event stream status:', status);
           if (status === 'SUBSCRIBED') {
             // Reconcile committed database state upon initial connect or reconnect
-            refreshDashboard(false);
+            scheduleRealtimeRefresh(50);
           }
         });
     } catch (err) {
@@ -10813,6 +14076,7 @@ function initDashboardUI() {
       }, interval);
     }
 
+    resetAdminPollingTimer = scheduleNextPoll;
     scheduleNextPoll();
 
     // Immediate delta sync when returning to tab from background
@@ -10849,7 +14113,94 @@ function initDashboardUI() {
   initQuickBillAdjusterListeners();
   initTablesAndKitchenUI();
   initPrintQueueUI();
+  initOfflineSyncPOS();
   initSalesReportHub();
+}
+
+function initOfflineSyncPOS() {
+  if (typeof offlineSync === 'undefined' || !offlineSync) return;
+
+  offlineSync.initSyncIndicator('sync-indicator');
+
+  offlineSync.subscribe((event) => {
+    if (!event) return;
+
+    if (event.type === 'pos_order_synced') {
+      const { localId, serverOrder } = event;
+      if (serverOrder && serverOrder.id) {
+        const existingIdx = orders.findIndex(o => String(o.id) === String(localId));
+        if (existingIdx !== -1) {
+          const oldOrder = orders[existingIdx];
+          orders[existingIdx] = { ...oldOrder, ...serverOrder, _isOfflineQueued: false };
+          orderItems.forEach(i => {
+            if (String(i.order_id) === String(localId)) {
+              i.order_id = serverOrder.id;
+            }
+          });
+          persistOrdersCache();
+        }
+        showAdminToast(`Order #${serverOrder.order_number || serverOrder.id} synced to cloud`, 'success');
+        renderOrdersTable();
+        renderHoldOrdersPanel();
+        renderBillingQuickCards();
+        renderBillingTotalBills();
+        renderTablesPanel();
+      }
+    } else if (event.type === 'pos_settlement_confirmed') {
+      const { orderId, serverResult, paymentMethod } = event;
+      // Authoritative confirmation received! Mark order paid and closed in memory
+      const targetOrder = orders.find(o => String(o.id) === String(orderId));
+      if (targetOrder) {
+        targetOrder.payment_status = 'paid';
+        targetOrder.status = 'delivered';
+        targetOrder.ticket_status = 'CLOSED';
+        targetOrder._settlementPendingSync = false;
+        targetOrder.payment_method = paymentMethod || targetOrder.payment_method;
+        if (serverResult && serverResult.closed_at) {
+          targetOrder.closed_at = serverResult.closed_at;
+        }
+        persistOrdersCache();
+      }
+      if (targetOrder && targetOrder.table_number) {
+        const tableNum = String(targetOrder.table_number).trim();
+        const tbl = diningTables.find(t => String(t.number) === tableNum);
+        if (tbl && tbl.status === 'billed') {
+          tbl.status = 'available';
+          tbl.current_order_id = null;
+        }
+      }
+      showAdminToast(`Settlement confirmed by cloud for Order #${targetOrder?.order_number || orderId}`, 'success');
+      renderOrdersTable();
+      renderClosedOrdersPanel();
+      renderTablesPanel();
+      renderBillingQuickCards();
+      renderBillingTotalBills();
+    } else if (event.type === 'pos_bill_confirmed') {
+      const { orderId, serverOrder } = event;
+      const targetOrder = orders.find(o => String(o.id) === String(orderId));
+      if (targetOrder && serverOrder) {
+        Object.assign(targetOrder, serverOrder);
+        targetOrder._isOfflineQueued = false;
+        persistOrdersCache();
+      }
+      showAdminToast(`Bill confirmed on cloud for Order #${serverOrder?.order_number || orderId}`, 'info');
+      renderOrdersTable();
+      renderTablesPanel();
+      renderBillingTotalBills();
+    } else if (event.type === 'pos_order_updated') {
+      const { orderId, serverOrder } = event;
+      const targetOrder = orders.find(o => String(o.id) === String(orderId));
+      if (targetOrder && serverOrder) {
+        Object.assign(targetOrder, serverOrder);
+        targetOrder._isOfflineQueued = false;
+        persistOrdersCache();
+      }
+      showAdminToast(`Order #${serverOrder?.order_number || orderId} update synced`, 'success');
+      renderOrdersTable();
+    } else if (event.type === 'admin_mutation_conflict') {
+      showAdminToast(`Sync conflict on job ${event.jobId}: ${event.error}`, 'error');
+    }
+  });
 }
 
 // Ensure sales report hub is also initialized on DOM ready
@@ -10930,7 +14281,7 @@ function initPrintQueueUI() {
           statusBadge = '<span style="background:#fffbeb;color:#d97706;padding:2px 8px;border-radius:4px;font-weight:800;font-size:0.75rem;">Printing… ⏳</span>';
         }
 
-        const typeBadge = `<span style="padding:2px 6px;border-radius:4px;font-size:0.72rem;font-weight:800;${job.type === 'BILL' ? 'background:#e0f2fe;color:#0369a1;' : 'background:#ede9fe;color:#6d28d9;'}">${job.type}</span>`;
+        const typeBadge = `<span style="padding:2px 6px;border-radius:4px;font-size:0.75rem;font-weight:800;${job.type === 'BILL' ? 'background:#e0f2fe;color:#0369a1;' : 'background:#ede9fe;color:#6d28d9;'}">${job.type}</span>`;
         const timeStr = new Date(job.createdAt || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
         return `
@@ -11220,7 +14571,7 @@ function generateReceiptHtml(order) {
   ` : '';
 
   return `
-    <div style="width: 280px; font-family: monospace; font-size: 12px; color: #000; background: #fff; padding: 0; margin: 0 auto; box-sizing: border-box;">
+    <div style="width: 100%; max-width: 100%; font-family: monospace; font-size: 12px; color: #000; background: #fff; padding: 0; margin: 0; box-sizing: border-box;">
       <!-- Header -->
       <div style="text-align: center; margin-bottom: 12px;">
         <h2 style="margin: 0; font-size: 18px; font-weight: bold; letter-spacing: 1px;">LIMRA RESTAURANT</h2>
@@ -11302,7 +14653,7 @@ async function printOrderReceipt(order) {
     showAdminToast('No order selected to print.', 'error');
     return;
   }
-  await printOrderReceiptWithTax(order);
+  await printOrderReceiptWithTax(order, null, { isReprint: true });
 }
 
 // ── Coupons Management ──────────────────────────────────
@@ -11462,7 +14813,7 @@ function renderCouponsTable() {
                 <span style="font-size:1.1rem;">🏷️</span>
                 <strong style="font-family:monospace;font-size:1.15rem;letter-spacing:1px;color:#1e293b;">${c.code}</strong>
               </div>
-              <button type="button" class="btn-copy-coupon-code" data-code="${c.code}" style="background:#e0e7ff;color:#4338ca;border:none;border-radius:6px;font-size:.72rem;font-weight:700;padding:.25rem .55rem;cursor:pointer;" title="Copy Code">
+              <button type="button" class="btn-copy-coupon-code" data-code="${c.code}" style="background:#e0e7ff;color:#4338ca;border:none;border-radius:6px;font-size:0.75rem;font-weight:700;padding:.25rem .55rem;cursor:pointer;" title="Copy Code">
                 📋 Copy
               </button>
             </div>
@@ -11472,7 +14823,7 @@ function renderCouponsTable() {
               <span style="background:#dcfce7;color:#15803d;font-size:.9rem;font-weight:800;padding:.2rem .6rem;border-radius:6px;">
                 ${c.discount_pct}% OFF
               </span>
-              <span style="background:${isLive ? '#f0fdf4' : '#fee2e2'};color:${isLive ? '#166534' : '#b91c1c'};font-size:.72rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;">
+              <span style="background:${isLive ? '#f0fdf4' : '#fee2e2'};color:${isLive ? '#166534' : '#b91c1c'};font-size:0.75rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;">
                 ${isLive ? '● Live' : (isExpired ? '✕ Expired' : '✕ Paused')}
               </span>
             </div>
@@ -11961,11 +15312,11 @@ function renderCombosTable() {
                 : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:3.5rem;">🍿</div>`}
               
               <div style="position:absolute;top:8px;left:8px;display:flex;gap:4px;">
-                ${hasDiscount ? `<span style="background:#dc2626;color:#fff;font-size:.72rem;font-weight:800;padding:.15rem .5rem;border-radius:6px;">SAVE ${discountPct}% OFF</span>` : ''}
+                ${hasDiscount ? `<span style="background:#dc2626;color:#fff;font-size:0.75rem;font-weight:800;padding:.15rem .5rem;border-radius:6px;">SAVE ${discountPct}% OFF</span>` : ''}
               </div>
 
               <div style="position:absolute;top:8px;right:8px;">
-                <span style="background:${isAvailable ? '#10b981' : '#ef4444'};color:#fff;font-size:.7rem;font-weight:800;padding:.15rem .5rem;border-radius:6px;">
+                <span style="background:${isAvailable ? '#10b981' : '#ef4444'};color:#fff;font-size:0.75rem;font-weight:800;padding:.15rem .5rem;border-radius:6px;">
                   ${isAvailable ? 'In Stock' : 'Paused'}
                 </span>
               </div>
@@ -11978,10 +15329,10 @@ function renderCombosTable() {
               
               <!-- Included Items Chips -->
               <div style="margin-top:2px;">
-                <span style="font-size:.72rem;color:var(--adm-muted);font-weight:600;display:block;margin-bottom:3px;">Included Dishes:</span>
+                <span style="font-size:0.75rem;color:var(--adm-muted);font-weight:600;display:block;margin-bottom:3px;">Included Dishes:</span>
                 <div style="display:flex;gap:.3rem;flex-wrap:wrap;">
                   ${items.map(it => `
-                    <span style="background:#f1f5f9;color:#334155;padding:.15rem .45rem;border-radius:6px;font-size:.72rem;font-weight:600;">
+                    <span style="background:#f1f5f9;color:#334155;padding:.15rem .45rem;border-radius:6px;font-size:0.75rem;font-weight:600;">
                       ${it.qty > 1 ? `<strong style="color:#6366f1;">${it.qty}×</strong> ` : ''}${escapeHtml(it.name)}
                     </span>
                   `).join('')}
@@ -12003,10 +15354,10 @@ function renderCombosTable() {
                 </label>
 
                 <div style="display:flex;gap:.35rem;">
-                  <button type="button" class="adm-btn adm-btn-outline adm-btn-sm btn-edit-combo" data-id="${c.id}" style="font-size:.72rem;padding:.2rem .45rem;" title="Edit Combo">
+                  <button type="button" class="adm-btn adm-btn-outline adm-btn-sm btn-edit-combo" data-id="${c.id}" style="font-size:0.75rem;padding:.2rem .45rem;" title="Edit Combo">
                     ✏️ Edit
                   </button>
-                  <button type="button" class="adm-btn adm-btn-outline adm-btn-sm btn-delete-combo" data-id="${c.id}" style="font-size:.72rem;padding:.2rem .45rem;color:#ef4444;border-color:#fecaca;" title="Delete Combo">
+                  <button type="button" class="adm-btn adm-btn-outline adm-btn-sm btn-delete-combo" data-id="${c.id}" style="font-size:0.75rem;padding:.2rem .45rem;color:#ef4444;border-color:#fecaca;" title="Delete Combo">
                     🗑️
                   </button>
                 </div>
@@ -12054,7 +15405,7 @@ function renderCombosTable() {
             </td>
             <td>
               <strong style="color:#059669;font-size:.9rem;">₹${price.toFixed(2)}</strong>
-              ${hasDiscount ? `<span style="text-decoration:line-through;color:#9ca3af;font-size:.78rem;margin-left:4px;">₹${mrp.toFixed(2)}</span> <span style="background:#fee2e2;color:#b91c1c;font-size:.7rem;font-weight:700;padding:.1rem .35rem;border-radius:4px;">${discountPct}% off</span>` : ''}
+              ${hasDiscount ? `<span style="text-decoration:line-through;color:#9ca3af;font-size:.78rem;margin-left:4px;">₹${mrp.toFixed(2)}</span> <span style="background:#fee2e2;color:#b91c1c;font-size:0.75rem;font-weight:700;padding:.1rem .35rem;border-radius:4px;">${discountPct}% off</span>` : ''}
             </td>
             <td>
               <span style="background:${isAvailable ? '#f0fdf4' : '#fee2e2'};color:${isAvailable ? '#166534' : '#b91c1c'};font-size:.75rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;">
@@ -12700,8 +16051,9 @@ function setupCouponShareModalListeners() {
 let printerSettings = {
   id: 'default',
   printer_model: 'TVS RP3200 Plus',
-  active_printer_name: localStorage.getItem('qz-printer-name') || 'TVS RP3200 Plus',
+  active_printer_name: localStorage.getItem('qz-printer-name') || 'RP3200 plus(U) 1',
   connection_mode: localStorage.getItem('printer-connection-mode') || 'driver',
+  silent_print: true,
   
   // Sizing & Dimensions (mm)
   kot_paper_width: parseFloat(localStorage.getItem('qz-paper-size-kot') || '80'),
@@ -12742,6 +16094,7 @@ let printerSettings = {
   restaurant_fssai: localStorage.getItem('qz-bill-fssai') || '',
   cgst_rate: parseFloat(localStorage.getItem('qz-bill-cgst-rate') || '2.5'),
   sgst_rate: parseFloat(localStorage.getItem('qz-bill-sgst-rate') || '2.5'),
+  total_tables: parseInt(localStorage.getItem('qz-total-tables') || '19', 10),
   bill_upi_id: localStorage.getItem('qz-bill-upi-id') || '7501299357@YBL',
   bill_upi_payee_name: localStorage.getItem('qz-bill-upi-payee-name') || 'LIMRA RESTAURANT',
   bill_footer_message: localStorage.getItem('qz-bill-footer-msg') || 'Thank you for dining with us! Please visit again.',
@@ -12829,148 +16182,57 @@ async function generateReviewQrDataUrl(reviewUrl) {
 
 let _nativePrintLock = Promise.resolve();
 
-function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2) {
-  const printTask = () => new Promise((resolve) => {
-    const frameId = 'thermal-frame-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
-    const frame = document.createElement('iframe');
-    frame.id = frameId;
-    frame.name = frameId;
-    frame.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;visibility:hidden;';
-    document.body.appendChild(frame);
+function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2, extraPayload = {}) {
+  const pName = printerSettings.active_printer_name || 'RP3200 plus(U) 1';
 
-    const isA4 = String(widthMm) === 'A4';
-    const paperWidthCss = isA4 ? '210mm' : `${widthMm || 80}mm`;
-    const gap = typeof sideGapMm === 'number' ? sideGapMm : 2;
-    const printableWidthCss = isA4 ? '190mm' : `${Math.max(36, (parseFloat(widthMm) || 80) - (2 * gap))}mm`;
+  // 1. Electron Desktop POS — silent native IPC (Zero Dialog)
+  if (typeof window !== 'undefined' && window.electronPOS?.isDesktop && typeof window.electronPOS.printReceipt === 'function') {
+    return window.electronPOS.printReceipt({
+      html: receiptHtml,
+      escposText: extraPayload.escposText,
+      printerName: pName,
+      silent: printerSettings.silent_print !== false,
+      paperWidth: widthMm || 80,
+      sideGap: sideGapMm || 2
+    }).then(res => {
+      if (res && res.success) return true;
+      console.warn('[printViaNativeDriver] Electron reported print issue:', res?.error);
+      return false;
+    }).catch(err => {
+      console.warn('[printViaNativeDriver] Electron native print error:', err);
+      return false;
+    });
+  }
 
-    const docHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>Receipt Print</title>
-        <style>
-          @page {
-            size: ${paperWidthCss} auto;
-            margin: 0;
-          }
-          * {
-            box-sizing: border-box;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            color: #000 !important;
-            border-color: #000 !important;
-            text-shadow: none !important;
-          }
-          html, body {
-            margin: 0;
-            padding: 0;
-            width: ${paperWidthCss};
-            background: #fff;
-            color: #000;
-            font-family: 'Courier New', Courier, monospace, sans-serif;
-            font-size: 11.5px;
-            font-weight: 800;
-            line-height: 1.25;
-            -webkit-font-smoothing: antialiased;
-            text-rendering: geometricPrecision;
-          }
-          .thermal-print-wrapper {
-            width: ${printableWidthCss};
-            margin: 0 auto;
-            padding: 2mm ${gap}mm;
-            color: #000;
-          }
-          @media print {
-            .page-break-divider, .thermal-receipt-section.page-break-divider {
-              page-break-after: always !important;
-              break-after: page !important;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="thermal-print-wrapper">
-          ${receiptHtml}
-        </div>
-      </body>
-      </html>
-    `;
-
+  // 2. Direct Local Silent Print Service (/api/print-silent) — Zero Dialog, Direct Windows Spooler
+  const printTask = async () => {
     try {
-      const doc = frame.contentDocument || frame.contentWindow?.document;
-      if (doc) {
-        doc.open();
-        doc.write(docHtml);
-        doc.close();
-
-        let resolved = false;
-        const cleanup = (success = true) => {
-          if (resolved) return;
-          resolved = true;
-          setTimeout(() => {
-            try { frame.remove(); } catch (e) {}
-          }, 1500);
-          // 350ms cooldown so browser / driver spooler is completely clear before next job
-          setTimeout(() => resolve(success), 350);
-        };
-
-        // Attach listeners for when print dialog completes/closes
-        try {
-          if (frame.contentWindow) {
-            frame.contentWindow.onafterprint = () => cleanup(true);
-          }
-        } catch (e) {}
-
-        const onWindowFocus = () => {
-          setTimeout(() => cleanup(true), 250);
-        };
-        window.addEventListener('focus', onWindowFocus, { once: true });
-
-        // Safety fallback timer if onafterprint doesn't fire (e.g. silent/kiosk printing)
-        const safetyTimer = setTimeout(() => {
-          window.removeEventListener('focus', onWindowFocus);
-          cleanup(true);
-        }, 8000);
-
-        setTimeout(() => {
-          try {
-            frame.contentWindow?.focus();
-            frame.contentWindow?.print();
-          } catch (err) {
-            console.warn('[Native Driver Print] Frame print error:', err);
-            clearTimeout(safetyTimer);
-            window.removeEventListener('focus', onWindowFocus);
-            cleanup(false);
-          }
-        }, 120);
-      } else {
-        const printWin = window.open('', '_blank', 'width=400,height=600');
-        if (printWin) {
-          printWin.document.open();
-          printWin.document.write(docHtml);
-          printWin.document.close();
-          setTimeout(() => {
-            try {
-              printWin.focus();
-              printWin.print();
-              printWin.close();
-              resolve(true);
-            } catch (err) {
-              resolve(false);
-            }
-          }, 120);
-        } else {
-          try { frame.remove(); } catch (e) {}
-          resolve(false);
+      const res = await fetch('/api/print-silent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          html: receiptHtml,
+          escposText: extraPayload.escposText,
+          printerName: pName,
+          paperWidth: widthMm || 80
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          console.log(`[printViaNativeDriver] Direct Silent Print sent to ${data.deviceName || pName} ✓ (Zero Dialog)`);
+          return true;
         }
       }
-    } catch (e) {
-      console.error('[Native Driver Print] Error:', e);
-      try { frame.remove(); } catch (err) {}
-      resolve(false);
+    } catch (err) {
+      console.warn('[printViaNativeDriver] Local silent print backend unavailable:', err.message);
     }
-  });
+
+    // STRICT ZERO-POPUP REQUIREMENT:
+    // Under NO circumstance should window.print() or iframe.contentWindow.print() ever be called!
+    console.warn('[printViaNativeDriver] Thermal printer bridge unavailable on this client.');
+    return false;
+  };
 
   _nativePrintLock = _nativePrintLock.then(printTask, printTask);
   return _nativePrintLock;
@@ -13138,6 +16400,90 @@ async function loadPrinterSettingsFromDB() {
     }
   } catch (err) {
     console.warn('[Printer] Load from DB error (using cache):', err);
+  } finally {
+    await initDesktopHardwarePrinter();
+    syncPrinterSettingsToUI();
+    try { await renderThermalLivePreview(); } catch (e) {}
+  }
+}
+
+async function initDesktopHardwarePrinter() {
+  if (typeof window === 'undefined' || !window.electronPOS?.isDesktop) return;
+
+  try {
+    let printers = [];
+    if (typeof window.electronPOS.getPrinters === 'function') {
+      printers = await window.electronPOS.getPrinters();
+    }
+    console.log('[Limra POS Desktop] Installed Windows printers:', printers);
+
+    if (Array.isArray(printers) && printers.length > 0) {
+      // Find matching installed printer
+      const current = (printerSettings.active_printer_name || '').trim().toLowerCase();
+      let matched = current ? printers.find(p => p.name.toLowerCase() === current) : null;
+      if (!matched && current) {
+        const norm = current.replace(/[^a-z0-9]/g, '');
+        matched = printers.find(p => {
+          const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return pNorm.includes(norm) || norm.includes(pNorm);
+        });
+      }
+      if (!matched) {
+        matched = printers.find(p => /rp\s*3200|tvs|pos-?80|thermal|receipt/i.test(p.name));
+      }
+      if (!matched) {
+        matched = printers.find(p => p.isDefault);
+      }
+      if (!matched) {
+        matched = printers[0];
+      }
+
+      if (matched && matched.name) {
+        printerSettings.active_printer_name = matched.name;
+        printerSettings.direct_print_enabled = true;
+        printerSettings.auto_print_on_settle = true;
+        printerSettings.silent_print = true;
+        try {
+          localStorage.setItem('qz-printer-name', matched.name);
+          localStorage.setItem('printer-direct-print-enabled', 'true');
+          localStorage.setItem('printer-auto-settle', 'true');
+        } catch (e) {}
+        console.log(`[Limra POS Desktop] Calibrated active thermal printer: "${matched.name}" (Default: ${Boolean(matched.isDefault)})`);
+      }
+
+      updateDesktopPrinterSelectUI(printers, matched?.name || printerSettings.active_printer_name);
+    }
+  } catch (err) {
+    console.warn('[Limra POS Desktop] Failed to calibrate desktop thermal printer:', err);
+  }
+}
+
+function updateDesktopPrinterSelectUI(printers = [], activeName = '') {
+  const sel = document.getElementById('desktop-printer-select') || document.getElementById('printer-list-select');
+  if (!sel) return;
+
+  sel.innerHTML = '';
+  printers.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    const isDef = p.isDefault ? ' (Default)' : '';
+    opt.textContent = `🖨️ ${p.name}${isDef}`;
+    if (activeName && p.name.toLowerCase() === activeName.toLowerCase()) {
+      opt.selected = true;
+    }
+    sel.appendChild(opt);
+  });
+
+  const badge = document.getElementById('printer-studio-status-badge');
+  if (badge) {
+    badge.textContent = `🟢 TVS RP3200 Ready (${activeName || 'Auto-Detected'})`;
+    badge.style.background = '#ecfdf5';
+    badge.style.color = '#059669';
+  }
+
+  const msg = document.getElementById('printer-panel-status-msg');
+  if (msg) {
+    msg.textContent = `Direct Silent Driver Active (${activeName || 'TVS 3200'}) · Zero Dialog · 80mm Roll (72mm Printable)`;
   }
 }
 
@@ -13281,6 +16627,8 @@ function syncPrinterSettingsToUI() {
   if (bGstin) bGstin.value = printerSettings.restaurant_gstin || '';
   const bFssai = document.getElementById('bill-fssai');
   if (bFssai) bFssai.value = printerSettings.restaurant_fssai || '';
+  const bTotalTables = document.getElementById('bill-total-tables');
+  if (bTotalTables) bTotalTables.value = printerSettings.total_tables || 19;
   const bCgst = document.getElementById('bill-cgst-rate');
   if (bCgst) bCgst.value = printerSettings.cgst_rate ?? 2.5;
   const bSgst = document.getElementById('bill-sgst-rate');
@@ -13306,11 +16654,20 @@ function syncPrinterSettingsToUI() {
   const chkDirectPrint = document.getElementById('printer-direct-print-toggle');
   if (chkDirectPrint) chkDirectPrint.checked = printerSettings.direct_print_enabled !== false;
 
+  const desktopPrinterSel = document.getElementById('desktop-printer-select');
+  if (desktopPrinterSel && printerSettings.active_printer_name) {
+    desktopPrinterSel.value = printerSettings.active_printer_name;
+  }
+
   updatePresetButtonsUI();
   updatePrinterPanelStatus();
 }
 
 function readPrinterSettingsFromUI() {
+  const desktopPrinterSel = document.getElementById('desktop-printer-select');
+  if (desktopPrinterSel && desktopPrinterSel.value) {
+    printerSettings.active_printer_name = desktopPrinterSel.value;
+  }
   printerSettings.printer_model = document.getElementById('printer-model-select')?.value || 'TVS RP3200 Plus';
   printerSettings.connection_mode = document.getElementById('printer-connection-mode')?.value || 'driver';
   printerSettings.kot_paper_width = parseFloat(document.getElementById('kot-custom-width')?.value || '80');
@@ -13366,6 +16723,10 @@ function readPrinterSettingsFromUI() {
   printerSettings.restaurant_address = document.getElementById('bill-address')?.value?.trim() || '';
   printerSettings.restaurant_gstin = document.getElementById('bill-gstin')?.value?.trim() || '';
   printerSettings.restaurant_fssai = document.getElementById('bill-fssai')?.value?.trim() || '';
+  if (document.getElementById('bill-total-tables')) {
+    const tVal = parseInt(document.getElementById('bill-total-tables').value, 10);
+    printerSettings.total_tables = (!isNaN(tVal) && tVal > 0) ? tVal : 19;
+  }
   printerSettings.cgst_rate = parseFloat(document.getElementById('bill-cgst-rate')?.value || '2.5');
   printerSettings.sgst_rate = parseFloat(document.getElementById('bill-sgst-rate')?.value || '2.5');
   printerSettings.bill_upi_id = document.getElementById('bill-upi-id')?.value?.trim() || '';
@@ -13415,6 +16776,7 @@ async function savePrinterSettingsToDB() {
   localStorage.setItem('qz-bill-phone', printerSettings.restaurant_phone || '+91 99999 88888');
   localStorage.setItem('qz-bill-gstin', printerSettings.restaurant_gstin || '');
   localStorage.setItem('qz-bill-fssai', printerSettings.restaurant_fssai || '');
+  localStorage.setItem('qz-total-tables', String(printerSettings.total_tables || 19));
   localStorage.setItem('qz-bill-cgst-rate', String(printerSettings.cgst_rate ?? 2.5));
   localStorage.setItem('qz-bill-sgst-rate', String(printerSettings.sgst_rate ?? 2.5));
   localStorage.setItem('qz-bill-upi-id', printerSettings.bill_upi_id || '');
@@ -13610,9 +16972,9 @@ async function generateBillPreviewHtml(order, items) {
   const p = printerSettings;
   const fontSizeNum = parseFloat(p.bill_font_size ?? 11.5) || 11.5;
   const fontSizePx = `${fontSizeNum}px`;
-  const headerFontSize = `${Math.max(13, fontSizeNum + 3.5)}px`;
-  const subFontSize = `${Math.max(9.5, fontSizeNum - 1)}px`;
-  const totalFontSize = `${Math.max(13, fontSizeNum + 2.5)}px`;
+  const headerFontSize = `${Math.max(15, fontSizeNum + 3.5)}px`;
+  const subFontSize = `${Math.max(9.5, fontSizeNum - 1.5)}px`;
+  const totalFontSize = `${Math.max(14.5, fontSizeNum + 3)}px`;
 
   const fontWeight = p.bill_font_weight || '800';
   const boldItems = p.bill_bold_items !== false;
@@ -13623,12 +16985,9 @@ async function generateBillPreviewHtml(order, items) {
   const density = p.bill_density || 'compact';
   const isUltraCompact = density === 'ultra-compact';
   const isCompact = density === 'compact' || isUltraCompact;
-  const lineSpacing = isUltraCompact ? '1.15' : (isCompact ? '1.25' : '1.35');
-  const rowPadding = isUltraCompact ? '1px 1px' : (isCompact ? '2px 1px' : '3px 2px');
-  const sepMargin = isUltraCompact ? '2px 0' : (isCompact ? '3px 0' : '4px 0');
+  const lineSpacing = isUltraCompact ? '1.18' : (isCompact ? '1.25' : '1.35');
+  const rowPadding = isUltraCompact ? '1.5px 0' : (isCompact ? '2.5px 0' : '3.5px 0');
 
-  const sep = `<div style="border-top:1px dashed #000;margin:${sepMargin};"></div>`;
-  
   // Filter out any non-food items
   const foodItems = items.filter(i => !/delivery|discount|tax|fee/i.test(i.item_name || i.name || ''));
   const subtotal = foodItems.reduce((s, i) => s + (i.price * i.qty), 0);
@@ -13642,22 +17001,22 @@ async function generateBillPreviewHtml(order, items) {
   const unroundedTotal = taxable + cgst + sgst;
   const grandTotal = Math.floor(unroundedTotal);
   const roundOff = Math.round((grandTotal - unroundedTotal) * 100) / 100;
-  const timeStr = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
+  const timeStr = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
 
   const rows = foodItems.map(i => `
-    <tr style="border-bottom:1px dashed #000;">
-      <td style="padding:${rowPadding};font-size:${fontSizePx};font-weight:${boldItems ? '800' : '700'};color:#000;">${escapeHtml(i.name || i.item_name)}</td>
-      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:center;font-weight:900;color:#000;">${i.qty || i.quantity}</td>
-      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:700;color:#000;">₹${Number(i.price || i.unit_price).toFixed(0)}</td>
-      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:900;color:#000;">₹${Number((i.price || i.unit_price)*(i.qty || i.quantity)).toFixed(2)}</td>
+    <tr style="border-bottom:none;">
+      <td style="padding:${rowPadding};font-size:${fontSizePx};font-weight:${boldItems ? '800' : '700'};color:#000;text-align:left;vertical-align:top;width:52%;">${escapeHtml(i.name || i.item_name)}</td>
+      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:center;font-weight:900;color:#000;vertical-align:top;width:12%;">${i.qty || i.quantity}</td>
+      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;padding-right:4px;font-weight:700;color:#000;vertical-align:top;width:16%;font-variant-numeric:tabular-nums;">₹${Number(i.price || i.unit_price).toFixed(0)}</td>
+      <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:900;color:#000;vertical-align:top;width:20%;font-variant-numeric:tabular-nums;">₹${Number((i.price || i.unit_price)*(i.qty || i.quantity)).toFixed(2)}</td>
     </tr>
   `).join('');
 
-  const feedLines = Math.max(1, p.bill_bottom_feed ? Math.min(4, p.bill_bottom_feed) : 2);
+  const feedLines = Math.max(1, p.bill_bottom_feed ? Math.min(3, p.bill_bottom_feed) : 2);
   const feedSpaces = '<br/>'.repeat(feedLines);
 
   const qrSize = p.bill_qr_size || 'medium';
-  const qrDimension = qrSize === 'small' ? '60px' : (qrSize === 'large' ? '110px' : '80px');
+  const qrDimension = qrSize === 'small' ? '70px' : (qrSize === 'large' ? '100px' : '85px');
   const showQr = qrSize !== 'none' && Boolean(p.bill_upi_id);
   const qrDataUrl = showQr ? await generateUpiQrDataUrl(p.bill_upi_id, p.bill_upi_payee_name || p.restaurant_name, grandTotal, formatDailyOrderNumber(order)) : '';
 
@@ -13665,45 +17024,49 @@ async function generateBillPreviewHtml(order, items) {
   const reviewQrDataUrl = showReviewQr ? await generateReviewQrDataUrl(p.bill_review_url) : '';
 
   return `
-    <div style="text-align:center;font-family:'Courier New',Courier,monospace,sans-serif;font-size:${fontSizePx};font-weight:${fontWeight};color:#000;line-height:${lineSpacing};">
-      ${p.bill_show_logo && p.bill_logo_url ? `
-        <div style="margin-bottom:2px;text-align:center;">
-          <img src="${p.bill_logo_url}" alt="Logo" style="max-height:38px;max-width:120px;margin:0 auto;display:block;filter:grayscale(100%) contrast(200%);" />
+    <div style="width:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:${fontSizePx};font-weight:${fontWeight};color:#000;line-height:${lineSpacing};box-sizing:border-box;">
+      ${p.bill_show_logo !== false ? `
+        <div style="margin-bottom:3px;text-align:center;">
+          <img src="${(p.bill_logo_url && !p.bill_logo_url.startsWith('/images/logo.png')) ? p.bill_logo_url : (LIMRA_LOGO_BASE64 || p.bill_logo_url || '/images/logo.png')}" alt="Logo" style="max-height:54px;max-width:160px;margin:0 auto;display:block;filter:grayscale(100%) contrast(200%);" />
         </div>
       ` : ''}
-      <div style="font-size:${headerFontSize};font-weight:900;letter-spacing:.5px;text-transform:uppercase;color:#000;">${escapeHtml(p.restaurant_name)}</div>
-      ${!compactHeader && p.restaurant_address ? `<div style="font-size:${subFontSize};font-weight:700;color:#000;">${escapeHtml(p.restaurant_address)}</div>` : ''}
-      <div style="font-size:${subFontSize};font-weight:700;color:#000;">
+      <div style="font-size:${headerFontSize};font-weight:900;letter-spacing:.5px;text-transform:uppercase;color:#000;text-align:center;">${escapeHtml(p.restaurant_name)}</div>
+      ${!compactHeader && p.restaurant_address ? `<div style="font-size:${subFontSize};font-weight:700;color:#000;text-align:center;margin-top:1px;">${escapeHtml(p.restaurant_address)}</div>` : ''}
+      <div style="font-size:${subFontSize};font-weight:700;color:#000;text-align:center;margin-top:1px;">
         ${p.restaurant_phone ? `Tel: ${escapeHtml(p.restaurant_phone)} ` : ''}
         ${!compactHeader && p.restaurant_gstin ? `| GSTIN: ${escapeHtml(p.restaurant_gstin)} ` : ''}
         ${!compactHeader && p.restaurant_fssai ? `| FSSAI: ${escapeHtml(p.restaurant_fssai)}` : ''}
       </div>
       
       <!-- Table / Delivery Invoice Title -->
-      <div style="font-size:${subFontSize};font-weight:900;margin-top:2px;padding:2px 0;border-top:1.5px solid #000;border-bottom:1.5px solid #000;letter-spacing:.3px;color:#000;">
-        TAX INVOICE — HOME DELIVERY
+      <div style="font-size:${subFontSize};font-weight:900;margin-top:4px;padding:2.5px 0;border-top:1.5px solid #000;border-bottom:1.5px solid #000;letter-spacing:.3px;color:#000;text-align:center;">
+        TAX INVOICE — TABLE 4
       </div>
-      <div style="font-size:${subFontSize};font-weight:700;line-height:1.3;margin-top:3px;color:#000;">
-        <div><strong>Bill #:</strong> ${formatDailyOrderNumber(order)} | <strong>Date:</strong> ${timeStr}</div>
-        <div><strong>Customer:</strong> ${escapeHtml(order.customer_name)} (${order.customer_phone})</div>
+      <div style="font-size:${subFontSize};font-weight:700;line-height:1.35;margin:4px 0;border-bottom:1px dashed #000;padding-bottom:3px;color:#000;">
+        <div style="display:flex;justify-content:space-between;">
+          <span><strong>Bill #:</strong> ${formatDailyOrderNumber(order)}</span>
+          <span><strong>Date:</strong> ${timeStr}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span><strong>Cust:</strong> ${escapeHtml(order.customer_name)}</span>
+          <span><strong>Phone:</strong> ${order.customer_phone}</span>
+        </div>
       </div>
 
-      ${sep}
-      <table style="width:100%;border-collapse:collapse;color:#000;">
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed;border-bottom:1.5px solid #000;margin-bottom:3px;color:#000;">
         <thead>
           <tr style="border-top:1.5px solid #000;border-bottom:1.5px solid #000;">
-            <th style="text-align:left;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};color:#000;">Item</th>
-            <th style="text-align:center;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};width:25px;color:#000;">Qty</th>
-            <th style="text-align:right;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};width:40px;color:#000;">Rate</th>
-            <th style="text-align:right;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};width:48px;color:#000;">Amt</th>
+            <th style="text-align:left;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};width:52%;color:#000;vertical-align:top;">Item</th>
+            <th style="text-align:center;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};width:12%;color:#000;vertical-align:top;">Qty</th>
+            <th style="text-align:right;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};width:16%;padding-right:4px;color:#000;vertical-align:top;">Rate</th>
+            <th style="text-align:right;font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};width:20%;color:#000;vertical-align:top;">Amt</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
-      ${sep}
 
       <div style="font-size:${fontSizePx};line-height:${lineSpacing};color:#000;">
-        <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Items Subtotal:</span><span>₹${subtotal.toFixed(2)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Subtotal:</span><span>₹${subtotal.toFixed(2)}</span></div>
         ${discountAmt > 0 ? `
           <div style="display:flex;justify-content:space-between;font-weight:700;color:#000;"><span>Discount (${discountPct}%):</span><span>-₹${discountAmt.toFixed(2)}</span></div>
           <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Net Taxable:</span><span>₹${taxable.toFixed(2)}</span></div>
@@ -13713,42 +17076,40 @@ async function generateBillPreviewHtml(order, items) {
         ${roundOff !== 0 ? `
           <div style="display:flex;justify-content:space-between;font-weight:700;color:#000;"><span>Round Off:</span><span>${roundOff < 0 ? '-' : '+'}₹${Math.abs(roundOff).toFixed(2)}</span></div>
         ` : ''}
-        <div style="display:flex;justify-content:space-between;font-weight:${boldTotals ? '900' : '800'};font-size:${totalFontSize};border-top:1.5px solid #000;border-bottom:1.5px solid #000;margin-top:2px;padding:3px 0;color:#000;">
+        <div style="display:flex;justify-content:space-between;font-weight:${boldTotals ? '900' : '800'};font-size:${totalFontSize};border-top:1.5px solid #000;border-bottom:3px double #000;margin-top:2px;padding:3.5px 0;color:#000;">
           <span>GRAND TOTAL:</span><span>${formatBillAmount(grandTotal)}</span>
         </div>
       </div>
 
+      <div style="border-bottom:1px dashed #000;margin-bottom:3px;padding-bottom:2px;font-size:${subFontSize};font-weight:800;display:flex;justify-content:space-between;color:#000;">
+        <span><strong>Pay:</strong> CASH</span>
+        <span><strong>Status:</strong> PAID</span>
+      </div>
+
       ${showQr && qrDataUrl ? `
-        ${sep}
-        <div style="text-align:center;padding:2px 0;color:#000;">
-          <div style="font-size:${subFontSize};font-weight:900;letter-spacing:.5px;">📱 SCAN &amp; PAY VIA UPI</div>
-          <div style="font-size:${subFontSize};font-weight:700;margin:1px 0 2px 0;">Amount: <strong>${formatBillAmount(grandTotal)}</strong></div>
-          <img src="${qrDataUrl}" alt="UPI QR" style="width:${qrDimension};height:${qrDimension};margin:2px auto;display:block;image-rendering:pixelated;" />
-          <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">UPI: <strong>${escapeHtml(p.bill_upi_id)}</strong></div>
+        <div style="text-align:center;margin-top:4px;padding-top:2px;color:#000;">
+          <div style="font-size:${subFontSize};font-weight:900;letter-spacing:.3px;">SCAN &amp; PAY VIA UPI</div>
+          <img src="${qrDataUrl}" alt="UPI QR" style="width:${qrDimension};height:${qrDimension};margin:3px auto;display:block;image-rendering:pixelated;" />
+          <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">UPI: <strong>${escapeHtml(p.bill_upi_id)}</strong> (${formatBillAmount(grandTotal)})</div>
         </div>
       ` : ''}
 
-      <!-- GOOGLE 5-STAR REVIEW QR (NO SECOND ACTION REQUIRED) -->
+      <!-- GOOGLE 5-STAR REVIEW QR -->
       ${showReviewQr && reviewQrDataUrl ? `
-        ${sep}
-        <div style="text-align:center;padding:2px 0;color:#000;">
-          <div style="font-size:${subFontSize};font-weight:900;letter-spacing:.3px;">⭐ ${escapeHtml(p.bill_review_heading || 'LOVE YOUR EXPERIENCE?')} ⭐</div>
-          <div style="font-size:12px;letter-spacing:2px;margin:1px 0;">⭐⭐⭐⭐⭐</div>
-          <img src="${reviewQrDataUrl}" alt="Google Review QR" style="width:${qrDimension};height:${qrDimension};margin:2px auto;display:block;image-rendering:pixelated;" />
+        <div style="text-align:center;margin-top:5px;padding-top:3px;border-top:1px dashed #000;color:#000;">
+          <div style="font-size:${subFontSize};font-weight:900;letter-spacing:.3px;">${escapeHtml(p.bill_review_heading || 'LOVE YOUR EXPERIENCE?')}</div>
+          <div style="font-size:13px;letter-spacing:2px;margin:1px 0;color:#000;">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+          <img src="${reviewQrDataUrl}" alt="Google Review QR" style="width:${qrDimension};height:${qrDimension};margin:3px auto;display:block;image-rendering:pixelated;" />
           <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">${escapeHtml(p.bill_review_subtext || 'Scan to leave us a Google Review')}</div>
         </div>
       ` : ''}
 
-      ${sep}
-      <div style="text-align:center;font-size:${subFontSize};line-height:1.3;color:#000;">
-        <div style="font-weight:900;">${escapeHtml(p.bill_footer_message)}</div>
+      <div style="text-align:center;border-top:1px dashed #000;padding-top:3px;margin-top:3px;font-size:${subFontSize};line-height:1.3;color:#000;">
+        <div style="font-weight:900;">${escapeHtml(p.bill_footer_message || 'Thank you for dining with us! Please visit again.')}</div>
         <div style="font-weight:700;margin-top:1px;">${escapeHtml(p.restaurant_name)}</div>
       </div>
 
       ${feedSpaces}
-      <div style="border-top:1px dashed #000;margin-top:4px;padding-top:2px;font-size:8.5px;color:#000;font-weight:700;text-align:center;">
-        ✂ - - - - ${p.bill_auto_cut === 'full' ? 'Full Cut' : 'Partial Cut'} - - - - ✂
-      </div>
     </div>
   `;
 }
@@ -14029,6 +17390,11 @@ async function initPrinterPanel() {
   bindLiveInput('bill-address', () => { printerSettings.restaurant_address = document.getElementById('bill-address').value; });
   bindLiveInput('bill-gstin', () => { printerSettings.restaurant_gstin = document.getElementById('bill-gstin').value; });
   bindLiveInput('bill-fssai', () => { printerSettings.restaurant_fssai = document.getElementById('bill-fssai').value; });
+  bindLiveInput('bill-total-tables', () => {
+    const tVal = parseInt(document.getElementById('bill-total-tables').value, 10);
+    printerSettings.total_tables = (!isNaN(tVal) && tVal > 0) ? tVal : 19;
+    renderTablesPanel();
+  });
   bindLiveInput('bill-cgst-rate', () => { printerSettings.cgst_rate = parseFloat(document.getElementById('bill-cgst-rate').value || '2.5'); });
   bindLiveInput('bill-sgst-rate', () => { printerSettings.sgst_rate = parseFloat(document.getElementById('bill-sgst-rate').value || '2.5'); });
   bindLiveInput('bill-upi-id', () => { printerSettings.bill_upi_id = document.getElementById('bill-upi-id').value; });
@@ -14088,46 +17454,82 @@ async function initPrinterPanel() {
   // Save to Database Button
   document.getElementById('printer-save-db-btn')?.addEventListener('click', savePrinterSettingsToDB);
 
-  // Test Print Hardware Button
+  // Desktop Target Printer Dropdown change
+  document.getElementById('desktop-printer-select')?.addEventListener('change', (e) => {
+    printerSettings.active_printer_name = e.target.value;
+    try {
+      localStorage.setItem('qz-printer-name', e.target.value);
+    } catch (err) {}
+    showAdminToast(`Target printer set to "${e.target.value}"`, 'info');
+  });
+
+  // Test Print Silent KOT Button
+  document.getElementById('printer-test-kot-btn')?.addEventListener('click', async () => {
+    const mockOrder = {
+      id: 'test-kot-' + Date.now(),
+      order_number: 'TEST-01',
+      daily_order_number: 1,
+      order_type: 'table',
+      table_number: 5,
+      notes: '[TEST TICKET] Zero Dialog Silent KOT',
+      customer_name: 'Test Cashier'
+    };
+    const mockItems = [
+      { name: 'Special Chicken Biryani', qty: 2, price: 180, notes: 'Spicy, Extra Raita' },
+      { name: 'Mutton Kebab Roll', qty: 1, price: 120, notes: 'No Onion' }
+    ];
+    await printKOT(mockOrder, mockItems, { isReprint: true, roundNumber: 1 });
+    showAdminToast('Test KOT sent silently to Kitchen Printer! 👨‍🍳', 'success');
+  });
+
+  // Test Print Silent Hardware Bill Button
   document.getElementById('printer-test-hardware-btn')?.addEventListener('click', async () => {
-    const ps = printerSettings.bill_paper_width || 80;
-    const html = `<div style="text-align:center;padding:4px 0;"><div style="font-size:16px;font-weight:900;">${escapeHtml(printerSettings.restaurant_name)}</div><div style="font-size:10px;margin-top:2px;">TVS RP3200 Plus Driver Test</div><div style="border-top:1px dashed #000;margin:6px 0;"></div><div style="font-size:11px;text-align:left;line-height:1.5;"><div>Method: <strong>${printerSettings.connection_mode === 'driver' ? 'Windows TVS Driver (Direct)' : 'QZ Tray'}</strong></div><div>Paper Roll: <strong>${ps} mm</strong></div><div>Date: <strong>${new Date().toLocaleString('en-IN')}</strong></div></div><div style="border-top:1px dashed #000;margin:6px 0;"></div><div style="font-weight:bold;">Printer Connected & Calibrated! ✅</div><br/><br/></div>`;
-
-    if (printerSettings.connection_mode === 'qz_tray' && qzConnected && activePrinter) {
-      try {
-        const wPx = ps === 'A4' ? 595 : Math.round(parseInt(ps) * 2.835);
-        const doc = `<div style="width:${wPx}px;font-family:monospace;font-size:12px;color:#000;padding:0 8px;margin:0 auto;">${html}</div>`;
-        await qz.print(qz.configs.create(activePrinter), [{ type: 'pixel', format: 'html', flavor: 'plain', data: doc }]);
-        showAdminToast('Test print sent via QZ Tray! ✅', 'success');
-        return;
-      } catch(e) { console.warn('QZ print failed, trying driver print:', e); }
-    }
-
-    // Default: Native Driver
-    await printViaNativeDriver(html, ps);
-    showAdminToast('Test receipt sent to TVS RP3200 Plus Driver! ✅', 'success');
+    const mockOrder = {
+      id: 'test-bill-' + Date.now(),
+      order_number: 'TEST-01',
+      daily_order_number: 1,
+      order_type: 'table',
+      table_number: 5,
+      payment_status: 'paid',
+      ticket_status: 'CLOSED',
+      payment_method: 'cash',
+      total_amount: 480,
+      subtotal_amount: 457.14,
+      taxable_amount: 457.14,
+      cgst_amount: 11.43,
+      sgst_amount: 11.43,
+      created_at: new Date().toISOString()
+    };
+    const mockItems = [
+      { name: 'Special Chicken Biryani', qty: 2, unit_price: 180, price: 180, line_total: 360 },
+      { name: 'Mutton Kebab Roll', qty: 1, unit_price: 120, price: 120, line_total: 120 }
+    ];
+    await printOrderReceiptWithTax(mockOrder, mockItems, { isReprint: true });
+    showAdminToast('Test receipt sent to TVS RP3200 Plus! ✅', 'success');
   });
 
   // Print Active Sample (KOT or Bill)
   document.getElementById('btn-print-sample-active')?.addEventListener('click', async () => {
     const isKot = activePreviewMode === 'kot';
     const widthMm = isKot ? (printerSettings.kot_paper_width || 80) : (printerSettings.bill_paper_width || 80);
-    const canvas = document.getElementById('thermal-preview-canvas');
-    const innerHtml = canvas ? canvas.innerHTML : '';
-
-    if (printerSettings.connection_mode === 'qz_tray' && qzConnected && activePrinter) {
-      try {
-        const wPx = widthMm === 'A4' ? 595 : Math.round(parseInt(widthMm) * 2.835);
-        const printDoc = `<div style="width:${wPx}px;font-family:monospace;font-size:12px;color:#000;padding:0 6px;margin:0 auto;">${innerHtml}</div>`;
-        await qz.print(qz.configs.create(activePrinter), [{ type: 'pixel', format: 'html', flavor: 'plain', data: printDoc }]);
-        showAdminToast(`Sample ${isKot ? 'KOT' : 'Bill'} sent via QZ Tray! 🖨️`, 'success');
-        return;
-      } catch(e) { console.warn('QZ print failed, trying driver print:', e); }
+    const mockOrder = {
+      id: 'sample-preview-' + Date.now(),
+      order_number: 'SMPL-01',
+      daily_order_number: 1,
+      order_type: 'table',
+      table_number: 3,
+      payment_status: isKot ? 'unpaid' : 'paid',
+      ticket_status: isKot ? 'OPEN' : 'CLOSED',
+      payment_method: 'cash',
+      total_amount: 480
+    };
+    if (isKot) {
+      await printKOT(mockOrder, samplePreviewItems, { isReprint: true });
+      showAdminToast('Sample KOT sent to TVS RP3200 Plus! 👨‍🍳', 'success');
+    } else {
+      await printOrderReceiptWithTax(mockOrder, samplePreviewItems, { isReprint: true });
+      showAdminToast('Sample Bill sent to TVS RP3200 Plus! 🧾', 'success');
     }
-
-    // Default: Native Driver
-    await printViaNativeDriver(innerHtml, widthMm);
-    showAdminToast(`Sample ${isKot ? 'KOT' : 'Bill'} sent to TVS RP3200 Plus Driver! 🖨️`, 'success');
   });
 
   // Copy Preview HTML
@@ -14462,7 +17864,6 @@ async function initProfilePanel() {
       if (data?.user) {
         renderProfileInfo(data.user);
         renderGoogleBusinessProfileUI();
-        showAdminToast('Profile refreshed ✅', 'success');
       }
     } catch(e) {
       showAdminToast('Could not refresh: ' + e.message, 'error');
@@ -14595,7 +17996,7 @@ function renderPosPlaceChips() {
   const container = $('pos-quick-places-pills');
   if (!container) return;
   if (!adminPlaces || adminPlaces.length === 0) {
-    container.innerHTML = '<span style="font-size:.72rem;color:var(--adm-muted);">No saved places found in database</span>';
+    container.innerHTML = '<span style="font-size:0.75rem;color:var(--adm-muted);">No saved places found in database</span>';
     return;
   }
   container.innerHTML = adminPlaces.slice(0, 12).map(p => {
@@ -14744,6 +18145,407 @@ function getBillSettings() {
   };
 }
 
+let posAppliedCoupon = null; // { id, code, discount_pct, min_bill, max_uses, used_count, expiry_date, description }
+let posCustomerLookupTimer = null;
+
+function parseCouponExpiryEndOfDay(expiryDateStr) {
+  if (!expiryDateStr) return null;
+  const str = String(expiryDateStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return new Date(`${str}T23:59:59.999`);
+  }
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+export function isCouponActiveAndValid(c, now = new Date()) {
+  if (!c || typeof c !== 'object') return false;
+  const code = String(c.code || '').trim();
+  if (!code) return false;
+  if (c.active === false) return false;
+  const pct = Number(c.discount_pct || 0);
+  if (isNaN(pct) || pct <= 0 || pct > 100) return false;
+  const expDate = parseCouponExpiryEndOfDay(c.expiry_date);
+  if (expDate && expDate < now) return false;
+  const maxUses = Number(c.max_uses || 0);
+  const usedCount = Number(c.used_count || 0);
+  if (maxUses > 0 && usedCount >= maxUses) return false;
+  return true;
+}
+
+export function getValidPosCoupons(couponsList = adminCoupons, now = new Date()) {
+  return (couponsList || []).filter(c => isCouponActiveAndValid(c, now));
+}
+
+export function validatePosCoupon(codeOrCoupon, subtotal = 0, customerPhone = '', options = {}) {
+  const couponsList = options.coupons || adminCoupons || [];
+  const currentApplied = options.appliedCoupon !== undefined ? options.appliedCoupon : posAppliedCoupon;
+  const now = options.now ? new Date(options.now) : new Date();
+  const rawCode = typeof codeOrCoupon === 'string'
+    ? codeOrCoupon.trim().toUpperCase()
+    : String(codeOrCoupon?.code || '').trim().toUpperCase();
+
+  if (!rawCode) {
+    return { valid: false, reason: 'EMPTY_CODE', message: 'Please enter a coupon code.' };
+  }
+
+  if (currentApplied && String(currentApplied.code || '').toUpperCase() === rawCode && !options.allowRevalidateCurrent) {
+    return { valid: false, reason: 'ALREADY_APPLIED', message: `Coupon "${rawCode}" is already applied to this bill.` };
+  }
+
+  if (currentApplied && String(currentApplied.code || '').toUpperCase() !== rawCode && options.preventMultiple) {
+    return {
+      valid: false,
+      reason: 'MULTIPLE_COUPON_ATTEMPT',
+      message: `Coupon "${currentApplied.code}" is already applied. Remove it before applying another coupon.`
+    };
+  }
+
+  const c = (typeof codeOrCoupon === 'object' && codeOrCoupon && codeOrCoupon.code)
+    ? codeOrCoupon
+    : couponsList.find(item => String(item?.code || '').trim().toUpperCase() === rawCode);
+
+  if (!c) {
+    return { valid: false, reason: 'NOT_FOUND', message: `Invalid coupon code "${rawCode}".` };
+  }
+
+  if (c.active === false) {
+    return { valid: false, reason: 'INACTIVE', message: `Coupon "${rawCode}" is inactive.` };
+  }
+
+  const expDate = parseCouponExpiryEndOfDay(c.expiry_date);
+  if (expDate && expDate < now) {
+    return { valid: false, reason: 'EXPIRED', message: `Coupon "${rawCode}" has expired (${c.expiry_date}).` };
+  }
+
+  const maxUses = Number(c.max_uses || 0);
+  const usedCount = Number(c.used_count || 0);
+  if (maxUses > 0 && usedCount >= maxUses) {
+    return { valid: false, reason: 'MAX_USES_REACHED', message: `Coupon "${rawCode}" has reached its maximum usage limit (${maxUses}).` };
+  }
+
+  const cleanPhone = String(customerPhone || '').replace(/\D/g, '');
+  if (cleanPhone.length >= 10 && cleanPhone !== '9999999999' && cleanPhone !== '0000000000') {
+    const ordersSource = options.orders || orders || [];
+    const alreadyUsedByCustomer = ordersSource.some(o => {
+      if (!o || o.status === 'cancelled' || String(o.id) === String(posEditingOrderId || '')) return false;
+      const oPhone = String(o.customer_phone || '').replace(/\D/g, '');
+      if (oPhone !== cleanPhone) return false;
+      const oNotes = String(o.notes || '');
+      const m = oNotes.match(/\[COUPON:\s*([^\]|]+)\]/i);
+      return m && m[1].trim().toUpperCase() === rawCode;
+    });
+    if (alreadyUsedByCustomer) {
+      return { valid: false, reason: 'CUSTOMER_ALREADY_USED', message: `Customer (${cleanPhone}) has already redeemed coupon "${rawCode}".` };
+    }
+  }
+
+  const minBill = Number(c.min_bill || 0);
+  const safeSubtotal = Number(subtotal || 0);
+  if (safeSubtotal < minBill) {
+    return {
+      valid: false,
+      reason: 'MIN_BILL_NOT_MET',
+      message: `Minimum order of ₹${minBill.toFixed(0)} required for "${rawCode}" (Subtotal: ₹${safeSubtotal.toFixed(0)}).`
+    };
+  }
+
+  const pct = Number(c.discount_pct || 0);
+  if (isNaN(pct) || pct <= 0 || pct > 100) {
+    return { valid: false, reason: 'INVALID_DISCOUNT', message: `Coupon "${rawCode}" has an invalid discount percentage.` };
+  }
+
+  return {
+    valid: true,
+    coupon: {
+      id: c.id ?? null,
+      code: rawCode,
+      discount_pct: pct,
+      min_bill: minBill,
+      max_uses: maxUses,
+      used_count: usedCount,
+      expiry_date: c.expiry_date || null,
+      description: c.description || ''
+    },
+    message: `Coupon "${rawCode}" (${pct}% OFF) applied!`
+  };
+}
+
+function showPosCouponFeedback(message, type = 'error') {
+  const fb = $('pos-coupon-feedback');
+  if (!fb) return;
+  if (!message) {
+    fb.style.display = 'none';
+    fb.textContent = '';
+    fb.className = 'pos-coupon-feedback';
+    return;
+  }
+  fb.textContent = message;
+  fb.className = `pos-coupon-feedback ${type === 'success' ? 'success' : 'error'}`;
+  fb.style.display = 'block';
+}
+
+export function applyPosCoupon(codeOrCoupon, options = {}) {
+  const subtotal = posCart.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 1), 0);
+  const phone = $('pos-customer-phone')?.value?.trim() || '';
+  const result = validatePosCoupon(codeOrCoupon, subtotal, phone, {
+    ...options,
+    preventMultiple: options.replace ? false : true
+  });
+
+  if (!result.valid) {
+    showPosCouponFeedback(result.message, 'error');
+    if (!options.silent) showAdminToast(result.message, 'error');
+    renderPosCouponPicker();
+    return result;
+  }
+
+  posAppliedCoupon = result.coupon;
+  if ($('pos-discount-pct')) {
+    $('pos-discount-pct').value = '0';
+  }
+  if ($('pos-coupon-code-input')) {
+    $('pos-coupon-code-input').value = result.coupon.code;
+  }
+  showPosCouponFeedback(result.message, 'success');
+  if (!options.silent) showAdminToast(result.message, 'success');
+  updatePosCartUI(false);
+  renderPosCouponPicker();
+  return result;
+}
+
+export function removePosCoupon(options = {}) {
+  const removedCode = posAppliedCoupon?.code || '';
+  posAppliedCoupon = null;
+  if ($('pos-coupon-code-input')) $('pos-coupon-code-input').value = '';
+  showPosCouponFeedback('', 'error');
+  updatePosCartUI(false);
+  renderPosCouponPicker();
+  if (removedCode && !options.silent) {
+    showAdminToast(`Coupon "${removedCode}" removed.`, 'info');
+  }
+  return { removed: Boolean(removedCode), code: removedCode };
+}
+
+export function getPosAppliedCoupon() {
+  return posAppliedCoupon;
+}
+
+function renderPosCouponPicker() {
+  const listEl = $('pos-coupon-picker-list');
+  const clearBtn = $('pos-coupon-clear-btn');
+  const codeInp = $('pos-coupon-code-input');
+  if (clearBtn) {
+    clearBtn.style.display = posAppliedCoupon ? 'inline-block' : 'none';
+  }
+  if (codeInp && posAppliedCoupon && !codeInp.value) {
+    codeInp.value = posAppliedCoupon.code;
+  }
+  if (!listEl) return;
+
+  const validCoupons = getValidPosCoupons(adminCoupons);
+  const subtotal = posCart.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 1), 0);
+
+  if (validCoupons.length === 0) {
+    listEl.innerHTML = '<div style="font-size:0.75rem;color:#64748b;text-align:center;padding:0.45rem;">No active promo coupons available.</div>';
+    return;
+  }
+
+  listEl.innerHTML = validCoupons.map(c => {
+    const code = String(c.code || '').toUpperCase();
+    const minBill = Number(c.min_bill || 0);
+    const pct = Number(c.discount_pct || 0);
+    const isApplied = posAppliedCoupon && String(posAppliedCoupon.code).toUpperCase() === code;
+    const isEligible = subtotal >= minBill;
+    const cls = `pos-coupon-option ${isApplied ? 'applied' : ''} ${!isEligible && !isApplied ? 'ineligible' : ''}`;
+    const actionLabel = isApplied ? '✓ Applied' : (isEligible ? 'Apply' : `Need ₹${Math.ceil(minBill - subtotal)} more`);
+    return `
+      <button type="button" class="${cls}" data-coupon-code="${escapeHtml(code)}" role="option" aria-selected="${Boolean(isApplied)}">
+        <div>
+          <div class="pos-coupon-opt-code">${escapeHtml(code)} · ${pct}% OFF</div>
+          <div class="pos-coupon-opt-meta">Min Bill: ₹${minBill.toFixed(0)}${c.expiry_date ? ` · Exp: ${escapeHtml(String(c.expiry_date).slice(0, 10))}` : ''}</div>
+        </div>
+        <span class="pos-coupon-opt-action">${escapeHtml(actionLabel)}</span>
+      </button>
+    `;
+  }).join('');
+
+  listEl.querySelectorAll('.pos-coupon-option').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const code = btn.dataset.couponCode;
+      if (!code) return;
+      if (posAppliedCoupon && String(posAppliedCoupon.code).toUpperCase() === code) {
+        removePosCoupon();
+      } else {
+        applyPosCoupon(code);
+      }
+    });
+  });
+}
+
+window.isCouponActiveAndValid = isCouponActiveAndValid;
+window.getValidPosCoupons = getValidPosCoupons;
+window.validatePosCoupon = validatePosCoupon;
+window.applyPosCoupon = applyPosCoupon;
+window.removePosCoupon = removePosCoupon;
+window.getPosAppliedCoupon = getPosAppliedCoupon;
+window.renderPosCouponPicker = renderPosCouponPicker;
+
+// ── Customer Autocomplete (Phone & Name Lookup) ─────────────────
+export function lookupPosCustomers(query, options = {}) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  const digits = q.replace(/\D/g, '');
+  const qLower = q.toLowerCase();
+  const limit = options.limit || 6;
+
+  const stats = Array.isArray(options.customersList) ? options.customersList : buildCustomerStats();
+  const filtered = stats.filter(c => {
+    if (!c || !c.phone) return false;
+    const cDigits = String(c.phone).replace(/\D/g, '');
+    if (!cDigits || cDigits === '9999999999' || cDigits === '0000000000') return false;
+    const cName = String(c.name || '').trim();
+    const matchesPhone = digits.length >= 3 && cDigits.includes(digits);
+    const matchesName = qLower.length >= 2 && cName && cName.toLowerCase().includes(qLower) && cName !== 'Customer' && cName !== 'Walk-in Guest';
+    return matchesPhone || matchesName;
+  });
+
+  // Sort exact phone prefix matches first, then by order count / recent activity
+  filtered.sort((a, b) => {
+    const aDigits = String(a.phone).replace(/\D/g, '');
+    const bDigits = String(b.phone).replace(/\D/g, '');
+    if (digits.length >= 3) {
+      const aStarts = aDigits.startsWith(digits) || aDigits.endsWith(digits) ? 1 : 0;
+      const bStarts = bDigits.startsWith(digits) || bDigits.endsWith(digits) ? 1 : 0;
+      if (bStarts !== aStarts) return bStarts - aStarts;
+    }
+    return (b.orderCount || 0) - (a.orderCount || 0);
+  });
+
+  // Expose ONLY minimal POS-relevant customer fields (no email, raw orders, payment refs, or totalSpent)
+  return filtered.slice(0, limit).map(c => ({
+    name: (c.name && c.name !== 'Customer' && c.name !== 'Walk-in Guest') ? c.name : '',
+    phone: String(c.phone || '').trim(),
+    tier: c.tier || 'new',
+    orderCount: Number(c.orderCount || 0),
+    savedAddress: String(c.lastAddress || '').trim(),
+    savedPlace: String(c.lastPlace || '').trim()
+  }));
+}
+
+export function selectPosCustomerSuggestion(cust, options = {}) {
+  if (!cust || typeof cust !== 'object') return false;
+  const phoneInp = $('pos-customer-phone');
+  const nameInp = $('pos-customer-name');
+  const addrInp = $('pos-delivery-address');
+  const hintEl = $('pos-cust-hint');
+  const suggBox = $('pos-customer-suggestions');
+
+  if (phoneInp && cust.phone) {
+    phoneInp.value = cust.phone;
+    phoneInp.classList.remove('pos-input-invalid');
+  }
+
+  // Populate customer name if empty, previously auto-filled, or explicitly selected from dropdown
+  if (nameInp && cust.name) {
+    const canFillName = options.fromClick !== false || !nameInp.value.trim() || nameInp.dataset.autoFilled === 'true';
+    if (canFillName) {
+      nameInp.value = cust.name;
+      nameInp.dataset.autoFilled = 'true';
+      nameInp.classList.remove('pos-input-invalid');
+    }
+  }
+
+  // Populate saved delivery place and delivery address if available
+  const savedPlaceName = String(cust.savedPlace || '').trim();
+  const savedAddr = String(cust.savedAddress || '').trim();
+  if (savedPlaceName && Array.isArray(adminPlaces) && adminPlaces.length > 0) {
+    const matchedPlace = adminPlaces.find(p => p.name && p.name.toLowerCase() === savedPlaceName.toLowerCase());
+    if (matchedPlace && (!posSelectedPlace || options.fromClick !== false)) {
+      selectPosPlace(matchedPlace);
+    }
+  } else if (savedAddr && Array.isArray(adminPlaces) && adminPlaces.length > 0 && !posSelectedPlace) {
+    const matchedFromAddr = adminPlaces.find(p => p.name && savedAddr.toLowerCase().includes(p.name.toLowerCase()));
+    if (matchedFromAddr) {
+      selectPosPlace(matchedFromAddr);
+    }
+  }
+
+  if (addrInp && savedAddr) {
+    const canFillAddr = options.fromClick !== false || !addrInp.value.trim() || addrInp.dataset.autoFilled === 'true';
+    if (canFillAddr) {
+      // Strip leading "Place - " prefix if place is already selected separately
+      let cleanSpecificAddr = savedAddr;
+      if (savedPlaceName && cleanSpecificAddr.toLowerCase().startsWith(`${savedPlaceName.toLowerCase()} - `)) {
+        cleanSpecificAddr = cleanSpecificAddr.slice(savedPlaceName.length + 3).trim();
+      }
+      addrInp.value = cleanSpecificAddr;
+      addrInp.dataset.autoFilled = 'true';
+      addrInp.classList.remove('pos-input-invalid');
+    }
+  }
+
+  if (hintEl) {
+    const tierBadge = cust.tier === 'vip' ? '⭐ VIP' : (cust.tier === 'frequent' ? '🔁 Frequent' : '👤 Returning');
+    hintEl.textContent = `${tierBadge}: ${cust.name || cust.phone}`;
+  }
+
+  if (suggBox) {
+    suggBox.style.display = 'none';
+  }
+  return true;
+}
+
+function renderPosCustomerSuggestions(matches, queryStr = '') {
+  const suggBox = $('pos-customer-suggestions');
+  const hintEl = $('pos-cust-hint');
+  if (!suggBox) return;
+
+  const digits = String(queryStr || '').replace(/\D/g, '');
+  if (!Array.isArray(matches) || matches.length === 0) {
+    suggBox.style.display = 'none';
+    suggBox.innerHTML = '';
+    if (hintEl && digits.length >= 10) {
+      hintEl.textContent = '✨ New Customer';
+    }
+    return;
+  }
+
+  suggBox.innerHTML = matches.map((c, idx) => {
+    const tierLabel = c.tier === 'vip' ? 'VIP' : (c.tier === 'frequent' ? 'Frequent' : 'Guest');
+    const addrPreview = c.savedAddress || c.savedPlace || '';
+    return `
+      <button type="button" class="pos-cust-sugg-item" role="option" data-cust-idx="${idx}">
+        <div class="pos-cust-sugg-main">
+          <div class="pos-cust-sugg-name-row">
+            <span>${escapeHtml(c.name || 'Saved Customer')}</span>
+            <span class="pos-cust-sugg-phone">· 📱 ${escapeHtml(c.phone)}</span>
+          </div>
+          ${addrPreview ? `<div class="pos-cust-sugg-addr">📍 ${escapeHtml(addrPreview)}</div>` : ''}
+        </div>
+        <span class="pos-cust-sugg-tier ${escapeHtml(c.tier || 'new')}">${escapeHtml(tierLabel)}</span>
+      </button>
+    `;
+  }).join('');
+
+  suggBox.style.display = 'block';
+
+  suggBox.querySelectorAll('.pos-cust-sugg-item').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.custIdx, 10);
+      const selected = matches[idx];
+      if (selected) {
+        selectPosCustomerSuggestion(selected, { fromClick: true });
+      }
+    });
+  });
+}
+
+window.lookupPosCustomers = lookupPosCustomers;
+window.selectPosCustomerSuggestion = selectPosCustomerSuggestion;
+
 function getPosCartTotals() {
   const s = getBillSettings();
   const rawDiscount = parseFloat($('pos-discount-pct')?.value || '0');
@@ -14751,10 +18553,24 @@ function getPosCartTotals() {
   const rawDelFee = parseFloat($('pos-delivery-fee')?.value || '0');
   const deliveryFee = posOrderType === 'delivery' ? ((isNaN(rawDelFee) || rawDelFee < 0) ? 0 : rawDelFee) : 0;
 
+  const cartSubtotal = posCart.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 1), 0);
+  let effectiveCoupon = null;
+  if (posAppliedCoupon) {
+    const check = validatePosCoupon(posAppliedCoupon, cartSubtotal, $('pos-customer-phone')?.value?.trim() || '', {
+      allowRevalidateCurrent: true
+    });
+    if (check.valid) {
+      effectiveCoupon = check.coupon;
+    } else if (cartSubtotal > 0 && check.reason === 'MIN_BILL_NOT_MET') {
+      showPosCouponFeedback(check.message, 'error');
+    }
+  }
+
   const billing = calculateOrderBilling({
     items: posCart,
     deliveryFee,
     discountPct,
+    coupon: effectiveCoupon,
     cgstRate: s.cgstRate ?? 2.5,
     sgstRate: s.sgstRate ?? 2.5
   });
@@ -14764,6 +18580,7 @@ function getPosCartTotals() {
     taxableSubtotal: billing.taxableSubtotal,
     discountPct: billing.discountPct, 
     discountAmt: billing.discountAmt, 
+    appliedCoupon: effectiveCoupon,
     taxable: billing.taxableValue, 
     cgst: billing.cgstAmt, 
     sgst: billing.sgstAmt, 
@@ -14775,6 +18592,94 @@ function getPosCartTotals() {
   };
 }
 
+function syncPosExtraBadges(totals) {
+  const t = totals || getPosCartTotals();
+  const manualDiscPct = parseFloat($('pos-discount-pct')?.value || '0') || 0;
+  const discBtn = $('pos-extra-discount-btn');
+  const discBadge = $('pos-extra-discount-badge');
+  if (discBadge) {
+    discBadge.textContent = (!t.appliedCoupon && t.discountPct > 0) ? `-${t.discountPct}%` : (manualDiscPct > 0 ? `-${manualDiscPct}%` : '0%');
+  }
+  if (discBtn) {
+    discBtn.classList.toggle('has-value', !t.appliedCoupon && t.discountPct > 0);
+  }
+
+  const couponBtn = $('pos-extra-coupon-btn');
+  const couponBadge = $('pos-extra-coupon-badge');
+  if (couponBadge) {
+    couponBadge.textContent = t.appliedCoupon ? t.appliedCoupon.code : (posAppliedCoupon ? `${posAppliedCoupon.code}!` : 'Add');
+  }
+  if (couponBtn) {
+    couponBtn.classList.toggle('has-value', Boolean(t.appliedCoupon || posAppliedCoupon));
+  }
+
+  const rawDelFee = parseFloat($('pos-delivery-fee')?.value || '0');
+  const safeDelFee = (isNaN(rawDelFee) || rawDelFee < 0) ? 0 : rawDelFee;
+  const delBtn = $('pos-extra-delivery-btn');
+  const delBadge = $('pos-extra-delivery-badge');
+  if (delBadge) {
+    delBadge.textContent = `₹${(posOrderType === 'delivery' ? t.deliveryFee : safeDelFee).toFixed(0)}`;
+  }
+  if (delBtn) {
+    delBtn.classList.toggle('has-value', posOrderType === 'delivery' && t.deliveryFee > 0);
+  }
+
+  const notesVal = $('pos-notes')?.value?.trim() || '';
+  const notesBtn = $('pos-extra-notes-btn');
+  const notesBadge = $('pos-extra-notes-badge');
+  if (notesBadge) {
+    notesBadge.textContent = notesVal ? 'Added' : 'Add';
+  }
+  if (notesBtn) {
+    notesBtn.classList.toggle('has-value', Boolean(notesVal));
+    notesBtn.title = notesVal ? `Note: ${notesVal}` : 'Add kitchen or order instructions';
+  }
+}
+
+function closeAllPosExtraPopovers() {
+  ['discount', 'coupon', 'delivery', 'notes'].forEach(name => {
+    const pop = $(`pos-popover-${name}`);
+    const btn = $(`pos-extra-${name}-btn`);
+    if (pop) {
+      pop.classList.remove('open');
+      pop.style.display = 'none';
+    }
+    if (btn) {
+      btn.classList.remove('active');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
+function togglePosExtraPopover(name) {
+  const pop = $(`pos-popover-${name}`);
+  const btn = $(`pos-extra-${name}-btn`);
+  if (!pop) return;
+  const isCurrentlyOpen = pop.classList.contains('open') || pop.style.display === 'flex';
+  closeAllPosExtraPopovers();
+  if (!isCurrentlyOpen) {
+    if (name === 'delivery' && $('pos-delivery-fee-wrap')) {
+      $('pos-delivery-fee-wrap').style.display = 'flex';
+    }
+    if (name === 'coupon') {
+      renderPosCouponPicker();
+    }
+    pop.classList.add('open');
+    pop.style.display = 'flex';
+    if (btn) {
+      btn.classList.add('active');
+      btn.setAttribute('aria-expanded', 'true');
+    }
+    if (name === 'discount') setTimeout(() => $('pos-discount-pct')?.focus(), 40);
+    if (name === 'coupon') setTimeout(() => $('pos-coupon-code-input')?.focus(), 40);
+    if (name === 'delivery') setTimeout(() => $('pos-delivery-fee')?.focus(), 40);
+    if (name === 'notes') setTimeout(() => $('pos-notes')?.focus(), 40);
+  }
+}
+
+window.togglePosExtraPopover = togglePosExtraPopover;
+window.closeAllPosExtraPopovers = closeAllPosExtraPopovers;
+
 function updatePosCartUI(shouldUpdateGrid = false) {
   const cartEl = $('pos-cart-items');
   if (!cartEl) return;
@@ -14782,10 +18687,12 @@ function updatePosCartUI(shouldUpdateGrid = false) {
   const allItems = (typeof getCombinedFoodItems === 'function') ? getCombinedFoodItems() : [];
 
   if (posCart.length === 0) {
-    cartEl.innerHTML = '<p style="color:var(--adm-muted);font-size:.85rem;text-align:center;padding:1.5rem 1rem;">🛒 No items added yet</p>';
+    cartEl.innerHTML = '<p style="color:var(--adm-muted);font-size:.82rem;text-align:center;padding:1.25rem 0.75rem;">🛒 No items added yet</p>';
   } else {
     cartEl.innerHTML = posCart.map((item, idx) => {
       const foodItem = allItems.find(f => (item.id && f.id === item.id) || (f.name && f.name.toLowerCase() === item.name.toLowerCase())) || item;
+      const isCombo = Boolean(item.isCombo || item.is_combo || foodItem.isCombo || foodItem.is_combo || String(item.id || '').startsWith('combo-'));
+      const comboSummary = item.comboItemsSummary || foodItem.comboItemsSummary || '';
       const isVeg = (typeof isFoodVeg === 'function') ? isFoodVeg(foodItem) : true;
       const dotColor = isVeg ? '#16a34a' : '#dc2626';
       const uPrice = Number(item.price || 0);
@@ -14794,24 +18701,28 @@ function updatePosCartUI(shouldUpdateGrid = false) {
       const lTotalStr = (lTotal % 1 === 0) ? lTotal.toFixed(0) : lTotal.toFixed(2);
 
       return `
-        <div class="pos-cart-row" style="display:flex;align-items:center;justify-content:space-between;padding:.55rem 0;border-bottom:1px solid #f1f5f9;gap:.4rem;">
-          <div style="display:flex;align-items:flex-start;gap:.45rem;flex:1;min-width:0;">
-            <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${dotColor};margin-top:4px;flex-shrink:0;" title="${isVeg ? 'Vegetarian' : 'Non-Vegetarian'}"></span>
+        <div class="pos-cart-row ${isCombo ? 'is-combo-cart-row' : ''}" data-cart-idx="${idx}" data-is-combo="${isCombo}">
+          <div style="display:flex;align-items:center;gap:.38rem;flex:1;min-width:0;">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;" title="${isVeg ? 'Vegetarian' : 'Non-Vegetarian'}"></span>
             <div style="flex:1;min-width:0;">
-              <div style="font-size:.84rem;font-weight:700;color:#1e293b;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.name)}</div>
-              ${item.notes ? `<div style="font-size:.7rem;color:#b45309;font-weight:600;font-style:italic;margin-top:2px;background:#fef3c7;display:inline-block;padding:1px 5px;border-radius:4px;">↳ ${escapeHtml(item.notes)}</div>` : ''}
-              <div style="font-size:.72rem;color:#64748b;margin-top:2px;">₹${uPriceStr} each</div>
+              <div style="display:flex;align-items:baseline;gap:4px;min-width:0;">
+                ${isCombo ? '<span class="pos-cart-combo-tag">🍱 Combo</span>' : ''}
+                <span class="pos-cart-item-name" style="font-size:.8rem;font-weight:700;color:#1e293b;line-height:1.18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
+                <span class="pos-cart-item-unit" style="font-size:0.75rem;color:#64748b;font-weight:600;flex-shrink:0;">₹${uPriceStr}</span>
+              </div>
+              ${comboSummary ? `<div style="font-size:0.75rem;color:#64748b;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(comboSummary)}">Includes: ${escapeHtml(comboSummary)}</div>` : ''}
+              ${item.notes ? `<div style="font-size:0.75rem;color:#b45309;font-weight:600;font-style:italic;margin-top:1px;background:#fef3c7;display:inline-block;padding:0 4px;border-radius:3px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">↳ ${escapeHtml(item.notes)}</div>` : ''}
             </div>
           </div>
-          <div style="display:flex;align-items:center;gap:.35rem;flex-shrink:0;">
-            <button type="button" onclick="posEditItem(${idx})" style="padding:2px 5px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;cursor:pointer;color:#64748b;font-size:.7rem;" title="Edit dish or kitchen note">✏️</button>
-            <div style="display:inline-flex;align-items:center;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;padding:1px;">
-              <button type="button" onclick="posChangeQty(${idx},-1)" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;font-size:.85rem;display:flex;align-items:center;justify-content:center;font-weight:bold;color:#475569;">−</button>
-              <span style="min-width:20px;text-align:center;font-weight:800;font-size:.82rem;color:#1e293b;">${item.qty}</span>
-              <button type="button" onclick="posChangeQty(${idx},1)" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;font-size:.85rem;display:flex;align-items:center;justify-content:center;font-weight:bold;color:#475569;">+</button>
+          <div style="display:flex;align-items:center;gap:.28rem;flex-shrink:0;">
+            <button type="button" class="pos-cart-edit-btn" onclick="posEditItem(${idx})" style="padding:1px 4px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;cursor:pointer;color:#64748b;font-size:0.75rem;line-height:1.2;" title="Edit dish or kitchen note">✏️</button>
+            <div class="pos-cart-qty-stepper" style="display:inline-flex;align-items:center;border:1px solid #e2e8f0;border-radius:7px;background:#f8fafc;padding:1px;">
+              <button type="button" class="pos-cart-qty-minus" onclick="posChangeQty(${idx},-1)" aria-label="Decrease quantity" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;font-size:.84rem;display:flex;align-items:center;justify-content:center;font-weight:bold;color:#475569;">−</button>
+              <span class="pos-cart-item-qty" style="min-width:18px;text-align:center;font-weight:800;font-size:.78rem;color:#1e293b;">${item.qty}</span>
+              <button type="button" class="pos-cart-qty-plus" onclick="posChangeQty(${idx},1)" aria-label="Increase quantity" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;font-size:.84rem;display:flex;align-items:center;justify-content:center;font-weight:bold;color:#475569;">+</button>
             </div>
-            <span style="min-width:55px;text-align:right;font-weight:800;font-size:.88rem;color:#1e293b;">₹${lTotalStr}</span>
-            <button type="button" onclick="posRemoveItem(${idx})" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;color:#94a3b8;font-size:.85rem;display:flex;align-items:center;justify-content:center;transition:color .15s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'" title="Remove">✕</button>
+            <span class="pos-cart-item-total" style="min-width:48px;text-align:right;font-weight:800;font-size:.82rem;color:#1e293b;">₹${lTotalStr}</span>
+            <button type="button" class="pos-cart-item-remove" onclick="posRemoveItem(${idx})" aria-label="Remove item" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;color:#94a3b8;font-size:.82rem;display:flex;align-items:center;justify-content:center;transition:color .15s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'" title="Remove">✕</button>
           </div>
         </div>
       `;
@@ -14823,9 +18734,21 @@ function updatePosCartUI(shouldUpdateGrid = false) {
   if ($('pos-discount-pct-label')) $('pos-discount-pct-label').textContent = t.discountPct;
   if ($('pos-discount-show')) $('pos-discount-show').textContent = `-₹${t.discountAmt.toFixed(2)}`;
   if ($('pos-discount-calc-preview')) $('pos-discount-calc-preview').textContent = t.discountPct > 0 ? `-₹${t.discountAmt.toFixed(2)} (${t.discountPct}%)` : '-₹0.00';
+
+  const couponRow = $('pos-coupon-row');
+  if (couponRow) {
+    if (t.appliedCoupon && t.discountAmt > 0) {
+      couponRow.style.display = 'flex';
+      if ($('pos-applied-coupon-code')) $('pos-applied-coupon-code').textContent = t.appliedCoupon.code;
+      if ($('pos-applied-coupon-pct')) $('pos-applied-coupon-pct').textContent = t.appliedCoupon.discount_pct;
+      if ($('pos-applied-coupon-amt')) $('pos-applied-coupon-amt').textContent = `-₹${t.discountAmt.toFixed(2)}`;
+    } else {
+      couponRow.style.display = 'none';
+    }
+  }
   
   const discRow = $('pos-discount-row');
-  if (discRow) discRow.style.display = t.discountAmt > 0 ? 'flex' : 'none';
+  if (discRow) discRow.style.display = (!t.appliedCoupon && t.discountAmt > 0) ? 'flex' : 'none';
 
   const taxRow = $('pos-taxable-row');
   if (taxRow) {
@@ -14840,7 +18763,7 @@ function updatePosCartUI(shouldUpdateGrid = false) {
   if ($('pos-gst-total-val')) $('pos-gst-total-val').textContent = (t.cgst + t.sgst).toFixed(2);
   
   const delFeeWrap = $('pos-delivery-fee-wrap');
-  if (delFeeWrap) delFeeWrap.style.display = posOrderType === 'delivery' ? 'flex' : 'none';
+  if (delFeeWrap) delFeeWrap.style.display = 'flex';
   const delRow = $('pos-delivery-charge-row');
   if (delRow) {
     delRow.style.display = (posOrderType === 'delivery' && t.deliveryFee > 0) ? 'flex' : 'none';
@@ -14854,6 +18777,9 @@ function updatePosCartUI(shouldUpdateGrid = false) {
   }
 
   if ($('pos-grand-total')) $('pos-grand-total').textContent = formatBillAmount(t.grand);
+
+  // Sync compact popover badges for Discount, Delivery Fee, and Kitchen Notes
+  syncPosExtraBadges(t);
 
   // Update item count badge & context badge
   const totalItemCount = posCart.reduce((sum, item) => sum + (item.qty || 1), 0);
@@ -14888,6 +18814,8 @@ window.posEditItem = function(idx) {
 
   const modal = $('adm-pos-edit-item-modal');
   if (!modal) return;
+  closeOrderDetailDrawer();
+  closeAllPosExtraPopovers();
 
   $('pos-edit-item-index').value = idx;
   $('pos-edit-item-name').value = item.name || '';
@@ -14966,7 +18894,6 @@ function initPosEditModalListeners() {
 
     closePosEditItemModal();
     updatePosCartUI(true);
-    showAdminToast(`Updated "${name}" in cart! 📝`, 'success');
   });
 
   $('pos-edit-item-form')?.addEventListener('keydown', (e) => {
@@ -14983,6 +18910,28 @@ function loadFoodsCache() {
 }
 
 function addItemToPosCart(food, customNote = '') {
+  if (!food || typeof food !== 'object') return false;
+  if (food.available === false) {
+    showAdminToast(`"${food.name || 'Item'}" is currently unavailable.`, 'error');
+    return false;
+  }
+  const isComboFlag = Boolean(food.isCombo || food.is_combo || food.category === 'combo' || String(food.id || '').startsWith('combo-'));
+  if (isComboFlag && !isComboActiveAndValid(food)) {
+    showAdminToast(`Combo "${food.name || 'Combo'}" is unavailable or expired.`, 'error');
+    return false;
+  }
+
+  let resolvedCombo = null;
+  if (isComboFlag && (!food.comboItemsSummary || !Array.isArray(food.comboItems))) {
+    const rawComboId = food.combo_id ?? String(food.id || '').replace(/^combo-/, '');
+    resolvedCombo = (adminCombos || []).find(c => String(c.id) === String(rawComboId));
+  }
+  const comboItems = Array.isArray(food.comboItems)
+    ? food.comboItems
+    : (Array.isArray(resolvedCombo?.items) ? resolvedCombo.items : []);
+  const comboItemsSummary = food.comboItemsSummary
+    || (comboItems.length > 0 ? comboItems.map(i => `${i.qty || 1}× ${i.name}`).join(' + ') : '');
+
   const note = (customNote || food.notes || '').trim();
   const addQty = Math.max(1, parseInt(food.qty, 10) || 1);
   const existing = posCart.find(i =>
@@ -14996,8 +18945,13 @@ function addItemToPosCart(food, customNote = '') {
       id: food.id || null,
       name: food.name,
       price: Number(food.price || 0),
+      mrp: Number(food.mrp ?? resolvedCombo?.mrp ?? 0),
       qty: addQty,
       notes: note,
+      isCombo: isComboFlag,
+      combo_id: isComboFlag ? (food.combo_id ?? resolvedCombo?.id ?? null) : null,
+      comboItems,
+      comboItemsSummary,
       gst_applicable: food.gst_applicable !== false
     });
   }
@@ -15006,7 +18960,7 @@ function addItemToPosCart(food, customNote = '') {
   if (cartEl) {
     setTimeout(() => { cartEl.scrollTop = cartEl.scrollHeight; }, 20);
   }
-  showAdminToast(`Added "${food.name}" to cart 🛒`, 'success');
+  return true;
 }
 
 // ── Strict Validation & Order Saving ───────────────────────────
@@ -15090,6 +19044,13 @@ async function buildOrderFromPos(action) {
   else if (posOrderType === 'delivery') notesStr = `[DELIVERY] Place: ${selectedPlaceName || 'N/A'} | Address: ${fullDeliveryAddress} | Delivery charge: ₹${t.deliveryFee.toFixed(2)} [DELIVERY_FEE: ${t.deliveryFee}]`;
   else notesStr = '[SELF PICKUP]';
 
+  if (action === 'bill') {
+    notesStr += ` [FINAL_BILL] [BILLED_UNPAID]`;
+  }
+
+  if (t.appliedCoupon && t.appliedCoupon.code) {
+    notesStr += ` [COUPON: ${t.appliedCoupon.code}]`;
+  }
   if (t.discountPct > 0) {
     notesStr += ` [DISCOUNT_PCT: ${t.discountPct}%] [DISCOUNT_AMT: ${t.discountAmt.toFixed(2)}]`;
   }
@@ -15097,6 +19058,8 @@ async function buildOrderFromPos(action) {
   if (notes) notesStr += ` ${notes}`;
 
   if (posEditingOrderId) {
+    cashierCreatedOrderIds.add(String(posEditingOrderId));
+    notifiedBusinessOrderIds.add(String(posEditingOrderId));
     const existingOrder = orders.find(o => String(o.id) === String(posEditingOrderId));
     if (existingOrder) {
       const updateData = {
@@ -15105,17 +19068,25 @@ async function buildOrderFromPos(action) {
         order_type: posOrderType,
         table_number: posOrderType === 'table' ? (parseInt(String(tableNum).replace(/\D/g, ''), 10) || null) : null,
         total_amount: t.grand,
+        subtotal_amount: t.subtotal || 0,
+        discount_pct: t.discountPct || 0,
+        discount_amount: t.discountAmt || 0,
+        taxable_amount: t.taxable || 0,
+        cgst_amount: t.cgst || 0,
+        sgst_amount: t.sgst || 0,
+        delivery_fee: t.deliveryFee || 0,
+        packaging_fee: 0,
+        round_off_amount: t.roundOff || 0,
         payment_method: payMode,
-        status: action === 'hold' ? 'hold' : (action === 'bill' ? 'delivered' : (action === 'kot' ? 'pending' : 'confirmed')),
-        payment_status: (existingOrder.payment_status === 'paid' && (action === 'hold' || action === 'kot'))
-          ? 'paid'
-          : (payMode === 'pay_later' ? 'unpaid' : ((action === 'hold' || action === 'kot') ? 'unpaid' : 'paid')),
-        ticket_status: action === 'hold' ? 'HOLD' : (action === 'bill' ? 'CLOSED' : 'OPEN'),
+        status: action === 'hold' ? 'hold' : (action === 'bill' ? 'confirmed' : (action === 'kot' ? 'pending' : 'confirmed')),
+        payment_status: action === 'bill' ? 'unpaid' : (action === 'hold' || action === 'kot' ? 'unpaid' : (payMode === 'pay_later' ? 'unpaid' : (existingOrder.payment_status === 'paid' ? 'paid' : 'unpaid'))),
+        ticket_status: action === 'hold' ? 'HOLD' : (action === 'bill' ? 'BILLED' : 'OPEN'),
         notes: notesStr,
         updated_at: new Date().toISOString()
       };
 
       let updatedOrder = null;
+      let cloudUpdateFailed = false;
       try {
         let updateRes = await insforge.database
           .from('orders')
@@ -15133,9 +19104,13 @@ async function buildOrderFromPos(action) {
             .select()
             .single();
         }
+        if (updateRes.error) {
+          throw updateRes.error;
+        }
         if (updateRes.data) updatedOrder = updateRes.data;
       } catch (err) {
         console.warn('[POS Update] Cloud update warning (saved locally):', err);
+        cloudUpdateFailed = true;
       }
 
       // Update in-memory order object immediately
@@ -15151,18 +19126,40 @@ async function buildOrderFromPos(action) {
       }));
 
       try {
-        await insforge.database.from('order_items').delete().eq('order_id', posEditingOrderId);
-        const { data: insItems } = await insforge.database.from('order_items').insert(itemRows).select();
-        orderItems = orderItems.filter(i => String(i.order_id) !== String(posEditingOrderId));
-        if (insItems && insItems.length > 0) {
-          orderItems.push(...insItems);
+        if (!cloudUpdateFailed) {
+          await insforge.database.from('order_items').delete().eq('order_id', posEditingOrderId);
+          const { data: insItems, error: insErr } = await insforge.database.from('order_items').insert(itemRows).select();
+          if (insErr) throw insErr;
+          orderItems = orderItems.filter(i => String(i.order_id) !== String(posEditingOrderId));
+          if (insItems && insItems.length > 0) {
+            orderItems.push(...insItems);
+          } else {
+            orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
+          }
         } else {
-          orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
+          throw new Error('Cloud update failed previously');
         }
       } catch (itemsErr) {
         console.warn('[POS Items Update] Cloud items update warning:', itemsErr);
+        cloudUpdateFailed = true;
         orderItems = orderItems.filter(i => String(i.order_id) !== String(posEditingOrderId));
         orderItems.push(...itemRows.map((r, idx) => ({ ...r, id: `temp-${Date.now()}-${idx}` })));
+      }
+
+      if (cloudUpdateFailed) {
+        try {
+          const updateIdempotencyKey = `pos_update_${posEditingOrderId}_${Date.now()}`;
+          offlineSync.enqueuePosOrderUpdate({
+            orderId: posEditingOrderId,
+            orderData: updateData,
+            itemRows,
+            idempotencyKey: updateIdempotencyKey
+          });
+          existingOrder._isOfflineQueued = true;
+          showAdminToast('Order updated locally. Cloud sync queued.', 'warning');
+        } catch (queueErr) {
+          console.warn('[POS Update] Failed to enqueue POS order update:', queueErr);
+        }
       }
 
       posEditingOrderId = null;
@@ -15177,7 +19174,7 @@ async function buildOrderFromPos(action) {
       renderTablesPanel();
       renderKitchenPanel();
 
-      if ((existingOrder.status === 'delivered' || action === 'bill') && isGoogleSheetAutoSyncEnabled()) {
+      if (existingOrder.status === 'delivered' && isGoogleSheetAutoSyncEnabled()) {
         syncOrderToGoogleSheet(existingOrder).catch(e => console.warn('[Google Sheet] POS bill auto-sync error:', e));
       }
 
@@ -15205,10 +19202,19 @@ async function buildOrderFromPos(action) {
     order_type: posOrderType,
     table_number: posOrderType === 'table' ? (parseInt(String(tableNum).replace(/\D/g, ''), 10) || null) : null,
     total_amount: t.grand,
+    subtotal_amount: t.subtotal || 0,
+    discount_pct: t.discountPct || 0,
+    discount_amount: t.discountAmt || 0,
+    taxable_amount: t.taxable || 0,
+    cgst_amount: t.cgst || 0,
+    sgst_amount: t.sgst || 0,
+    delivery_fee: t.deliveryFee || 0,
+    packaging_fee: 0,
+    round_off_amount: t.roundOff || 0,
     payment_method: payMode,
-    status: action === 'hold' ? 'hold' : (action === 'bill' ? 'delivered' : (action === 'kot' ? 'pending' : 'confirmed')),
-    payment_status: payMode === 'pay_later' ? 'unpaid' : ((action === 'hold' || action === 'kot') ? 'unpaid' : 'paid'),
-    ticket_status: action === 'hold' ? 'HOLD' : (action === 'bill' ? 'CLOSED' : 'OPEN'),
+    status: action === 'hold' ? 'hold' : (action === 'bill' ? 'confirmed' : (action === 'kot' ? 'pending' : 'confirmed')),
+    payment_status: 'unpaid',
+    ticket_status: action === 'hold' ? 'HOLD' : (action === 'bill' ? 'BILLED' : 'OPEN'),
     notes: notesStr,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -15216,6 +19222,7 @@ async function buildOrderFromPos(action) {
 
   let newOrder = null;
   let insertedItems = null;
+  let cloudInsertFailed = false;
 
   try {
     let insertRes = await insforge.database.from('orders').insert([orderData]).select().single();
@@ -15224,19 +19231,35 @@ async function buildOrderFromPos(action) {
       delete fallbackData.ticket_status;
       insertRes = await insforge.database.from('orders').insert([fallbackData]).select().single();
     }
+    if (insertRes.error) {
+      throw insertRes.error;
+    }
     if (insertRes.data) {
       newOrder = insertRes.data;
     }
   } catch (err) {
     console.warn('[POS Insert] Cloud insert warning (running local-first):', err);
+    cloudInsertFailed = true;
   }
 
   if (!newOrder) {
     // Local-first fallback order creation
+    const localId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `offline-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     newOrder = {
       ...orderData,
-      id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `offline-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+      id: localId,
+      idempotency_key: `pos_create_${localId}`,
+      _isOfflineQueued: true
     };
+    cloudInsertFailed = true;
+  }
+
+  // Register internal cashier-created order to strictly suppress POS self-notifications
+  cashierCreatedOrderIds.add(String(newOrder.id));
+  notifiedBusinessOrderIds.add(String(newOrder.id));
+  if (newOrder.order_number) {
+    cashierCreatedOrderIds.add(String(newOrder.order_number));
+    notifiedBusinessOrderIds.add(String(newOrder.order_number));
   }
 
   // Save food items to DB if online
@@ -15249,11 +19272,28 @@ async function buildOrderFromPos(action) {
     menu_item_id: (i.id && !isNaN(Number(i.id)) && Number(i.id) < 9000) ? Number(i.id) : null,
   }));
 
-  try {
-    const res = await insforge.database.from('order_items').insert(itemRows).select();
-    if (res.data) insertedItems = res.data;
-  } catch(err) {
-    console.warn('[POS Items] Cloud items insert warning (saved locally):', err);
+  if (!cloudInsertFailed) {
+    try {
+      const res = await insforge.database.from('order_items').insert(itemRows).select();
+      if (res.error) throw res.error;
+      if (res.data) insertedItems = res.data;
+    } catch(err) {
+      console.warn('[POS Items] Cloud items insert warning (saved locally):', err);
+      cloudInsertFailed = true;
+    }
+  }
+
+  if (cloudInsertFailed) {
+    try {
+      offlineSync.enqueuePosOrderCreate({
+        orderData: newOrder,
+        itemRows,
+        idempotencyKey: newOrder.idempotency_key || `pos_create_${newOrder.id}`
+      });
+      showAdminToast('Order created locally. Cloud sync queued.', 'warning');
+    } catch (queueErr) {
+      console.warn('[POS Insert] Failed to enqueue POS order create:', queueErr);
+    }
   }
 
   orders.unshift(newOrder);
@@ -15264,6 +19304,18 @@ async function buildOrderFromPos(action) {
   }
 
   persistOrdersCache();
+
+  // Record coupon redemption in memory & database if a coupon was applied
+  if (t.appliedCoupon && t.appliedCoupon.code) {
+    const redeemedCode = String(t.appliedCoupon.code).toUpperCase();
+    const matchedCoupon = (adminCoupons || []).find(c => String(c.code || '').toUpperCase() === redeemedCode);
+    if (matchedCoupon) {
+      matchedCoupon.used_count = Number(matchedCoupon.used_count || 0) + 1;
+    }
+    redeemCoupon(redeemedCode, phone, newOrder.id).catch(e => {
+      console.warn('[POS Coupon] Non-blocking coupon usage record warning:', e);
+    });
+  }
 
   // Refresh UI
   renderBillingQuickCards();
@@ -15276,7 +19328,7 @@ async function buildOrderFromPos(action) {
   renderKitchenPanel();
 
   // Auto-sync billed / closed POS order to Google Sheets
-  if ((newOrder.status === 'delivered' || action === 'bill') && isGoogleSheetAutoSyncEnabled()) {
+  if (newOrder.status === 'delivered' && isGoogleSheetAutoSyncEnabled()) {
     syncOrderToGoogleSheet(newOrder).catch(e => console.warn('[Google Sheet] POS bill auto-sync error:', e));
   }
 
@@ -15333,7 +19385,7 @@ async function generateKOTHtml(order = {}, items = [], options = false) {
   const feedLines = Math.max(3, parseInt(p.kot_bottom_feed || 3, 10));
   const feedSpaces = '<br/>'.repeat(feedLines);
 
-  return `<div style="width:${wPx}px;font-family:monospace,sans-serif;font-size:11px;color:#000;padding:0 ${sideGapPx}px;margin:0 auto;line-height:1.3;">
+  return `<div style="width:100%;max-width:100%;font-family:monospace,sans-serif;font-size:11px;color:#000;padding:${sideGapPx ? `0 ${sideGapPx}px` : '0'};margin:0;line-height:1.3;box-sizing:border-box;">
     ${isReprint ? `
       <div style="background:#000;color:#fff;font-size:12px;font-weight:900;text-align:center;padding:3px;margin-bottom:4px;letter-spacing:1px;border-radius:2px;">
         *** REPRINT - DUPLICATE KOT ***<br/><span style="font-size:10px;font-weight:bold;">DO NOT RE-COOK</span>
@@ -15365,14 +19417,64 @@ async function generateKOTHtml(order = {}, items = [], options = false) {
   </div>`;
 }
 
+// ── Admin Print Deduplication & Idempotency Store ──────────────
+const ADMIN_PRINT_TOKENS_KEY = 'limra_admin_print_tokens';
+
+function getAdminPrintedTokens() {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const raw = sessionStorage.getItem(ADMIN_PRINT_TOKENS_KEY);
+      if (raw) return new Set(JSON.parse(raw));
+    }
+  } catch (e) {}
+  return new Set();
+}
+
+function saveAdminPrintedTokens(set) {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const arr = Array.from(set).slice(-150);
+      sessionStorage.setItem(ADMIN_PRINT_TOKENS_KEY, JSON.stringify(arr));
+    }
+  } catch (e) {}
+}
+
+const adminPrintedTokens = getAdminPrintedTokens();
+
+function hasAdminJobBeenPrinted(token) {
+  return adminPrintedTokens.has(token);
+}
+
+function markAdminJobAsPrinted(token) {
+  adminPrintedTokens.add(token);
+  saveAdminPrintedTokens(adminPrintedTokens);
+}
+
+function clearAdminPrintedJobTokens() {
+  adminPrintedTokens.clear();
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(ADMIN_PRINT_TOKENS_KEY);
+    }
+  } catch (e) {}
+}
+
 async function printKOT(order, itemsList, options = false) {
-  if (!order) {
+  if (!order || !order.id) {
     showAdminToast('No order found to print KOT.', 'error');
     return;
   }
   const kotOpts = typeof options === 'boolean'
     ? { isNewOnly: options, isReprint: false, roundNumber: options ? 2 : 1 }
     : { isNewOnly: Boolean(options?.isNewOnly), isReprint: Boolean(options?.isReprint), roundNumber: Number(options?.roundNumber || 1) };
+
+  const dedupeKey = `kot:${order.id}:${kotOpts.roundNumber || 1}`;
+
+  // If this is an automatic print (not manual reprint) and has already been printed, skip to prevent duplicates
+  if (!kotOpts.isReprint && hasAdminJobBeenPrinted(dedupeKey)) {
+    console.log(`[Silent Print] KOT for order ${order.id} round ${kotOpts.roundNumber} already printed. Skipping duplicate.`);
+    return { status: 'printed', alreadyPrinted: true, orderNumber: formatDailyOrderNumber(order) };
+  }
 
   let items = itemsList;
   if (!items || items.length === 0) {
@@ -15412,6 +19514,7 @@ async function printKOT(order, itemsList, options = false) {
 
   const isSuccess = job && (job.status === 'printed' || job.status === 'hardware_confirmed' || job.status === 'spooled');
   if (isSuccess) {
+    markAdminJobAsPrinted(dedupeKey);
     const reprintTag = kotOpts.isReprint ? ' (Reprint)' : '';
     showAdminToast(`Printed ✓ KOT #${job.orderNumber}${reprintTag}`, 'success');
   } else {
@@ -15419,9 +19522,23 @@ async function printKOT(order, itemsList, options = false) {
   }
 }
 
+// In-memory cache for static Review QR code to save generation cycles
+let _cachedReviewQrUrl = null;
+let _cachedReviewQrDataUrl = null;
+async function getCachedReviewQr(url) {
+  if (!url) return '';
+  if (_cachedReviewQrUrl === url && _cachedReviewQrDataUrl) {
+    return _cachedReviewQrDataUrl;
+  }
+  _cachedReviewQrUrl = url;
+  _cachedReviewQrDataUrl = await generateReviewQrDataUrl(url);
+  return _cachedReviewQrDataUrl;
+}
+
 async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {}) {
   if (!order) order = {};
   const isReprint = Boolean(options && options.isReprint);
+  const showDuplicateBanner = Boolean(options && (options.showDuplicateBanner === true || (isReprint && options.showDuplicateBanner !== false)));
   const p = printerSettings;
   const fontSizeNum = parseFloat(p.bill_font_size ?? 11.5) || 11.5;
   const fontSizePx = `${fontSizeNum}px`;
@@ -15442,8 +19559,13 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
   const rowPadding = isUltraCompact ? '1px 1px' : (isCompact ? '2px 1px' : '3px 2px');
   const sepMargin = isUltraCompact ? '2px 0' : (isCompact ? '3px 0' : '4px 0');
 
-  const wPx = p.bill_paper_width === 'A4' ? 595 : Math.round(parseFloat(p.bill_paper_width || 80) * 2.835);
-  const sideGapPx = Math.round((p.bill_side_gap ?? 2) * 2.835);
+  // Exact full width calibration for TVS RP3200 Plus (80mm roll, 71.95mm physical thermal head = 576 dots = 272 CSS px @ 96 DPI)
+  const paperWidthVal = p.bill_paper_width || 80;
+  const isA4 = paperWidthVal === 'A4';
+  const is58 = String(paperWidthVal) === '58';
+  const wPx = isA4 ? 595 : (is58 ? 220 : 272);
+  const sideGapPx = 2; // Precise 2px edge buffer to start directly at thermal printable boundary
+
   const parsedMeta = parseNotesMetadata(order.notes, order);
   const allItems = (itemsList && itemsList.length > 0) ? itemsList : (order.id ? getItemsForOrder(order.id) : []);
   
@@ -15452,8 +19574,10 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
   const items = consolidateOrderItems(rawItems);
   const subtotal = items.reduce((sum, i) => sum + Number(i.line_total || (i.price * i.qty) || 0), 0);
   
-  // Parse discount, taxes, and delivery charges from metadata or calculate via central billing engine
-  const isDelivery = parsedMeta.type === 'delivery' || order.order_type === 'delivery';
+  // Parse order type, discount, taxes, and delivery charges
+  const orderTypeRaw = (order.order_type || parsedMeta.type || '').toLowerCase();
+  const isDelivery = orderTypeRaw === 'delivery' || parsedMeta.type === 'delivery';
+  const isPickup = orderTypeRaw === 'pickup' || orderTypeRaw === 'takeaway' || parsedMeta.type === 'pickup' || parsedMeta.type === 'takeaway';
   const deliveryFee = isDelivery ? Math.max(0, Number(order.delivery_fee ?? parsedMeta.deliveryFee ?? 0)) : 0;
   const discountPct = parsedMeta.discountPct || 0;
   const discountAmt = parsedMeta.discountAmt || 0;
@@ -15477,56 +19601,75 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
   const nonTaxableSubtotal = billing.nonTaxableAmount;
   const cgst = billing.cgstAmount;
   const sgst = billing.sgstAmount;
-  // Grand Total includes Taxable + NonTaxable + CGST + SGST + Delivery Fee
   const grandTotal = billing.grandTotal;
   
-  const formattedDate = new Date(order.created_at || Date.now()).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
+  const formattedDate = new Date(order.created_at || Date.now()).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true
+  });
   const payMode = (order.payment_method || order.payment_mode || parsedMeta.payment || parsedMeta.paymentMode || 'cash').toUpperCase();
-  const tableInfo = parsedMeta.tableNumber || order.table_number || '';
+  const tableNum = parsedMeta.tableNumber || order.table_number || (typeof order.notes === 'string' ? order.notes.match(/Table\s*#?(\d+)/i)?.[1] : '') || '';
   
+  let orderTypeLabel = 'DINE-IN';
+  if (isDelivery) {
+    orderTypeLabel = 'HOME DELIVERY';
+  } else if (tableNum && p.bill_show_table !== false) {
+    orderTypeLabel = `TABLE ${tableNum}`;
+  } else if (isPickup) {
+    orderTypeLabel = 'TAKEAWAY';
+  } else {
+    orderTypeLabel = 'DINE-IN';
+  }
+  const invoiceBadge = `${showDuplicateBanner ? 'DUPLICATE TAX INVOICE' : 'TAX INVOICE'} — ${orderTypeLabel}`;
+
   const itemRowsHtml = items.map(i => {
     const itemNote = (i.notes || (parsedMeta.itemsNotes && parsedMeta.itemsNotes[i.item_name || i.name]) || '').trim();
     return `
       <tr style="border-bottom:1px dashed #000;">
-        <td style="padding:${rowPadding};font-size:${fontSizePx};font-weight:${boldItems ? '800' : '700'};line-height:1.2;color:#000;">
+        <td style="padding:${rowPadding};font-size:${fontSizePx};font-weight:${boldItems ? '800' : '700'};line-height:1.2;color:#000;word-break:break-word;vertical-align:top;">
           ${escapeHtml(i.item_name || i.name)}
           ${itemNote ? `<div style="font-size:${subFontSize};font-style:italic;font-weight:700;color:#000;margin-top:1px;">↳ Note: ${escapeHtml(itemNote)}</div>` : ''}
         </td>
-        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:center;font-weight:900;color:#000;">${i.quantity || i.qty}</td>
-        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:700;color:#000;">₹${Number(i.unit_price || i.price || 0).toFixed(0)}</td>
-        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:900;color:#000;">₹${Number(i.line_total || ((i.price || i.unit_price) * (i.qty || i.quantity)) || 0).toFixed(2)}</td>
+        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:center;font-weight:900;color:#000;vertical-align:top;">${i.quantity || i.qty}</td>
+        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;padding-right:4px;font-weight:700;color:#000;vertical-align:top;font-variant-numeric:tabular-nums;">₹${Number(i.unit_price || i.price || 0).toFixed(0)}</td>
+        <td style="padding:${rowPadding};font-size:${fontSizePx};text-align:right;font-weight:900;color:#000;vertical-align:top;font-variant-numeric:tabular-nums;">₹${Number(i.line_total || ((i.price || i.unit_price) * (i.qty || i.quantity)) || 0).toFixed(2)}</td>
       </tr>
     `;
   }).join('');
 
-  const feedLines = Math.max(3, parseInt(p.bill_bottom_feed || 3, 10));
-  const feedSpaces = '<br/>'.repeat(feedLines);
+  // Controlled bottom feed: 2-3 lines to prevent wasteful paper roll usage
+  const feedLines = Math.max(2, parseInt(p.bill_bottom_feed || 2, 10));
+  const feedSpaces = '<br/>'.repeat(Math.min(feedLines, 3));
 
   const qrSize = p.bill_qr_size || 'medium';
-  const qrDimension = qrSize === 'small' ? '60px' : (qrSize === 'large' ? '110px' : '80px');
+  const qrDimension = qrSize === 'small' ? '70px' : (qrSize === 'large' ? '96px' : '82px');
   const showQr = qrSize !== 'none' && Boolean(p.bill_upi_id);
   const qrDataUrl = showQr ? await generateUpiQrDataUrl(p.bill_upi_id, p.bill_upi_payee_name || p.restaurant_name, grandTotal, formatDailyOrderNumber(order)) : '';
 
   const showReviewQr = p.bill_show_review_qr !== false && Boolean(p.bill_review_url);
-  const reviewQrDataUrl = showReviewQr ? await generateReviewQrDataUrl(p.bill_review_url) : '';
+  const reviewQrDataUrl = showReviewQr ? await getCachedReviewQr(p.bill_review_url) : '';
+
+  const showLogo = p.bill_show_logo !== false;
+  const logoSrc = (p.bill_logo_url && !p.bill_logo_url.startsWith('/images/logo.png'))
+    ? p.bill_logo_url
+    : (LIMRA_LOGO_BASE64 || p.bill_logo_url || '/images/logo.png');
 
   return `
-    <div style="width:${wPx}px;font-family:'Courier New',Courier,monospace,sans-serif;font-size:${fontSizePx};font-weight:${fontWeight};color:#000;padding:0 ${sideGapPx}px;margin:0 auto;line-height:${lineSpacing};-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+    <div style="width:${wPx}px;max-width:${wPx}px;font-family:'Courier New',Courier,monospace,sans-serif;font-size:${fontSizePx};font-weight:${fontWeight};color:#000;padding:0 ${sideGapPx}px;margin:0;box-sizing:border-box;line-height:${lineSpacing};-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;">
       <!-- RESTAURANT HEADER -->
       <div style="text-align:center;margin-bottom:3px;color:#000;">
-        ${isReprint ? `
+        ${showDuplicateBanner ? `
           <div style="border:2px solid #000;background:#000;color:#fff;font-size:11px;font-weight:900;text-align:center;padding:2px 0;margin-bottom:4px;letter-spacing:1px;border-radius:2px;">
             *** DUPLICATE / REPRINT INVOICE ***<br/><span style="font-size:9px;font-weight:normal;color:#fff;">(ORIGINAL BILL ALREADY ISSUED)</span>
           </div>
         ` : ''}
-        ${p.bill_show_logo && p.bill_logo_url ? `
+        ${showLogo && logoSrc ? `
           <div style="margin-bottom:2px;text-align:center;">
-            <img src="${p.bill_logo_url}" alt="Logo" style="max-height:38px;max-width:120px;margin:0 auto;display:block;filter:grayscale(100%) contrast(200%);" />
+            <img src="${logoSrc}" alt="Logo" style="max-height:38px;max-width:120px;margin:0 auto;display:block;filter:grayscale(100%) contrast(200%);image-rendering:-webkit-optimize-contrast;" />
           </div>
         ` : ''}
-        <div style="font-size:${headerFontSize};font-weight:900;letter-spacing:0.5px;text-transform:uppercase;color:#000;">${escapeHtml(p.restaurant_name)}</div>
-        ${!compactHeader && p.restaurant_address ? `<div style="font-size:${subFontSize};font-weight:700;color:#000;">${escapeHtml(p.restaurant_address)}</div>` : ''}
-        <div style="font-size:${subFontSize};font-weight:700;color:#000;">
+        <div style="font-size:${headerFontSize};font-weight:900;letter-spacing:0.5px;text-transform:uppercase;color:#000;">${escapeHtml(p.restaurant_name || 'LIMRA RESTAURANT')}</div>
+        ${!compactHeader && p.restaurant_address ? `<div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">${escapeHtml(p.restaurant_address)}</div>` : ''}
+        <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">
           ${p.restaurant_phone ? `Tel: ${escapeHtml(p.restaurant_phone)} ` : ''}
           ${!compactHeader && p.restaurant_gstin ? `| GSTIN: ${escapeHtml(p.restaurant_gstin)} ` : ''}
           ${!compactHeader && p.restaurant_fssai ? `| FSSAI: ${escapeHtml(p.restaurant_fssai)}` : ''}
@@ -15534,14 +19677,14 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
         
         <!-- Table / Delivery Invoice Title -->
         <div style="font-size:${subFontSize};font-weight:900;border-top:1.5px solid #000;border-bottom:1.5px solid #000;padding:2px 0;margin-top:3px;letter-spacing:.3px;color:#000;">
-          ${isReprint ? 'DUPLICATE TAX INVOICE' : 'TAX INVOICE'} — ${parsedMeta.type === 'delivery' ? 'HOME DELIVERY' : (tableInfo && p.bill_show_table ? `TABLE ${tableInfo}` : 'DINE-IN / PICKUP')}
+          ${invoiceBadge}
         </div>
       </div>
 
       <!-- Place & Delivery Area Makeup Block -->
-      ${p.bill_show_place && (parsedMeta.type === 'delivery' || parsedMeta.area || parsedMeta.address) ? `
+      ${p.bill_show_place && (isDelivery || parsedMeta.area || parsedMeta.address) ? `
         <div style="margin:2px 0;padding:2px 4px;border:1px solid #000;border-radius:2px;font-size:${subFontSize};font-weight:700;text-align:left;line-height:1.2;color:#000;">
-          <div><strong>📍 Area:</strong> ${escapeHtml(parsedMeta.area || 'Standard Area')}${parsedMeta.address ? ` · ${escapeHtml(parsedMeta.address)}` : ''}</div>
+          <div><strong>Area:</strong> ${escapeHtml(parsedMeta.area || 'Standard Area')}${parsedMeta.address ? ` · ${escapeHtml(parsedMeta.address)}` : ''}</div>
         </div>
       ` : ''}
       
@@ -15553,18 +19696,18 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
         </div>
         <div style="display:flex;justify-content:space-between;">
           <span><strong>Cust:</strong> ${escapeHtml(order.customer_name || 'Walk-in')}</span>
-          <span>${escapeHtml(order.customer_phone || '')}</span>
+          <span>${order.customer_phone ? `<strong>Phone:</strong> ${escapeHtml(order.customer_phone)}` : ''}</span>
         </div>
       </div>
       
-      <!-- ITEMS TABLE -->
-      <table style="width:100%;border-collapse:collapse;border-bottom:1.5px solid #000;margin-bottom:3px;color:#000;">
+      <!-- ITEMS TABLE: Exact Monospace Calibration for 272px Physical Viewport -->
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed;border-bottom:1.5px solid #000;margin-bottom:3px;color:#000;">
         <thead>
           <tr style="border-top:1.5px solid #000;border-bottom:1.5px solid #000;">
-            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:left;color:#000;">Item</th>
-            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:center;width:24px;color:#000;">Qty</th>
-            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:right;width:42px;color:#000;">Rate</th>
-            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:right;width:50px;color:#000;">Amt</th>
+            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:left;width:136px;color:#000;vertical-align:top;">Item</th>
+            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:center;width:28px;color:#000;vertical-align:top;">Qty</th>
+            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:right;width:44px;padding-right:4px;color:#000;vertical-align:top;">Rate</th>
+            <th style="font-size:${subFontSize};font-weight:${boldHeaders ? '900' : '700'};padding:${rowPadding};text-align:right;width:60px;color:#000;vertical-align:top;">Amt</th>
           </tr>
         </thead>
         <tbody>${itemRowsHtml}</tbody>
@@ -15601,17 +19744,17 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
       <!-- DYNAMIC UPI QR (Auto-Scaled or Hidden to save paper) -->
       ${showQr && qrDataUrl ? `
         <div style="margin-top:3px;padding-top:2px;text-align:center;color:#000;">
-          <div style="font-size:${subFontSize};font-weight:900;">📱 SCAN &amp; PAY VIA UPI</div>
+          <div style="font-size:${subFontSize};font-weight:900;letter-spacing:0.3px;">SCAN &amp; PAY VIA UPI</div>
           <img src="${qrDataUrl}" alt="UPI QR" style="width:${qrDimension};height:${qrDimension};margin:2px auto;display:block;image-rendering:pixelated;" />
           <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">UPI: <strong>${escapeHtml(p.bill_upi_id)}</strong> (${formatBillAmount(grandTotal)})</div>
         </div>
       ` : ''}
 
-      <!-- GOOGLE 5-STAR REVIEW QR (NO SECOND ACTION REQUIRED) -->
+      <!-- GOOGLE 5-STAR REVIEW QR -->
       ${showReviewQr && reviewQrDataUrl ? `
         <div style="margin-top:3px;padding-top:3px;border-top:1px dashed #000;text-align:center;color:#000;">
-          <div style="font-size:${subFontSize};font-weight:900;letter-spacing:0.3px;">⭐ ${escapeHtml(p.bill_review_heading || 'LOVE YOUR EXPERIENCE?')} ⭐</div>
-          <div style="font-size:12px;letter-spacing:2px;margin:1px 0;">⭐⭐⭐⭐⭐</div>
+          <div style="font-size:${subFontSize};font-weight:900;letter-spacing:0.3px;">${escapeHtml(p.bill_review_heading || 'LOVE YOUR EXPERIENCE?')}</div>
+          <div style="font-size:12px;letter-spacing:2px;margin:1px 0;color:#000;">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
           <img src="${reviewQrDataUrl}" alt="Google Review QR" style="width:${qrDimension};height:${qrDimension};margin:2px auto;display:block;image-rendering:pixelated;" />
           <div style="font-size:${subFontSize};font-weight:700;color:#000;margin-top:1px;">${escapeHtml(p.bill_review_subtext || 'Scan to leave us a Google Review')}</div>
         </div>
@@ -15620,7 +19763,7 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
       <!-- COMPACT FOOTER -->
       <div style="text-align:center;border-top:1px dashed #000;padding-top:3px;margin-top:3px;font-size:${subFontSize};color:#000;">
         <div style="font-weight:900;">${escapeHtml(p.bill_footer_message || 'Thank You! Visit Again.')}</div>
-        <div style="margin-top:1px;font-weight:700;">${escapeHtml(p.restaurant_name)}</div>
+        <div style="margin-top:1px;font-weight:700;">${escapeHtml(p.restaurant_name || 'LIMRA RESTAURANT')}</div>
       </div>
       ${feedSpaces}
     </div>
@@ -15628,11 +19771,22 @@ async function generateBillWithTaxHtml(order = {}, itemsList = [], options = {})
 }
 
 async function printOrderReceiptWithTax(order, itemsList, options = {}) {
-  if (!order) {
+  if (!order || !order.id) {
     showAdminToast('No order found to print Bill.', 'error');
     return;
   }
   const isReprint = Boolean(options && options.isReprint);
+  const showDuplicateBanner = Boolean(options && (options.showDuplicateBanner === true || (isReprint && options.showDuplicateBanner !== false)));
+  const forcePrint = Boolean(options && (options.force || isReprint));
+  const isPaid = order.payment_status === 'paid' || order.ticket_status === 'CLOSED';
+  const dedupeKey = isPaid ? `bill_paid:${order.id}` : `bill_unpaid:${order.id}`;
+
+  // If this is an automatic print (not manual user click) and has already been printed, skip to prevent duplicates
+  if (!forcePrint && hasAdminJobBeenPrinted(dedupeKey)) {
+    console.log(`[Silent Print] Bill for order ${order.id} (${isPaid ? 'PAID' : 'UNPAID'}) already printed. Skipping duplicate.`);
+    return { status: 'printed', alreadyPrinted: true, orderNumber: formatDailyOrderNumber(order) };
+  }
+
   let items = itemsList;
   if (!items || items.length === 0) {
     items = getItemsForOrder(order.id);
@@ -15670,7 +19824,8 @@ async function printOrderReceiptWithTax(order, itemsList, options = {}) {
 
   const isSuccess = job && (job.status === 'printed' || job.status === 'hardware_confirmed' || job.status === 'spooled');
   if (isSuccess) {
-    const reprintTag = isReprint ? ' (Reprint)' : '';
+    markAdminJobAsPrinted(dedupeKey);
+    const reprintTag = showDuplicateBanner ? ' (Reprint)' : '';
     showAdminToast(`Printed ✓ Bill #${job.orderNumber}${reprintTag}`, 'success');
   } else {
     showAdminToast(`⚠️ Print failed for Bill #${job?.orderNumber || 'Order'} (Saved to Queue)`, 'error');
@@ -15723,20 +19878,21 @@ async function executePrintJob(job) {
   const isKot = job.type === 'KOT';
   const paperWidth = job.paperWidth || (isKot ? (p.kot_paper_width || 80) : (p.bill_paper_width || 80));
   const sideGap = isKot ? (p.kot_side_gap ?? 2) : (p.bill_side_gap ?? 2);
+  const printerName = isKot ? (p.kot_printer_name || p.active_printer_name) : (p.bill_printer_name || p.active_printer_name);
 
-  // 1. Electron Desktop Native Hardware Printing (Isolated, Silent & Direct)
+  // 1. Electron Desktop Native Hardware Printing (Isolated, Silent & Direct — Zero Dialog)
   if (typeof window !== 'undefined' && window.electronPOS?.isDesktop && typeof window.electronPOS.printReceipt === 'function') {
     try {
-      const printerName = isKot ? (p.kot_printer_name || p.active_printer_name) : (p.bill_printer_name || p.active_printer_name);
       const res = await window.electronPOS.printReceipt({
         html: job.payload?.html,
-        printerName: printerName || undefined,
+        escposText: job.payload?.escposText,
+        printerName: printerName || 'RP3200 plus(U) 1',
         silent: p.silent_print !== false,
         paperWidth: paperWidth,
         sideGap: sideGap
       });
       if (res && res.success) {
-        return { success: true, hardware_confirmed: Boolean(res.hardware_confirmed) };
+        return { success: true, hardware_confirmed: Boolean(res.hardware_confirmed), deviceName: res.deviceName };
       }
       if (res && res.error) {
         throw new Error(res.error);
@@ -15747,7 +19903,7 @@ async function executePrintJob(job) {
     }
   }
 
-  // 2. QZ Tray ESC/POS or Pixel Print
+  // 2. QZ Tray ESC/POS or Pixel Print (if configured)
   if (p.connection_mode === 'qz_tray' && typeof qz !== 'undefined' && qzConnected && activePrinter) {
     try {
       const config = qz.configs.create(activePrinter);
@@ -15768,20 +19924,49 @@ async function executePrintJob(job) {
         return { success: true, hardware_confirmed: true };
       }
     } catch (qzErr) {
-      console.warn('[PrintQueue] QZ Tray print error, falling back to Native Driver:', qzErr);
+      console.warn('[PrintQueue] QZ Tray print error, falling back to Local Silent Spooler:', qzErr);
     }
   }
 
-  // 3. Browser Spooler / Driver Print (Default Web Fallback)
-  if (job.payload?.html) {
-    const success = await printViaNativeDriver(job.payload.html, paperWidth, sideGap);
-    if (!success) {
-      throw new Error('Printer driver spooler failed or user cancelled');
+  // 3. Local Backend Direct Silent Print (/api/print-silent) — Zero Dialog, Direct Windows Spooler
+  try {
+    const res = await fetch('/api/print-silent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        html: job.payload?.html,
+        escposText: job.payload?.escposText,
+        printerName: printerName || 'RP3200 plus(U) 1',
+        paperWidth: paperWidth
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success) {
+        return { success: true, hardware_confirmed: Boolean(data.hardware_confirmed), deviceName: data.deviceName };
+      }
+      if (data && data.error) {
+        throw new Error(data.error);
+      }
     }
-    return { success: true, spooled: true };
+  } catch (apiErr) {
+    console.warn('[PrintQueue] Local backend silent spooler error:', apiErr);
   }
 
-  throw new Error('No printable payload provided in print job');
+  // 4. Native driver silent bridge fallback (checks Electron/backend, strictly zero popups)
+  if (job.payload?.html || job.payload?.escposText) {
+    const success = await printViaNativeDriver(job.payload.html, paperWidth, sideGap, {
+      escposText: job.payload.escposText,
+      order: job.payload.order,
+      items: job.payload.items
+    });
+    if (success) {
+      return { success: true, hardware_confirmed: true, spooled: true };
+    }
+  }
+
+  // 5. Strict Zero-Popup Enforcement: Never open browser print dialog
+  throw new Error('Direct thermal printer bridge unavailable (Connect Electron POS Desktop or Local Server on localhost:3000)');
 }
 
 printQueue.setExecutor(executePrintJob);
@@ -15803,6 +19988,7 @@ let holdModalContext = {
 };
 
 async function openHoldEditModal(idOrTableNum, initialTab = 'edit') {
+  closeOrderDetailDrawer();
   const tableSessions = getActiveTableSessions();
   const directOrder = orders.find(o => String(o.id) === String(idOrTableNum));
   let foundSession = null;
@@ -16008,7 +20194,7 @@ function renderHoldModalExistingItems(filterText) {
             <div style="font-size:.88rem;font-weight:800;color:#991b1b;text-decoration:line-through;">
               ${escapeHtml(item.name)}
             </div>
-            <div style="font-size:.72rem;color:#dc2626;font-weight:700;margin-top:2px;">
+            <div style="font-size:0.75rem;color:#dc2626;font-weight:700;margin-top:2px;">
               ❌ Marked for Kitchen Cancellation (${item.originalQty}× ₹${item.price.toFixed(0)})
             </div>
           </div>
@@ -16024,9 +20210,9 @@ function renderHoldModalExistingItems(filterText) {
         <div style="flex:1;">
           <div style="font-size:.88rem;font-weight:800;color:#111827;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;">
             <span>${escapeHtml(item.name)}</span>
-            ${isQtyModified ? `<span style="font-size:.68rem;padding:1px 5px;border-radius:4px;background:#fef3c7;color:#b45309;font-weight:700;">was ${item.originalQty}</span>` : ''}
+            ${isQtyModified ? `<span style="font-size:0.75rem;padding:1px 5px;border-radius:4px;background:#fef3c7;color:#b45309;font-weight:700;">was ${item.originalQty}</span>` : ''}
           </div>
-          <div style="font-size:.74rem;color:var(--adm-muted);margin-top:2px;">
+          <div style="font-size:0.75rem;color:var(--adm-muted);margin-top:2px;">
             ₹${item.price.toFixed(2)} each · <strong style="color:#111827;">Line: ₹${lineTotal.toFixed(2)}</strong>
           </div>
         </div>
@@ -16046,7 +20232,7 @@ function renderHoldModalExistingItems(filterText) {
           </div>
 
           <!-- Cancel Dish Button -->
-          <button type="button" onclick="holdModalExistingToggleCancel(${idx})" class="adm-btn adm-btn-sm" style="background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:.74rem;padding:.3rem .55rem;border-radius:6px;" title="Cancel this dish from order">
+          <button type="button" onclick="holdModalExistingToggleCancel(${idx})" class="adm-btn adm-btn-sm" style="background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:0.75rem;padding:.3rem .55rem;border-radius:6px;" title="Cancel this dish from order">
             🗑️ Cancel
           </button>
         </div>
@@ -16218,7 +20404,6 @@ function renderHoldModalFoodGrid(filterText) {
         holdModalContext.newItemsCart.push({ id: id || null, name, price, qty: 1 });
       }
       updateHoldModalCartUI();
-      showAdminToast(`Added "${name}" to new dishes 🛒`, 'success');
     });
   });
 }
@@ -16238,13 +20423,13 @@ function updateHoldModalCartUI() {
 
   if (cartEl) {
     if (newItems.length === 0) {
-      cartEl.innerHTML = '<p style="color:var(--adm-muted);font-size:.8rem;text-align:center;padding:1rem 0;">No extra dishes added yet.<br/><span style="font-size:.72rem;">Switch to "Add New Dishes" tab to pick items.</span></p>';
+      cartEl.innerHTML = '<p style="color:var(--adm-muted);font-size:.8rem;text-align:center;padding:1rem 0;">No extra dishes added yet.<br/><span style="font-size:0.75rem;">Switch to "Add New Dishes" tab to pick items.</span></p>';
     } else {
       cartEl.innerHTML = newItems.map((item, idx) => `
         <div style="display:flex;align-items:center;gap:.4rem;padding:.35rem 0;border-bottom:1px solid var(--adm-border);">
           <div style="flex:1;">
             <div style="font-size:.82rem;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(item.name)}</div>
-            <div style="font-size:.72rem;color:var(--adm-muted);margin-top:1px;">₹${item.price.toFixed(2)} each</div>
+            <div style="font-size:0.75rem;color:var(--adm-muted);margin-top:1px;">₹${item.price.toFixed(2)} each</div>
           </div>
           <div style="display:flex;align-items:center;gap:.2rem;">
             <button type="button" onclick="holdModalNewChangeQty(${idx},-1)" style="width:22px;height:22px;border:1px solid var(--adm-border);border-radius:4px;background:#f9fafb;cursor:pointer;font-size:.8rem;display:flex;align-items:center;justify-content:center;font-weight:bold;">−</button>
@@ -16325,7 +20510,7 @@ function generateKitchenCancellationSlipHtml(order, cancelledItems = [], modifie
   `).join('');
 
   return `
-    <div style="width:${wPx}px;font-family:'Courier New',Courier,monospace;font-size:12px;font-weight:800;color:#000;padding:0 ${sideGapPx}px;margin:0 auto;line-height:1.3;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+    <div style="width:100%;max-width:100%;font-family:'Courier New',Courier,monospace;font-size:12px;font-weight:800;color:#000;padding:0;margin:0;line-height:1.3;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
       <div style="text-align:center;padding-bottom:4px;border-bottom:2px solid #000;">
         <div style="font-size:15px;font-weight:900;letter-spacing:1px;background:#000;color:#fff;padding:2px 4px;">*** KITCHEN CANCELLATION ***</div>
         <div style="font-size:11px;font-weight:900;margin-top:2px;">DO NOT PREPARE CANCELLED ITEMS</div>
@@ -16363,14 +20548,17 @@ async function saveHoldOrderCorrections(shouldPrintKitchenSlip = false) {
   const newItems = [...newItemsCart];
 
   if (activeExistingItems.length === 0 && newItems.length === 0) {
+    if (ordersInSession.some(ord => isOrderPaidOrClosed(ord))) {
+      showAdminToast('Cannot cancel order: one or more orders are already paid or closed.', 'error');
+      return;
+    }
     if (!confirm('All items in this order are cancelled. Do you want to cancel the entire order / table session?')) {
       return;
     }
     // Cancel the orders in this session
     try {
       for (const ord of ordersInSession) {
-        await insforge.database.from('orders').update({ status: 'cancelled' }).eq('id', ord.id);
-        ord.status = 'cancelled';
+        await cancelOrderRecord(ord);
         await markOrderNotificationsRead(ord.id);
       }
       persistOrdersCache();
@@ -16615,10 +20803,10 @@ function renderBillingTotalBills() {
     const isHold = o.status === 'hold';
 
     const statusBadge = isHold
-      ? '<span style="background:#fef3c7;color:#b45309;font-size:.72rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;">⏳ On Hold</span>'
+      ? '<span style="background:#fef3c7;color:#b45309;font-size:0.75rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;">⏳ On Hold</span>'
       : (isPaid
-        ? '<span style="background:#ecfdf5;color:#059669;font-size:.72rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;">✓ Settled</span>'
-        : '<span style="background:#fef2f2;color:#ef4444;font-size:.72rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;">Pending</span>');
+        ? '<span style="background:#ecfdf5;color:#059669;font-size:0.75rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;">✓ Settled</span>'
+        : '<span style="background:#fef2f2;color:#ef4444;font-size:0.75rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;">Pending</span>');
 
     const actionsHtml = isHold
       ? `
@@ -16676,12 +20864,7 @@ function renderBillingTotalBills() {
     btn.addEventListener('click', () => {
       const orderId = btn.dataset.id;
       if (!orderId) return;
-      selectedOrderId = orderId;
-      if ($('billing-pos')) $('billing-pos').style.display = 'none';
-      if ($('billing-total-section')) $('billing-total-section').style.display = 'none';
-      if ($('billing-detail-view')) $('billing-detail-view').style.display = 'block';
-      if ($('billing-order-picker')) $('billing-order-picker').value = orderId;
-      renderOrderDetail(orderId);
+      openOrderDetailDrawer(orderId);
     });
   });
 
@@ -16724,6 +20907,49 @@ function isFoodVeg(f) {
 }
 
 let posVegOnlyFilter = false;
+let posTileMode = (() => {
+  try {
+    return localStorage.getItem('limra_pos_tile_mode') === 'compact' ? 'compact' : 'normal';
+  } catch {
+    return 'normal';
+  }
+})();
+
+function syncPosTileModeUI() {
+  const grid = $('pos-food-grid');
+  const btn = $('pos-tile-mode-btn');
+  const iconEl = $('pos-tile-mode-icon');
+  const labelEl = $('pos-tile-mode-label');
+  const isCompact = posTileMode === 'compact';
+
+  if (grid) {
+    grid.classList.toggle('compact-tiles', isCompact);
+    grid.dataset.tileMode = posTileMode;
+  }
+  if (btn) {
+    btn.classList.toggle('active', isCompact);
+    btn.dataset.tileMode = posTileMode;
+  }
+  if (iconEl) iconEl.textContent = isCompact ? '▦' : '⊞';
+  if (labelEl) labelEl.textContent = isCompact ? 'Compact ON' : 'Compact';
+}
+
+function setPosTileMode(mode) {
+  posTileMode = mode === 'compact' ? 'compact' : 'normal';
+  try {
+    localStorage.setItem('limra_pos_tile_mode', posTileMode);
+  } catch {}
+  syncPosTileModeUI();
+  renderFoodGrid($('pos-food-search')?.value);
+  return posTileMode;
+}
+
+function getPosTileMode() {
+  return posTileMode;
+}
+
+window.setPosTileMode = setPosTileMode;
+window.getPosTileMode = getPosTileMode;
 
 function updateCatalogCatHeader() {
   const nameEl = $('pos-catalog-cat-name');
@@ -16746,6 +20972,7 @@ function updateCatalogCatHeader() {
 function renderFoodGrid(filterText) {
   const grid = $('pos-food-grid');
   if (!grid) return;
+  syncPosTileModeUI();
 
   const searchEl = $('pos-food-search');
   const rawQ = (typeof filterText === 'string') ? filterText : (searchEl?.value || '');
@@ -16794,22 +21021,37 @@ function renderFoodGrid(filterText) {
     const isVeg = isFoodVeg(f);
     const vegBadge = `<span class="pos-veg-badge ${isVeg ? 'veg' : 'nonveg'}" title="${isVeg ? 'Vegetarian' : 'Non-Vegetarian'}"><span class="pos-veg-dot"></span></span>`;
     const isAvailable = f.available !== false;
+    const isCombo = Boolean(f.isCombo || f.is_combo || f.category === 'combo' || fId.startsWith('combo-'));
+    const priceNum = Number(f.price || 0);
+    const mrpNum = Number(f.mrp || 0);
+    const savings = (isCombo && mrpNum > priceNum) ? Math.round(mrpNum - priceNum) : 0;
+    const comboSummary = isCombo
+      ? (f.comboItemsSummary || (Array.isArray(f.comboItems) && f.comboItems.length ? f.comboItems.map(i => `${i.qty || 1}× ${i.name}`).join(' + ') : (f.description || '')))
+      : '';
 
     return `
-      <div role="button" tabindex="0" class="pos-food-tile-img ${isAvailable ? '' : 'is-out-of-stock'}" data-id="${escapeHtml(fId)}" data-name="${escapeHtml(fName)}" data-price="${f.price}" data-available="${isAvailable}">
+      <div role="button" tabindex="0" class="pos-food-tile-img ${isCombo ? 'is-combo-tile' : ''} ${isAvailable ? '' : 'is-out-of-stock'} ${cartQty > 0 ? 'in-cart' : ''}" data-id="${escapeHtml(fId)}" data-name="${escapeHtml(fName)}" data-price="${priceNum}" data-mrp="${mrpNum}" data-is-combo="${isCombo}" data-combo-summary="${escapeHtml(comboSummary)}" data-available="${isAvailable}" data-tile-mode="${posTileMode}">
         <div class="pos-tile-img-box">
           <img src="${imgUrl}" alt="${escapeHtml(fName)}" onerror="this.src='/images/food_starters.png'" loading="lazy" />
+          ${isCombo ? `<span class="pos-combo-badge">🍱 COMBO</span>` : ''}
           ${cartQty > 0 ? `<span class="pos-tile-badge">${cartQty} in cart</span>` : ''}
-          ${!isAvailable ? `<span style="position:absolute;bottom:4px;left:4px;right:4px;background:rgba(220,38,38,0.9);color:#fff;font-size:0.62rem;font-weight:800;padding:2px 4px;border-radius:4px;text-align:center;">Out of Stock</span>` : ''}
+          ${!isAvailable ? `<span style="position:absolute;bottom:4px;left:4px;right:4px;background:rgba(220,38,38,0.9);color:#fff;font-size:0.75rem;font-weight:800;padding:2px 4px;border-radius:4px;text-align:center;">Out of Stock</span>` : ''}
         </div>
         <div class="pos-tile-body">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px;">
-            <span class="pos-tile-title" title="${escapeHtml(fName)}">${escapeHtml(fName)}</span>
+            <span class="pos-tile-title" title="${escapeHtml(fName)}">${isCombo && posTileMode === 'compact' ? '<span class="pos-combo-inline-tag">🍱</span> ' : ''}${escapeHtml(fName)}</span>
             ${vegBadge}
           </div>
+          ${isCombo && comboSummary ? `<div class="pos-combo-items-sub" title="${escapeHtml(comboSummary)}">${escapeHtml(comboSummary)}</div>` : ''}
           <div class="pos-tile-foot">
-            <span class="pos-tile-price-tag">₹${Number(f.price || 0).toFixed(0)}</span>
-            <span class="pos-tile-add-btn" title="Add to cart">+</span>
+            <div class="pos-combo-price-wrap">
+              <span class="pos-tile-price-tag">₹${priceNum.toFixed(0)}</span>
+              ${savings > 0 ? `<span class="pos-combo-mrp">₹${mrpNum.toFixed(0)}</span><span class="pos-combo-save-badge">Save ₹${savings}</span>` : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;">
+              ${cartQty > 0 ? `<span class="pos-tile-compact-qty">${cartQty}×</span>` : ''}
+              <span class="pos-tile-add-btn" title="Add to cart">+</span>
+            </div>
           </div>
         </div>
       </div>
@@ -16863,11 +21105,19 @@ function renderFoodGrid(filterText) {
         showAdminToast('This dish is currently marked Out of Stock.', 'error');
         return;
       }
-      addItemToPosCart({
-        id: tile.dataset.id,
-        name: tile.dataset.name,
-        price: parseFloat(tile.dataset.price)
-      });
+      const matchedSourceItem = source.find(item => String(item.id) === String(tile.dataset.id));
+      if (matchedSourceItem) {
+        addItemToPosCart(matchedSourceItem);
+      } else {
+        addItemToPosCart({
+          id: tile.dataset.id,
+          name: tile.dataset.name,
+          price: parseFloat(tile.dataset.price),
+          mrp: parseFloat(tile.dataset.mrp || '0'),
+          isCombo: tile.dataset.isCombo === 'true',
+          comboItemsSummary: tile.dataset.comboSummary || ''
+        });
+      }
     };
 
     tile.addEventListener('click', handleSelect);
@@ -16947,7 +21197,7 @@ function initBillingPanel() {
   updateCatalogCatHeader();
   renderFoodGrid();
 
-  // 2. Fetch combos asynchronously in the background without blocking UI
+  // 2. Fetch combos and coupons asynchronously in the background without blocking UI
   if (!adminCombos || adminCombos.length === 0) {
     getCombos().then(combos => {
       if (Array.isArray(combos)) {
@@ -16959,6 +21209,19 @@ function initBillingPanel() {
     }).catch(e => {
       console.warn('[Billing] Non-blocking combos fetch failed:', e);
     });
+  }
+
+  if (!adminCoupons || adminCoupons.length === 0) {
+    getCoupons().then(coupons => {
+      if (Array.isArray(coupons)) {
+        adminCoupons = coupons;
+        renderPosCouponPicker();
+      }
+    }).catch(e => {
+      console.warn('[Billing] Non-blocking coupons fetch failed:', e);
+    });
+  } else {
+    renderPosCouponPicker();
   }
 
   if (posBillingMounted) return;
@@ -16973,10 +21236,21 @@ function initBillingPanel() {
   });
   $('pos-quick-refresh-btn')?.addEventListener('click', () => {
     loadFoodsCache();
+    Promise.allSettled([getCombos(true), getCoupons(true)]).then(([combosRes, couponsRes]) => {
+      if (combosRes.status === 'fulfilled' && Array.isArray(combosRes.value)) {
+        adminCombos = combosRes.value;
+      }
+      if (couponsRes.status === 'fulfilled' && Array.isArray(couponsRes.value)) {
+        adminCoupons = couponsRes.value;
+        renderPosCouponPicker();
+      }
+      renderCategoryPills();
+      updateCatalogCatHeader();
+      renderFoodGrid($('pos-food-search')?.value);
+    });
     renderCategoryPills();
     updateCatalogCatHeader();
     renderFoodGrid($('pos-food-search')?.value);
-    showAdminToast('Menu & Categories refreshed! 🔄', 'info');
   });
 
   // Veg Only Toggle Button
@@ -16985,6 +21259,168 @@ function initBillingPanel() {
     this.classList.toggle('active', posVegOnlyFilter);
     this.dataset.vegOnly = String(posVegOnlyFilter);
     renderFoodGrid($('pos-food-search')?.value);
+  });
+
+  // Compact / Normal Dish Tile Mode Toggle Button
+  $('pos-tile-mode-btn')?.addEventListener('click', () => {
+    setPosTileMode(posTileMode === 'compact' ? 'normal' : 'compact');
+  });
+
+  // Compact Extra Popover Triggers (Discount, Coupon, Delivery Fee, Kitchen Notes)
+  ['discount', 'coupon', 'delivery', 'notes'].forEach(name => {
+    $(`pos-extra-${name}-btn`)?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePosExtraPopover(name);
+    });
+  });
+
+  document.querySelectorAll('.pos-extra-popover-close').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeAllPosExtraPopovers();
+    });
+  });
+
+  document.querySelectorAll('[data-disc-preset]').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const inp = $('pos-discount-pct');
+      if (inp) {
+        const val = parseFloat(chip.dataset.discPreset || '0') || 0;
+        if (val > 0 && posAppliedCoupon) {
+          posAppliedCoupon = null;
+          if ($('pos-coupon-code-input')) $('pos-coupon-code-input').value = '';
+          showPosCouponFeedback('', 'error');
+        }
+        inp.value = chip.dataset.discPreset;
+        updatePosCartUI(false);
+        renderPosCouponPicker();
+      }
+    });
+  });
+
+  // Promo Coupon Picker Controls
+  $('pos-coupon-apply-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const code = $('pos-coupon-code-input')?.value?.trim() || '';
+    applyPosCoupon(code);
+  });
+
+  $('pos-coupon-code-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      applyPosCoupon(e.target.value);
+    }
+  });
+
+  $('pos-coupon-clear-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    removePosCoupon();
+  });
+
+  $('pos-remove-coupon-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    removePosCoupon();
+  });
+
+  // Debounced Customer Phone & Name Autocomplete Lookup
+  const triggerDebouncedCustomerLookup = (rawQuery, sourceField = 'phone') => {
+    if (posCustomerLookupTimer) clearTimeout(posCustomerLookupTimer);
+    const val = String(rawQuery || '').trim();
+    const digits = val.replace(/\D/g, '');
+    if ((sourceField === 'phone' && digits.length < 3) || (sourceField === 'name' && val.length < 2)) {
+      const suggBox = $('pos-customer-suggestions');
+      if (suggBox) suggBox.style.display = 'none';
+      return;
+    }
+
+    posCustomerLookupTimer = setTimeout(async () => {
+      let matches = lookupPosCustomers(val);
+      // If exact 10-digit phone has no local cache match, attempt non-blocking scoped lookup
+      if (sourceField === 'phone' && matches.length === 0 && digits.length >= 10) {
+        try {
+          const remoteOrders = await getCustomerOrders(digits);
+          if (Array.isArray(remoteOrders) && remoteOrders.length > 0) {
+            remoteOrders.forEach(ro => {
+              if (ro && ro.id && !orders.some(o => String(o.id) === String(ro.id))) {
+                orders.push(ro);
+              }
+            });
+            matches = lookupPosCustomers(digits);
+          }
+        } catch {
+          // Graceful handling for offline/unknown numbers without throwing
+        }
+      }
+
+      // If exact 10-digit phone match is found, auto-fill name & address if not manually edited
+      if (sourceField === 'phone' && digits.length >= 10 && matches.length > 0) {
+        const exactMatch = matches.find(m => String(m.phone).replace(/\D/g, '').endsWith(digits.slice(-10)));
+        if (exactMatch) {
+          selectPosCustomerSuggestion(exactMatch, { fromClick: false });
+        }
+      }
+
+      renderPosCustomerSuggestions(matches, val);
+    }, 180);
+  };
+
+  $('pos-customer-phone')?.addEventListener('input', (e) => {
+    triggerDebouncedCustomerLookup(e.target.value, 'phone');
+  });
+
+  $('pos-customer-name')?.addEventListener('input', (e) => {
+    e.target.dataset.autoFilled = 'false';
+    triggerDebouncedCustomerLookup(e.target.value, 'name');
+  });
+
+  $('pos-delivery-address')?.addEventListener('input', (e) => {
+    e.target.dataset.autoFilled = 'false';
+  });
+
+  document.addEventListener('click', (e) => {
+    const strip = $('pos-customer-strip');
+    const suggBox = $('pos-customer-suggestions');
+    if (suggBox && strip && !strip.contains(e.target)) {
+      suggBox.style.display = 'none';
+    }
+  });
+
+  document.querySelectorAll('[data-fee-preset]').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const inp = $('pos-delivery-fee');
+      if (inp) {
+        inp.value = chip.dataset.feePreset;
+        updatePosCartUI(false);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-note-preset]').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const noteEl = $('pos-notes');
+      if (!noteEl) return;
+      const preset = chip.dataset.notePreset || '';
+      const current = noteEl.value.trim();
+      if (!current) {
+        noteEl.value = preset;
+      } else if (!current.toLowerCase().includes(preset.toLowerCase())) {
+        noteEl.value = `${current}, ${preset}`;
+      }
+      syncPosExtraBadges();
+    });
+  });
+
+  $('pos-notes')?.addEventListener('input', () => syncPosExtraBadges());
+
+  document.addEventListener('click', (e) => {
+    const bar = $('pos-extra-controls-bar');
+    if (bar && !bar.contains(e.target)) {
+      closeAllPosExtraPopovers();
+    }
   });
 
   // Clear Search Button
@@ -17016,30 +21452,37 @@ function initBillingPanel() {
   newBtn?.addEventListener('click', () => {
     posEditingOrderId = null;
     posCart = [];
+    posAppliedCoupon = null;
     posActiveCat = 'all';
     posVegOnlyFilter = false;
     $('pos-veg-filter-btn')?.classList.remove('active');
     clearPosSelectedPlace();
+    showPosCouponFeedback('', 'error');
     if (posEl) posEl.style.display = 'block';
     if (totalSection) totalSection.style.display = 'none';
-    if (detailEl) detailEl.style.display = 'none';
+    closeOrderDetailDrawer();
+    closeAllPosExtraPopovers();
+    if ($('pos-customer-suggestions')) $('pos-customer-suggestions').style.display = 'none';
     if (picker) picker.value = '';
 
     // Clear inputs and remove any invalid red highlights
-    ['pos-customer-name','pos-customer-phone','pos-table-number','pos-notes','pos-discount-pct','pos-delivery-fee','pos-food-search','pos-place-search'].forEach(id => {
+    ['pos-customer-name','pos-customer-phone','pos-table-number','pos-notes','pos-discount-pct','pos-delivery-fee','pos-food-search','pos-place-search','pos-coupon-code-input'].forEach(id => {
       const el = $(id);
       if (el) {
         el.value = '';
         el.classList.remove('pos-input-invalid');
+        delete el.dataset.autoFilled;
       }
     });
     if ($('pos-delivery-address')) {
       $('pos-delivery-address').value = '';
       $('pos-delivery-address').classList.remove('pos-input-invalid');
+      delete $('pos-delivery-address').dataset.autoFilled;
     }
 
     renderPosPlaceChips();
     updatePosCartUI();
+    renderPosCouponPicker();
     renderCategoryPills();
     updateCatalogCatHeader();
     renderFoodGrid('');
@@ -17048,7 +21491,7 @@ function initBillingPanel() {
     syncPosOrderTypeState(posOrderType || 'table');
     setTimeout(() => { $('pos-food-search')?.focus(); }, 100);
 
-    // Background combo check if not already loaded
+    // Background combo & coupon check if not already loaded
     if (!adminCombos || adminCombos.length === 0) {
       getCombos().then(combos => {
         if (Array.isArray(combos)) {
@@ -17056,6 +21499,14 @@ function initBillingPanel() {
           renderCategoryPills();
           updateCatalogCatHeader();
           renderFoodGrid($('pos-food-search')?.value);
+        }
+      }).catch(() => {});
+    }
+    if (!adminCoupons || adminCoupons.length === 0) {
+      getCoupons().then(coupons => {
+        if (Array.isArray(coupons)) {
+          adminCoupons = coupons;
+          renderPosCouponPicker();
         }
       }).catch(() => {});
     }
@@ -17067,31 +21518,31 @@ function initBillingPanel() {
     switchPanel('orders');
   });
 
-  // 3. Detail View Back Button & Orders Button
+  // 3. Detail View Drawer Close / Back Button & Orders Button
   $('billing-detail-back-btn')?.addEventListener('click', () => {
-    if (detailEl) detailEl.style.display = 'none';
-    if (posEl) posEl.style.display = 'block';
-    if (picker) picker.value = '';
+    closeOrderDetailDrawer();
+  });
+
+  $('billing-detail-close-btn')?.addEventListener('click', () => {
+    closeOrderDetailDrawer();
+  });
+
+  $('billing-detail-drawer-backdrop')?.addEventListener('click', () => {
+    closeOrderDetailDrawer();
   });
 
   $('billing-detail-orders-btn')?.addEventListener('click', () => {
+    closeOrderDetailDrawer();
     switchPanel('orders');
   });
 
-  // 4. Order Picker Dropdown Change
+  // 4. Order Picker Dropdown Change (opens slide-over drawer without hiding POS workstation)
   picker?.addEventListener('change', () => {
     const id = picker.value;
     if (id) {
-      if (posEl) posEl.style.display = 'none';
-      if (totalSection) totalSection.style.display = 'none';
-      if (detailEl) detailEl.style.display = 'block';
-      selectedOrderId = id;
-      renderOrderDetail(id);
-      show($('billing-print-btn'));
-      show($('billing-print-kot-btn'));
+      openOrderDetailDrawer(id);
     } else {
-      if (detailEl) detailEl.style.display = 'none';
-      if (totalSection) totalSection.style.display = 'block';
+      closeOrderDetailDrawer();
     }
   });
 
@@ -17144,7 +21595,11 @@ function initBillingPanel() {
     if (posCart.length === 0) return;
     if (confirm('Clear all items from current cart?')) {
       posCart = [];
+      posAppliedCoupon = null;
+      if ($('pos-coupon-code-input')) $('pos-coupon-code-input').value = '';
+      showPosCouponFeedback('', 'error');
       updatePosCartUI(true);
+      renderPosCouponPicker();
     }
   });
 
@@ -17196,31 +21651,44 @@ function initBillingPanel() {
   $('billing-table-refresh-btn')?.addEventListener('click', () => {
     renderBillingQuickCards();
     renderBillingTotalBills();
-    showAdminToast('Bills refreshed ✅', 'info');
   });
 
   // 10. Discount & Delivery fee input listeners
-  $('pos-discount-pct')?.addEventListener('input', () => updatePosCartUI(false));
+  $('pos-discount-pct')?.addEventListener('input', (e) => {
+    const manualVal = parseFloat(e.target.value || '0') || 0;
+    if (manualVal > 0 && posAppliedCoupon) {
+      posAppliedCoupon = null;
+      if ($('pos-coupon-code-input')) $('pos-coupon-code-input').value = '';
+      showPosCouponFeedback('', 'error');
+      renderPosCouponPicker();
+    }
+    updatePosCartUI(false);
+  });
   $('pos-delivery-fee')?.addEventListener('input', () => updatePosCartUI(false));
 
   // 11. POS Action Handlers
   function resetPosWorkstation() {
     posEditingOrderId = null;
     posCart = [];
+    posAppliedCoupon = null;
     posActiveCat = 'all';
     posVegOnlyFilter = false;
     $('pos-veg-filter-btn')?.classList.remove('active');
     clearPosSelectedPlace();
-    ['pos-customer-name','pos-customer-phone','pos-table-number','pos-notes','pos-discount-pct','pos-delivery-fee','pos-food-search','pos-place-search'].forEach(id => {
+    showPosCouponFeedback('', 'error');
+    if ($('pos-customer-suggestions')) $('pos-customer-suggestions').style.display = 'none';
+    ['pos-customer-name','pos-customer-phone','pos-table-number','pos-notes','pos-discount-pct','pos-delivery-fee','pos-food-search','pos-place-search','pos-coupon-code-input'].forEach(id => {
       const el = $(id);
       if (el) {
         el.value = '';
         el.classList.remove('pos-input-invalid');
+        delete el.dataset.autoFilled;
       }
     });
     if ($('pos-delivery-address')) {
       $('pos-delivery-address').value = '';
       $('pos-delivery-address').classList.remove('pos-input-invalid');
+      delete $('pos-delivery-address').dataset.autoFilled;
     }
 
     // Comprehensive reset of order type and payment modes
@@ -17239,13 +21707,14 @@ function initBillingPanel() {
     if (billBtnIcon) billBtnIcon.textContent = '🗎';
 
     updatePosCartUI(true);
+    renderPosCouponPicker();
     renderCategoryPills();
     updateCatalogCatHeader();
     renderFoodGrid('');
     const posEl = $('billing-pos');
-    const detailEl = $('billing-detail-view');
     if (posEl) posEl.style.display = 'block';
-    if (detailEl) detailEl.style.display = 'none';
+    closeOrderDetailDrawer();
+    closeAllPosExtraPopovers();
     renderBillingQuickCards();
     renderBillingTotalBills();
     renderOrdersTable();
@@ -17276,20 +21745,36 @@ function initBillingPanel() {
     if (!result) return;
     // Print both KOT and final bill for Table, Pickup, and Delivery in unified job
     await printCombinedKOTAndBill(result.order, result.items);
-    showAdminToast(`Order #${result.order.order_number} settled & KOT + Bill printed! ✅`, 'success');
+    showAdminToast(`Order #${result.order.order_number} bill generated (${formatBillAmount(result.order.total_amount)})! Moved to Bill section. 🧾`, 'success');
     resetPosWorkstation();
+    // Switch to Tables -> Bill section so cashier immediately sees the unpaid bill in Bill section
+    tablesSubtab = 'bill';
+    document.querySelectorAll('#tables-filter-pills button').forEach(p => {
+      p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'bill');
+    });
+    renderTablesPanel();
   });
 
-  // Fast Billing Keyboard Shortcuts (F2: Settle, F1: Search Dish)
+  // Fast Billing Keyboard Shortcuts (F1: KOT Hold, F2 / Ctrl+Enter: KOT & Bill, Escape: Close Drawer / Popover)
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (isOrderDetailDrawerOpen()) {
+        e.preventDefault();
+        closeOrderDetailDrawer();
+        return;
+      }
+      closeAllPosExtraPopovers();
+    }
     const posBox = $('billing-pos');
     if (!posBox || posBox.style.display === 'none') return;
     if (e.key === 'F2' || (e.ctrlKey && e.key === 'Enter')) {
       e.preventDefault();
+      e.stopPropagation();
       $('pos-kot-bill-btn')?.click();
     } else if (e.key === 'F1') {
       e.preventDefault();
-      $('pos-food-search')?.focus();
+      e.stopPropagation();
+      $('pos-kot-hold-btn')?.click();
     }
   });
 
@@ -17322,14 +21807,14 @@ function initBillingPanel() {
   $('billing-print-btn')?.addEventListener('click', async () => {
     const order = orders.find(o => o.id === selectedOrderId);
     if (!order) return;
-    await printOrderReceiptWithTax(order);
+    await printOrderReceiptWithTax(order, null, { isReprint: true });
   });
 
   $('billing-print-kot-btn')?.addEventListener('click', async () => {
     const order = orders.find(o => o.id === selectedOrderId);
     if (!order) return;
     const items = getItemsForOrder(order.id);
-    await printKOT(order, items);
+    await printKOT(order, items, { isReprint: true });
   });
 }
 
@@ -17549,26 +22034,140 @@ function initSettingsPanel() {
 }
 
 // ────────────────────────────────────────────────────────
-// 👥 STAFF MANAGER ENGINE
+// 👥 STAFF MANAGER & DATABASE RBAC ENGINE (public.admin_users)
 // ────────────────────────────────────────────────────────
 const DEFAULT_STAFF_MEMBERS = [
-  { id: 'st-1', name: 'Salim Khan', role: 'Store Manager', phone: '+91 99887 76655', email: 'salim@limra.com', shift: '10:00 AM - 08:00 PM', status: 'on_duty', notes: 'Master admin & operations' },
-  { id: 'st-2', name: 'Rahul Sharma', role: 'Head Chef / Kitchen', phone: '+91 98765 43210', email: 'rahul@limra.com', shift: '11:00 AM - 11:00 PM', status: 'on_duty', notes: 'Main kitchen & Tandoor in-charge' },
-  { id: 'st-3', name: 'Imran Ansari', role: 'Service Captain', phone: '+91 98123 45678', email: 'imran@limra.com', shift: '12:00 PM - 11:30 PM', status: 'on_duty', notes: 'Dining hall & QR tables manager' },
-  { id: 'st-4', name: 'Danish Ali', role: 'Delivery Rider', phone: '+91 97234 56789', email: 'danish@limra.com', shift: '01:00 PM - 11:00 PM', status: 'on_duty', notes: 'Vehicle DL-3S-8821' },
-  { id: 'st-5', name: 'Afzal Qureshi', role: 'POS Cashier', phone: '+91 96345 67890', email: 'afzal@limra.com', shift: '10:00 AM - 07:00 PM', status: 'off_duty', notes: 'Counter billing & settlements' }
+  { id: 'st-1', name: 'Salim Khan', role: 'Store Manager', phone: '+91 99887 76655', email: 'salim@limra.com', shift: '10:00 AM - 08:00 PM', status: 'on_duty', is_active: true, notes: 'Master admin & operations' },
+  { id: 'st-2', name: 'Rahul Sharma', role: 'Head Chef / Kitchen', phone: '+91 98765 43210', email: 'rahul@limra.com', shift: '11:00 AM - 11:00 PM', status: 'on_duty', is_active: true, notes: 'Main kitchen & Tandoor in-charge' },
+  { id: 'st-3', name: 'Imran Ansari', role: 'Service Captain', phone: '+91 98123 45678', email: 'imran@limra.com', shift: '12:00 PM - 11:30 PM', status: 'on_duty', is_active: true, notes: 'Dining hall & QR tables manager' },
+  { id: 'st-4', name: 'Danish Ali', role: 'Delivery Rider', phone: '+91 97234 56789', email: 'danish@limra.com', shift: '01:00 PM - 11:00 PM', status: 'on_duty', is_active: true, notes: 'Vehicle DL-3S-8821' },
+  { id: 'st-5', name: 'Afzal Qureshi', role: 'POS Cashier', phone: '+91 96345 67890', email: 'afzal@limra.com', shift: '10:00 AM - 07:00 PM', status: 'off_duty', is_active: false, notes: 'Counter billing & settlements' }
 ];
 
-function getStaffList() {
+let dbStaffMembers = [];
+
+async function loadStaffMembersFromDB() {
   try {
-    const raw = localStorage.getItem('limra_staff_members');
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-  return DEFAULT_STAFF_MEMBERS;
+    const { data, error } = await insforge.database
+      .from('admin_users')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    if (Array.isArray(data) && data.length > 0) {
+      dbStaffMembers = data.map(s => ({
+        id: s.id,
+        user_id: s.user_id,
+        name: s.name || (s.email ? s.email.split('@')[0] : 'Staff'),
+        role: s.role || 'cashier',
+        status: s.status || (s.is_active ? 'on_duty' : 'off_duty'),
+        is_active: typeof s.is_active === 'boolean' ? s.is_active : s.status === 'on_duty',
+        phone: s.phone || '',
+        email: s.email || '',
+        shift: s.shift || '10:00 AM - 08:00 PM',
+        notes: s.notes || ''
+      }));
+      try {
+        localStorage.setItem('limra_staff_members_cache', JSON.stringify(dbStaffMembers));
+      } catch (e) {}
+    }
+  } catch (err) {
+    console.warn('[Staff DB Load Notice]:', err.message);
+    try {
+      const cached = localStorage.getItem('limra_staff_members_cache');
+      if (cached) dbStaffMembers = JSON.parse(cached);
+    } catch (e) {}
+  }
+  if (!dbStaffMembers || dbStaffMembers.length === 0) {
+    dbStaffMembers = [...DEFAULT_STAFF_MEMBERS];
+  }
+  return dbStaffMembers;
 }
 
-function saveStaffList(list) {
-  localStorage.setItem('limra_staff_members', JSON.stringify(list));
+function getStaffList() {
+  return (Array.isArray(dbStaffMembers) && dbStaffMembers.length > 0) ? dbStaffMembers : DEFAULT_STAFF_MEMBERS;
+}
+
+async function saveStaffMemberToDB(staffData) {
+  const { id, name, role, status, phone, email, shift, notes } = staffData;
+  const normalizedRole = normalizeStaffRole(role);
+  const isActive = status === 'on_duty';
+
+  if (id && !String(id).startsWith('st-')) {
+    // Existing DB record
+    const { error } = await insforge.database
+      .from('admin_users')
+      .update({
+        name,
+        role: normalizedRole,
+        status,
+        is_active: isActive,
+        phone,
+        email: email || undefined,
+        shift,
+        notes,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id);
+    if (error) throw error;
+  } else {
+    // New DB record
+    const cleanEmail = email || `${name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'staff' + Date.now()}@limra.pos`;
+    const { error } = await insforge.database
+      .from('admin_users')
+      .insert([{
+        name,
+        role: normalizedRole,
+        status,
+        is_active: isActive,
+        phone,
+        email: cleanEmail,
+        shift: shift || '10:00 AM - 08:00 PM',
+        notes
+      }]);
+    if (error) throw error;
+  }
+  await loadStaffMembersFromDB();
+  renderStaffList();
+}
+
+async function deleteStaffMemberFromDB(staffId) {
+  if (!staffId) return;
+  if (!String(staffId).startsWith('st-')) {
+    const { error } = await insforge.database
+      .from('admin_users')
+      .delete()
+      .eq('id', staffId);
+    if (error) throw error;
+  }
+  dbStaffMembers = dbStaffMembers.filter(s => String(s.id) !== String(staffId));
+  try {
+    localStorage.setItem('limra_staff_members_cache', JSON.stringify(dbStaffMembers));
+  } catch (e) {}
+  await loadStaffMembersFromDB();
+  renderStaffList();
+}
+
+async function toggleStaffStatusInDB(staffId, newStatus) {
+  const isActive = newStatus === 'on_duty';
+  if (staffId && !String(staffId).startsWith('st-')) {
+    const { error } = await insforge.database
+      .from('admin_users')
+      .update({
+        status: newStatus,
+        is_active: isActive,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', staffId);
+    if (error) throw error;
+  }
+  const target = dbStaffMembers.find(s => String(s.id) === String(staffId));
+  if (target) {
+    target.status = newStatus;
+    target.is_active = isActive;
+  }
+  try {
+    localStorage.setItem('limra_staff_members_cache', JSON.stringify(dbStaffMembers));
+  } catch (e) {}
   renderStaffList();
 }
 
@@ -17634,13 +22233,13 @@ function renderStaffList() {
                   </div>
                   <div>
                     <h3 style="margin:0;font-size:1rem;font-weight:800;color:#1e293b;">${escapeHtml(s.name)}</h3>
-                    <span style="background:${roleBg};color:${roleColor};font-size:.72rem;font-weight:700;padding:.15rem .5rem;border-radius:6px;display:inline-block;margin-top:.2rem;">
+                    <span style="background:${roleBg};color:${roleColor};font-size:0.75rem;font-weight:700;padding:.15rem .5rem;border-radius:6px;display:inline-block;margin-top:.2rem;">
                       ${escapeHtml(s.role)}
                     </span>
                   </div>
                 </div>
                 <div>
-                  <button type="button" class="btn-toggle-staff-status adm-btn adm-btn-sm" data-id="${s.id}" style="background:${isOnDuty ? '#ecfdf5' : '#f1f5f9'};color:${isOnDuty ? '#059669' : '#64748b'};border:1px solid ${isOnDuty ? '#a7f3d0' : '#cbd5e1'};font-size:.72rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;cursor:pointer;">
+                  <button type="button" class="btn-toggle-staff-status adm-btn adm-btn-sm" data-id="${s.id}" style="background:${isOnDuty ? '#ecfdf5' : '#f1f5f9'};color:${isOnDuty ? '#059669' : '#64748b'};border:1px solid ${isOnDuty ? '#a7f3d0' : '#cbd5e1'};font-size:0.75rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;cursor:pointer;">
                     ${isOnDuty ? '🟢 On-Duty' : '⚪ Off-Duty'}
                   </button>
                 </div>
@@ -17699,7 +22298,7 @@ function renderStaffList() {
                 </div>
                 <div>
                   <strong style="color:#1e293b;">${escapeHtml(s.name)}</strong>
-                  ${s.email ? `<div style="font-size:.72rem;color:var(--adm-muted);">${escapeHtml(s.email)}</div>` : ''}
+                  ${s.email ? `<div style="font-size:0.75rem;color:var(--adm-muted);">${escapeHtml(s.email)}</div>` : ''}
                 </div>
               </div>
             </td>
@@ -17707,7 +22306,7 @@ function renderStaffList() {
             <td><a href="tel:${s.phone}" style="color:var(--adm-green);font-weight:600;text-decoration:none;">${s.phone}</a></td>
             <td style="font-size:.8rem;color:var(--adm-muted);">${escapeHtml(s.shift || 'Flexible')}</td>
             <td>
-              <button type="button" class="btn-toggle-staff-status adm-btn adm-btn-sm" data-id="${s.id}" style="background:${isOnDuty ? '#ecfdf5' : '#f1f5f9'};color:${isOnDuty ? '#059669' : '#64748b'};border:1px solid ${isOnDuty ? '#a7f3d0' : '#cbd5e1'};font-size:.72rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;">
+              <button type="button" class="btn-toggle-staff-status adm-btn adm-btn-sm" data-id="${s.id}" style="background:${isOnDuty ? '#ecfdf5' : '#f1f5f9'};color:${isOnDuty ? '#059669' : '#64748b'};border:1px solid ${isOnDuty ? '#a7f3d0' : '#cbd5e1'};font-size:0.75rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;">
                 ${isOnDuty ? '🟢 On-Duty' : '⚪ Off-Duty'}
               </button>
             </td>
@@ -17726,14 +22325,18 @@ function renderStaffList() {
 
   // 5. Attach Action Listeners
   document.querySelectorAll('.btn-toggle-staff-status').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
       const all = getStaffList();
-      const target = all.find(x => x.id === id);
+      const target = all.find(x => String(x.id) === String(id));
       if (target) {
-        target.status = target.status === 'on_duty' ? 'off_duty' : 'on_duty';
-        saveStaffList(all);
-        showAdminToast(`${target.name} status updated to ${target.status === 'on_duty' ? 'On-Duty' : 'Off-Duty'}!`, 'info');
+        const nextStatus = target.status === 'on_duty' ? 'off_duty' : 'on_duty';
+        try {
+          await toggleStaffStatusInDB(id, nextStatus);
+          showAdminToast(`${target.name} status updated to ${nextStatus === 'on_duty' ? 'On-Duty' : 'Off-Duty'}!`, 'info');
+        } catch (err) {
+          showAdminToast(`Status updated locally: ${err.message}`, 'info');
+        }
       }
     });
   });
@@ -17745,14 +22348,17 @@ function renderStaffList() {
   });
 
   document.querySelectorAll('.btn-delete-staff').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
       const all = getStaffList();
-      const target = all.find(x => x.id === id);
-      if (target && confirm(`Delete staff member ${target.name}?`)) {
-        const next = all.filter(x => x.id !== id);
-        saveStaffList(next);
-        showAdminToast(`Staff member ${target.name} deleted.`, 'success');
+      const target = all.find(x => String(x.id) === String(id));
+      if (target && confirm(`Delete staff member "${target.name}"?`)) {
+        try {
+          await deleteStaffMemberFromDB(id);
+          showAdminToast(`Staff member "${target.name}" deleted.`, 'success');
+        } catch (err) {
+          showAdminToast(`Failed to delete staff: ${err.message}`, 'error');
+        }
       }
     });
   });
@@ -17774,7 +22380,7 @@ function openStaffModal(id = null) {
 
   if (id) {
     const all = getStaffList();
-    const s = all.find(x => x.id === id);
+    const s = all.find(x => String(x.id) === String(id));
     if (s) {
       if (title) title.textContent = '✏️ Edit Staff Member';
       if (nameInput) nameInput.value = s.name || '';
@@ -17813,10 +22419,10 @@ function setupStaffManagerListeners() {
   $('staff-modal-close')?.addEventListener('click', closeStaffModal);
   $('staff-modal-cancel')?.addEventListener('click', closeStaffModal);
 
-  $('adm-staff-form')?.addEventListener('submit', (e) => {
+  $('adm-staff-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = $('staff-modal-name')?.value?.trim();
-    const role = $('staff-modal-role')?.value;
+    const role = $('staff-modal-role')?.value || 'Store Manager';
     const status = $('staff-modal-status')?.value || 'on_duty';
     const phone = $('staff-modal-phone')?.value?.trim();
     const email = $('staff-modal-email')?.value?.trim();
@@ -17828,16 +22434,9 @@ function setupStaffManagerListeners() {
       return;
     }
 
-    const all = getStaffList();
-    if (staffEditingId) {
-      const idx = all.findIndex(x => x.id === staffEditingId);
-      if (idx !== -1) {
-        all[idx] = { ...all[idx], name, role, status, phone, email, shift, notes };
-        showAdminToast(`Staff member "${name}" updated! ✅`, 'success');
-      }
-    } else {
-      const newStaff = {
-        id: 'st-' + Date.now(),
+    try {
+      await saveStaffMemberToDB({
+        id: staffEditingId,
         name,
         role,
         status,
@@ -17845,17 +22444,40 @@ function setupStaffManagerListeners() {
         email,
         shift,
         notes
-      };
-      all.push(newStaff);
-      showAdminToast(`Staff member "${name}" registered! ✅`, 'success');
+      });
+      showAdminToast(`Staff member "${name}" saved successfully! ✅`, 'success');
+      closeStaffModal();
+    } catch (err) {
+      console.warn('[Staff Save DB Warning]:', err.message);
+      // Fallback local update
+      const all = getStaffList();
+      if (staffEditingId) {
+        const idx = all.findIndex(x => String(x.id) === String(staffEditingId));
+        if (idx !== -1) {
+          all[idx] = { ...all[idx], name, role, status, phone, email, shift, notes };
+        }
+      } else {
+        all.push({ id: 'st-' + Date.now(), name, role, status, phone, email, shift, notes });
+      }
+      try {
+        localStorage.setItem('limra_staff_members_cache', JSON.stringify(all));
+      } catch (ex) {}
+      renderStaffList();
+      closeStaffModal();
+      showAdminToast(`Staff member "${name}" saved locally: ${err.message}`, 'info');
     }
-
-    saveStaffList(all);
-    closeStaffModal();
   });
 
   $('staff-export-csv-btn')?.addEventListener('click', exportStaffListCSV);
 }
+
+// Window exposures for Staff Manager
+window.loadStaffMembersFromDB = loadStaffMembersFromDB;
+window.saveStaffMemberToDB = saveStaffMemberToDB;
+window.deleteStaffMemberFromDB = deleteStaffMemberFromDB;
+window.toggleStaffStatusInDB = toggleStaffStatusInDB;
+window.getStaffList = getStaffList;
+window.renderStaffList = renderStaffList;
 
 function exportStaffListCSV() {
   const staff = getStaffList();
@@ -18195,7 +22817,7 @@ function renderGoogleSheetsSettingsUI() {
         <div>
           <p class="adm-stat-label">Integration Status</p>
           <p class="adm-stat-value" style="color:#0284c7;font-size:1.25rem;">🟢 Active</p>
-          <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Google Apps Script Webhook</p>
+          <p style="font-size:0.75rem;color:var(--adm-muted);margin-top:2px;">Google Apps Script Webhook</p>
         </div>
         <div class="adm-stat-icon blue" style="background:#e0f2fe;color:#0284c7;">
           <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -18206,7 +22828,7 @@ function renderGoogleSheetsSettingsUI() {
         <div>
           <p class="adm-stat-label">Auto-Sync Mode</p>
           <p class="adm-stat-value" style="color:#059669;font-size:1.25rem;">${isAutoSync ? '⚡ Real-Time' : '⏸️ Manual Only'}</p>
-          <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Triggered on Bill Settlement</p>
+          <p style="font-size:0.75rem;color:var(--adm-muted);margin-top:2px;">Triggered on Bill Settlement</p>
         </div>
         <div class="adm-stat-icon green">
           <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
@@ -18217,7 +22839,7 @@ function renderGoogleSheetsSettingsUI() {
         <div>
           <p class="adm-stat-label">Total Orders Synced</p>
           <p class="adm-stat-value" style="color:#4f46e5;font-size:1.25rem;">${syncCount} Orders</p>
-          <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Item-by-item logged</p>
+          <p style="font-size:0.75rem;color:var(--adm-muted);margin-top:2px;">Item-by-item logged</p>
         </div>
         <div class="adm-stat-icon indigo" style="background:#eef2ff;color:#6366f1;">
           <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7c-2 0-3 1-3 3zm0 4h16M9 4v16"/></svg>
@@ -18228,7 +22850,7 @@ function renderGoogleSheetsSettingsUI() {
         <div>
           <p class="adm-stat-label">Last Sync</p>
           <p class="adm-stat-value" style="color:#d97706;font-size:1.05rem;line-height:1.4;">${formattedLastSync}</p>
-          <p style="font-size:.72rem;color:var(--adm-muted);margin-top:2px;">Cloud timestamp</p>
+          <p style="font-size:0.75rem;color:var(--adm-muted);margin-top:2px;">Cloud timestamp</p>
         </div>
         <div class="adm-stat-icon orange">
           <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -18526,6 +23148,56 @@ async function syncCustomerAnalysisToGoogleSheet() {
     showAdminToast('Failed to sync Customer Analysis: ' + err.message, 'error');
   }
 }
+
+// ── Domain Re-exports (Extracted ES Modules) ─────────────────────────
+export {
+  notifiedBusinessOrderIds,
+  cashierCreatedOrderIds,
+  warmUpAudio,
+  playNotificationChime,
+  playTableRoundChime,
+  showAdminToast,
+  showBusinessNotification,
+  showDashboardToast,
+  posState,
+  posEvents,
+  posDomainKds,
+  posDomainReportsGst,
+  posDomainPrinter,
+  posDomainCatalogCrm,
+  posDomainSettingsStaff,
+  posDomainWorkstation,
+  posDomainTablesBilling,
+  posUtils
+};
+
+if (typeof window !== 'undefined') {
+  window.posState = posState;
+  window.posEvents = posEvents;
+  window.posDomain = {
+    state: posState,
+    events: posEvents,
+    utils: posUtils,
+    audioAlerts: {
+      notifiedBusinessOrderIds,
+      cashierCreatedOrderIds,
+      warmUpAudio,
+      playNotificationChime,
+      playTableRoundChime,
+      showAdminToast,
+      showBusinessNotification,
+      showDashboardToast
+    },
+    kds: posDomainKds,
+    reportsGst: posDomainReportsGst,
+    printer: posDomainPrinter,
+    catalogCrm: posDomainCatalogCrm,
+    settingsStaff: posDomainSettingsStaff,
+    workstation: posDomainWorkstation,
+    tablesBilling: posDomainTablesBilling
+  };
+}
+
 
 
 

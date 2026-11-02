@@ -458,6 +458,15 @@ export default async function handler(req, res) {
         customer_name: finalCustomerName,
         customer_phone: finalCustomerPhone,
         total_amount: serverCalculatedGrandTotal,
+        subtotal_amount: billing.subtotal,
+        discount_pct: billing.discountPct,
+        discount_amount: billing.discountAmt,
+        taxable_amount: billing.taxableAmount,
+        cgst_amount: billing.cgstAmt,
+        sgst_amount: billing.sgstAmt,
+        delivery_fee: billing.deliveryFee,
+        packaging_fee: 0,
+        round_off_amount: billing.roundOff,
         status: "pending",
         ticket_status: "OPEN",
         notes: rawNotes || null,
@@ -472,6 +481,8 @@ export default async function handler(req, res) {
         delivery_notes: deliveryNotes ? String(deliveryNotes).slice(0, 200) : null,
         txn_ref: txnRef || null,
         user_id: currentUser ? currentUser.id : null,
+        settled_at: cleanPayStatus === "paid" ? new Date().toISOString() : null,
+        consolidated_into_order_id: (isSubsequentRound && activeParentOrder) ? activeParentOrder.id : null,
         idempotency_key: idempotencyKey
       };
 
@@ -670,10 +681,55 @@ export default async function handler(req, res) {
         });
       }
 
-      const { id, order_number, status, payment_status, notes, ticket_status } = req.body || {};
+      const {
+        id,
+        order_number,
+        status,
+        payment_status,
+        notes,
+        ticket_status,
+        action: patchAction,
+        reason: rawReason,
+        updated_items,
+        updated_fields
+      } = req.body || {};
 
       if (!id && !order_number) {
         return res.status(400).json({ success: false, error: "Order id or order_number is required for update." });
+      }
+
+      const normalizedPatchAction = String(patchAction || "").toLowerCase().trim();
+      const isVoidRequest =
+        normalizedPatchAction === "void" ||
+        String(payment_status || "").toLowerCase().trim() === "refunded";
+      const isAmendRequest = normalizedPatchAction === "amend";
+
+      // Server-side Manager / Owner / Admin Authorization & Mandatory Reason Check for Void/Amendment
+      if (isVoidRequest || isAmendRequest) {
+        if (!["owner", "manager", "admin"].includes(userRole)) {
+          return res.status(403).json({
+            success: false,
+            code: "FORBIDDEN",
+            error: `Forbidden. Role '${userRole}' is not authorized to ${isVoidRequest ? "void" : "amend"} closed financial invoices. Manager authorization required.`
+          });
+        }
+
+        const cleanReason = String(rawReason || "").trim();
+        if (cleanReason.length < 3) {
+          return res.status(400).json({
+            success: false,
+            code: "REASON_REQUIRED",
+            error: `REASON_REQUIRED: A recorded reason (minimum 3 characters) is required to ${isVoidRequest ? "void" : "amend"} a closed financial invoice.`
+          });
+        }
+
+        if (isAmendRequest && (!Array.isArray(updated_items) || updated_items.length === 0)) {
+          return res.status(400).json({
+            success: false,
+            code: "ITEMS_REQUIRED",
+            error: "ITEMS_REQUIRED: An amended invoice must contain at least one item. Use void_closed_order_atomic to void the entire invoice."
+          });
+        }
       }
 
       // Fetch current order state to enforce state transition validation and concurrency protection
@@ -714,6 +770,89 @@ export default async function handler(req, res) {
         ""
       ).trim() || null;
 
+      // Auditable Void / Amendment Execution via Atomic Server-Side RPCs
+      if (isVoidRequest) {
+        const cleanReason = String(rawReason || "").trim();
+        const alreadyVoided =
+          String(currentOrder.payment_status || "").toLowerCase() === "refunded" ||
+          String(currentOrder.notes || "").includes("[VOIDED]");
+
+        if (alreadyVoided) {
+          if (reqIdempotencyKey && String(currentOrder.idempotency_key || "") === reqIdempotencyKey) {
+            return res.status(200).json({
+              success: true,
+              idempotent_replay: true,
+              data: currentOrder,
+              message: "Order already voided (idempotent replay)"
+            });
+          }
+          return res.status(409).json({
+            success: false,
+            code: "ORDER_ALREADY_VOIDED",
+            error: `ORDER_ALREADY_VOIDED: Order #${currentOrder.order_number} has already been voided.`
+          });
+        }
+
+        const { data: voidRes, error: voidErr } = await supabase.rpc("void_closed_order_atomic", {
+          p_order_id: currentOrder.id,
+          p_reason: cleanReason,
+          p_idempotency_key: reqIdempotencyKey
+        });
+
+        if (voidErr) {
+          const msg = voidErr.message || "";
+          if (msg.includes("ORDER_ALREADY_VOIDED")) {
+            return res.status(409).json({ success: false, code: "ORDER_ALREADY_VOIDED", error: msg });
+          }
+          if (msg.includes("FORBIDDEN")) {
+            return res.status(403).json({ success: false, code: "FORBIDDEN", error: msg });
+          }
+          if (msg.includes("REASON_REQUIRED")) {
+            return res.status(400).json({ success: false, code: "REASON_REQUIRED", error: msg });
+          }
+          return res.status(400).json({ success: false, error: msg });
+        }
+
+        return res.status(200).json({
+          success: true,
+          idempotent_replay: Boolean(voidRes?.idempotent_replay),
+          data: voidRes,
+          message: voidRes?.message || "Invoice voided and recorded in financial audit log"
+        });
+      }
+
+      if (isAmendRequest) {
+        const cleanReason = String(rawReason || "").trim();
+        const { data: amendRes, error: amendErr } = await supabase.rpc("amend_closed_order_atomic", {
+          p_order_id: currentOrder.id,
+          p_updated_items: updated_items,
+          p_updated_fields: updated_fields || {},
+          p_reason: cleanReason,
+          p_idempotency_key: reqIdempotencyKey
+        });
+
+        if (amendErr) {
+          const msg = amendErr.message || "";
+          if (msg.includes("ORDER_ALREADY_VOIDED")) {
+            return res.status(409).json({ success: false, code: "ORDER_ALREADY_VOIDED", error: msg });
+          }
+          if (msg.includes("FORBIDDEN")) {
+            return res.status(403).json({ success: false, code: "FORBIDDEN", error: msg });
+          }
+          if (msg.includes("REASON_REQUIRED") || msg.includes("ITEMS_REQUIRED")) {
+            return res.status(400).json({ success: false, code: "REASON_REQUIRED", error: msg });
+          }
+          return res.status(400).json({ success: false, error: msg });
+        }
+
+        return res.status(200).json({
+          success: true,
+          idempotent_replay: Boolean(amendRes?.idempotent_replay),
+          data: amendRes,
+          message: amendRes?.message || "Closed invoice amended and recorded in financial audit log"
+        });
+      }
+
       // Kitchen role enforcement: kitchen staff can only update preparation status
       if (userRole === "kitchen") {
         if (payment_status || ticket_status) {
@@ -748,6 +887,13 @@ export default async function handler(req, res) {
         const targetFulfillStatus = sanitizeOrderStatus(status);
         const currFulfillStatus = currentOrder.status || "pending";
 
+        if (targetFulfillStatus === "cancelled" && (currentOrder.payment_status === "paid" || currentOrder.ticket_status === "CLOSED" || currFulfillStatus === "delivered")) {
+          return res.status(400).json({
+            success: false,
+            error: `Cannot cancel Order #${currentOrder.order_number} because it is already paid or closed.`
+          });
+        }
+
         if (!isValidFulfillmentTransition(currFulfillStatus, targetFulfillStatus, userRole)) {
           return res.status(400).json({
             success: false,
@@ -760,6 +906,13 @@ export default async function handler(req, res) {
       if (ticket_status && userRole !== "kitchen") {
         const targetTicketStatus = String(ticket_status).toUpperCase().trim();
         const currTicketStatus = String(currentOrder.ticket_status || "OPEN").toUpperCase().trim();
+
+        if (targetTicketStatus === "CANCELLED" && (currentOrder.payment_status === "paid" || currTicketStatus === "CLOSED" || currentOrder.status === "delivered")) {
+          return res.status(400).json({
+            success: false,
+            error: `Cannot cancel Order #${currentOrder.order_number} because it is already paid or closed.`
+          });
+        }
 
         if (!isValidTicketTransition(currTicketStatus, targetTicketStatus)) {
           return res.status(400).json({
@@ -774,6 +927,14 @@ export default async function handler(req, res) {
                          (status === "delivered" || currentOrder.status === "delivered" || ticket_status === "CLOSED");
 
       if (isSettling) {
+        if (currentOrder.status === "cancelled" || currentOrder.ticket_status === "CANCELLED") {
+          return res.status(400).json({
+            success: false,
+            code: "ORDER_CANCELLED",
+            error: `Order #${currentOrder.order_number} is cancelled and cannot be settled.`
+          });
+        }
+
         if (currentOrder.ticket_status === "CLOSED" && currentOrder.payment_status === "paid") {
           // Idempotency check: if replaying with identical key, return existing settlement
           if (reqIdempotencyKey && currentOrder.idempotency_key === reqIdempotencyKey) {
@@ -809,17 +970,35 @@ export default async function handler(req, res) {
 
             return res.status(200).json({
               success: true,
+              idempotent_replay: Boolean(settleRes.idempotent_replay),
               data: refreshed && refreshed.length > 0 ? refreshed[0] : currentOrder,
               message: "Order settled and closed successfully"
             });
           }
 
-          if (settleErr && (settleErr.message || "").includes("ORDER_ALREADY_SETTLED")) {
-            return res.status(409).json({
-              success: false,
-              code: "ORDER_ALREADY_SETTLED",
-              error: `Order #${currentOrder.order_number} has already been settled and closed by another cashier.`
-            });
+          if (settleErr) {
+            const errMsg = settleErr.message || "";
+            if (errMsg.includes("ORDER_ALREADY_SETTLED")) {
+              return res.status(409).json({
+                success: false,
+                code: "ORDER_ALREADY_SETTLED",
+                error: `Order #${currentOrder.order_number} has already been settled and closed by another cashier.`
+              });
+            }
+            if (errMsg.includes("ORDER_CANCELLED")) {
+              return res.status(400).json({
+                success: false,
+                code: "ORDER_CANCELLED",
+                error: errMsg
+              });
+            }
+            if (errMsg.includes("FORBIDDEN")) {
+              return res.status(403).json({
+                success: false,
+                code: "FORBIDDEN",
+                error: errMsg
+              });
+            }
           }
         } catch (rpcEx) {
           console.warn("[settle_order_atomic RPC Notice]:", rpcEx.message);
@@ -827,7 +1006,12 @@ export default async function handler(req, res) {
       }
 
       const updatePayload = { updated_at: new Date().toISOString() };
-      if (status) updatePayload.status = sanitizeOrderStatus(status);
+      if (status) {
+        updatePayload.status = sanitizeOrderStatus(status);
+        if (updatePayload.status === "cancelled") {
+          updatePayload.ticket_status = "CANCELLED";
+        }
+      }
       if (payment_status && userRole !== "kitchen") updatePayload.payment_status = sanitizePaymentStatus(payment_status);
       if (req.body.payment_method && userRole !== "kitchen") {
         const pm = String(req.body.payment_method).toLowerCase().trim();
@@ -839,7 +1023,12 @@ export default async function handler(req, res) {
         updatePayload.txn_ref = String(req.body.txn_ref).trim();
       }
       if (notes !== undefined) updatePayload.notes = notes;
-      if (ticket_status && userRole !== "kitchen") updatePayload.ticket_status = ticket_status;
+      if (ticket_status && userRole !== "kitchen") {
+        updatePayload.ticket_status = ticket_status;
+        if (String(ticket_status).toUpperCase().trim() === "CANCELLED") {
+          updatePayload.status = "cancelled";
+        }
+      }
       if (reqIdempotencyKey) updatePayload.idempotency_key = reqIdempotencyKey;
 
       const runUpdate = (payload) => {
@@ -915,19 +1104,29 @@ export default async function handler(req, res) {
         }
       }
 
-      // Record payment status audit history
+      // Record payment status audit history (guarded against duplicates)
       if (updatePayload.payment_status && updatePayload.payment_status !== currentOrder.payment_status) {
         try {
-          await supabase.from("payment_history").insert([
-            {
-              order_id: updatedOrder.id,
-              previous_status: currentOrder.payment_status || "unpaid",
-              new_status: updatePayload.payment_status,
-              change_reason: `Staff update by ${userRole} (${currentUser?.email || currentUser?.id})`,
-              changed_by: currentUser?.id || "staff_manual_update",
-              created_at: new Date().toISOString()
-            }
-          ]);
+          const { data: existingPh } = await supabase
+            .from("payment_history")
+            .select("id")
+            .eq("order_id", updatedOrder.id)
+            .eq("new_status", updatePayload.payment_status)
+            .limit(1);
+
+          if (!existingPh || existingPh.length === 0) {
+            await supabase.from("payment_history").insert([
+              {
+                order_id: updatedOrder.id,
+                previous_status: currentOrder.payment_status || "unpaid",
+                new_status: updatePayload.payment_status,
+                notes: `Staff update by ${userRole} (${currentUser?.email || currentUser?.id})`,
+                reason: "staff_status_update",
+                changed_by: currentUser?.id || "staff_manual_update",
+                created_at: new Date().toISOString()
+              }
+            ]);
+          }
         } catch (phErr) {
           console.warn("[Payment History Audit Warning]:", phErr.message);
         }
@@ -940,7 +1139,7 @@ export default async function handler(req, res) {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 4. DELETE: Delete Order (Manager or Owner Only)
+    // 4. DELETE: Auditable Void for Financial Orders (Manager / Owner / Admin Only)
     // ─────────────────────────────────────────────────────────────
     if (req.method === "DELETE") {
       if (!currentUser) {
@@ -953,7 +1152,8 @@ export default async function handler(req, res) {
       if (!["owner", "manager", "admin"].includes(userRole)) {
         return res.status(403).json({
           success: false,
-          error: `Forbidden. Role '${userRole}' lacks permission to delete orders. Manager authorization required.`
+          code: "FORBIDDEN",
+          error: `Forbidden. Role '${userRole}' lacks permission to delete or void orders. Manager authorization required.`
         });
       }
 
@@ -961,26 +1161,95 @@ export default async function handler(req, res) {
       const queryData = req.query || {};
       const targetId = bodyData.id || queryData.id;
       const targetNum = bodyData.order_number || queryData.order_number;
+      const cleanReason = String(bodyData.reason || queryData.reason || "").trim();
+      const idempotencyKey = (
+        req.headers["x-idempotency-key"] ||
+        bodyData.idempotency_key ||
+        bodyData.idempotencyKey ||
+        ""
+      ).trim() || null;
 
       if (!targetId && !targetNum) {
         return res.status(400).json({ success: false, error: "Order id or order_number is required for deletion." });
       }
 
-      let q = supabase.from("orders").delete();
-      if (targetId) {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(targetId);
-        if (isUuid) q = q.eq("id", targetId);
-        else q = q.eq("order_number", Number(targetId) || 0);
-      } else {
-        q = q.eq("order_number", Number(targetNum) || 0);
+      if (cleanReason.length < 3) {
+        return res.status(400).json({
+          success: false,
+          code: "REASON_REQUIRED",
+          error: "REASON_REQUIRED: A recorded reason (minimum 3 characters) is required to void an order. Financial invoices cannot be deleted without a recorded void reason."
+        });
       }
 
-      const { data, error } = await q.select();
+      // Inspect target order first to prevent hard deletion of closed/paid financial invoices
+      let lookupQ = supabase.from("orders").select("id, order_number, status, payment_status, ticket_status, notes");
+      if (targetId) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(targetId);
+        if (isUuid) lookupQ = lookupQ.eq("id", targetId);
+        else lookupQ = lookupQ.eq("order_number", Number(targetId) || 0);
+      } else {
+        lookupQ = lookupQ.eq("order_number", Number(targetNum) || 0);
+      }
+
+      const { data: existingRows } = await lookupQ.limit(1);
+      const existingOrder = existingRows && existingRows.length > 0 ? existingRows[0] : null;
+      if (!existingOrder) {
+        return res.status(404).json({ success: false, error: "Order not found." });
+      }
+
+      // Closed/settled/refunded financial invoices must NEVER be hard-deleted; execute auditable void RPC
+      const isFinancialInvoice =
+        String(existingOrder.ticket_status || "").toUpperCase() === "CLOSED" ||
+        ["paid", "refunded"].includes(String(existingOrder.payment_status || "").toLowerCase()) ||
+        String(existingOrder.status || "").toLowerCase() === "delivered" ||
+        String(existingOrder.notes || "").includes("[VOIDED]");
+
+      if (isFinancialInvoice) {
+        const { data: voidRes, error: voidErr } = await supabase.rpc("void_closed_order_atomic", {
+          p_order_id: existingOrder.id,
+          p_reason: cleanReason,
+          p_idempotency_key: idempotencyKey
+        });
+
+        if (voidErr) {
+          const msg = voidErr.message || "";
+          if (msg.includes("ORDER_ALREADY_VOIDED")) {
+            return res.status(409).json({ success: false, code: "ORDER_ALREADY_VOIDED", error: msg });
+          }
+          if (msg.includes("FORBIDDEN")) {
+            return res.status(403).json({ success: false, code: "FORBIDDEN", error: msg });
+          }
+          if (msg.includes("REASON_REQUIRED")) {
+            return res.status(400).json({ success: false, code: "REASON_REQUIRED", error: msg });
+          }
+          return res.status(400).json({ success: false, error: msg });
+        }
+
+        return res.status(200).json({
+          success: true,
+          voided: true,
+          idempotent_replay: Boolean(voidRes?.idempotent_replay),
+          message: voidRes?.message || "Closed financial invoice voided and recorded in audit log (original invoice preserved)",
+          data: voidRes
+        });
+      }
+
+      // Non-settled open/draft order: cancel auditable state rather than destroying invoice trail
+      const { data, error } = await supabase
+        .from("orders")
+        .update({
+          status: "cancelled",
+          ticket_status: "CANCELLED",
+          notes: `${existingOrder.notes || ""} [CANCEL_REASON: ${cleanReason}]`.trim(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", existingOrder.id)
+        .select();
       if (error) throw error;
 
       return res.status(200).json({
         success: true,
-        message: "Order deleted successfully",
+        message: "Order cancelled with recorded reason",
         data: data ? data[0] : null
       });
     }

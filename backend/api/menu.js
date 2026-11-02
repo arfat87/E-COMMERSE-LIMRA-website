@@ -41,7 +41,7 @@ export default async function handler(req, res) {
         mrp: mrp ? Math.max(0, Number(mrp)) : null,
         available: available !== false,
         featured: featured === true,
-        description: String(description || "").slice(0, 500),
+        description: String(description || "").slice(0, 4000),
         updated_at: new Date().toISOString()
       };
 
@@ -80,7 +80,7 @@ export default async function handler(req, res) {
       }
       if (mrp !== undefined) updatePayload.mrp = mrp ? Math.max(0, Number(mrp)) : null;
       if (featured !== undefined) updatePayload.featured = featured === true;
-      if (description !== undefined) updatePayload.description = String(description).slice(0, 500);
+      if (description !== undefined) updatePayload.description = String(description).slice(0, 4000);
 
       const { data, error } = await supabase
         .from("menu_overrides")

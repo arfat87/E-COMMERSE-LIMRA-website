@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('electronPOS', {
   // Get list of connected printers
   getPrinters: () => ipcRenderer.invoke('get-printers'),
 
+  // Get resolved printer status & details
+  getPrinterStatus: (name) => ipcRenderer.invoke('get-printer-status', name),
+
   // Silent print receipt to thermal printer
   printReceipt: (options) => ipcRenderer.invoke('print-receipt', options)
 });

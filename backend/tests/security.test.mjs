@@ -1,3 +1,4 @@
+import "./test-env-guard.mjs";
 import assert from "node:assert/strict";
 import dbHandler from "../api/db.js";
 import ordersHandler from "../api/orders.js";

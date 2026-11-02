@@ -95,7 +95,7 @@ export function buildEscPosBill(order = {}, items = [], settings = {}, options =
   const is58 = width === 32;
   const separator = '-'.repeat(width);
   const doubleSeparator = '='.repeat(width);
-  const isReprint = Boolean(options && options.isReprint);
+  const isReprint = Boolean(options && (options.isReprint || options.showDuplicateBanner));
 
   let out = COMMANDS.INIT;
 

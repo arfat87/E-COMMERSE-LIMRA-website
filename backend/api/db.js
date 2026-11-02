@@ -52,7 +52,13 @@ const STAFF_RESTRICTED_RPCS = {
   record_stock_out: ["owner", "manager", "cashier", "kitchen", "admin"],
   reverse_stock_entry: ["owner", "manager", "admin"],
   get_stock_daily_summary: ["owner", "manager", "cashier", "admin"],
-  update_order_payment_status: ["owner", "manager", "cashier", "admin"]
+  update_order_payment_status: ["owner", "manager", "cashier", "admin"],
+  settle_order_atomic: ["owner", "manager", "cashier", "admin"],
+  deduct_order_inventory_atomic: ["owner", "manager", "cashier", "kitchen", "admin"],
+  void_closed_order_atomic: ["owner", "manager", "admin"],
+  amend_closed_order_atomic: ["owner", "manager", "admin"],
+  transfer_table_session_atomic: ["owner", "manager", "cashier", "admin"],
+  swap_table_sessions_atomic: ["owner", "manager", "cashier", "admin"]
 };
 
 // Tables accessible for public SELECT
@@ -139,6 +145,33 @@ export default async function handler(req, res) {
             data: null,
             error: { message: `Forbidden. Role '${userRole}' is not authorized to call RPC '${rpcName}'.` }
           });
+        }
+
+        // Server-side mandatory reason & payload validation for destructive closed-order RPCs
+        if (rpcName === "void_closed_order_atomic" || rpcName === "amend_closed_order_atomic") {
+          const orderId = String(rpcParams.p_order_id || "").trim();
+          const reason = String(rpcParams.p_reason || "").trim();
+          if (!orderId) {
+            return res.status(400).json({
+              data: null,
+              error: { message: "ORDER_ID_REQUIRED: Order ID is required." }
+            });
+          }
+          if (reason.length < 3) {
+            return res.status(400).json({
+              data: null,
+              error: { message: "REASON_REQUIRED: A recorded reason (minimum 3 characters) is required to void or amend a closed invoice." }
+            });
+          }
+          if (rpcName === "amend_closed_order_atomic") {
+            const items = rpcParams.p_updated_items;
+            if (!Array.isArray(items) || items.length === 0) {
+              return res.status(400).json({
+                data: null,
+                error: { message: "ITEMS_REQUIRED: An amended invoice must contain at least one item. Use void_closed_order_atomic to void the entire invoice." }
+              });
+            }
+          }
         }
       }
 
@@ -304,10 +337,10 @@ export default async function handler(req, res) {
     // Staff role restrictions:
     // Kitchen staff can only read orders, order_items, stock_items and update order status
     if (userRole === "kitchen") {
-      if (["delete", "insert"].includes(action) && cleanTable === "orders") {
+      if (["delete", "insert"].includes(action) && ["orders", "order_items", "payment_history"].includes(cleanTable)) {
         return res.status(403).json({
           data: null,
-          error: { message: "Forbidden. Kitchen staff cannot create or delete orders." }
+          error: { message: "Forbidden. Kitchen staff cannot create or delete orders or financial records." }
         });
       }
       if (["printer_settings", "admin_users"].includes(cleanTable)) {
@@ -320,10 +353,10 @@ export default async function handler(req, res) {
 
     // Cashier role restrictions:
     if (userRole === "cashier") {
-      if (action === "delete" && cleanTable === "orders") {
+      if ((action === "delete" || (!action && req.method === "DELETE")) && ["orders", "order_items", "payment_history"].includes(cleanTable)) {
         return res.status(403).json({
           data: null,
-          error: { message: "Forbidden. Cashiers cannot delete orders. Manager authorization required." }
+          error: { message: "Forbidden. Cashiers cannot delete orders or financial records. Manager authorization required." }
         });
       }
       if (cleanTable === "admin_users") {
@@ -455,6 +488,17 @@ export default async function handler(req, res) {
             }
           }
         }
+        // Only manager/owner/admin may mark an order refunded/voided, and only through void_closed_order_atomic
+        if (
+          (String(safeUpdate.payment_status || "").toLowerCase() === "refunded" ||
+            String(safeUpdate.notes || "").includes("[VOIDED]")) &&
+          !["owner", "manager", "admin"].includes(userRole)
+        ) {
+          return res.status(403).json({
+            data: null,
+            error: { message: "Forbidden. Voiding or refunding closed orders requires manager authorization." }
+          });
+        }
       }
 
       let query = supabase.from(cleanTable).update({
@@ -482,12 +526,54 @@ export default async function handler(req, res) {
         });
       }
 
-      // Restrict deletion of orders to owners and managers only
-      if (cleanTable === "orders" && !["owner", "manager", "admin"].includes(userRole)) {
+      // Financial payment history is strictly append-only
+      if (cleanTable === "payment_history") {
+        return res.status(403).json({
+          data: null,
+          error: { message: "HARD_DELETE_FORBIDDEN: Financial payment_history records are immutable and cannot be deleted." }
+        });
+      }
+
+      // Restrict deletion of orders and order_items to owners, managers, and admins only
+      if (["orders", "order_items"].includes(cleanTable) && !["owner", "manager", "admin"].includes(userRole)) {
         return res.status(403).json({
           data: null,
           error: { message: "Forbidden. Order deletion requires owner or manager authorization." }
         });
+      }
+
+      // Prevent hard deletion of closed/settled/refunded financial invoices
+      if (cleanTable === "orders" || cleanTable === "order_items") {
+        let checkOrderId = cleanTable === "orders" ? filter.id : filter.order_id;
+        if (!checkOrderId && cleanTable === "order_items" && filter.id) {
+          const { data: itemRow } = await supabase
+            .from("order_items")
+            .select("order_id")
+            .eq("id", filter.id)
+            .maybeSingle();
+          if (itemRow?.order_id) checkOrderId = itemRow.order_id;
+        }
+        if (checkOrderId) {
+          const { data: targetOrder } = await supabase
+            .from("orders")
+            .select("id, order_number, status, payment_status, ticket_status, notes")
+            .eq("id", checkOrderId)
+            .maybeSingle();
+          if (
+            targetOrder &&
+            (String(targetOrder.ticket_status || "").toUpperCase() === "CLOSED" ||
+              ["paid", "refunded"].includes(String(targetOrder.payment_status || "").toLowerCase()) ||
+              String(targetOrder.status || "").toLowerCase() === "delivered" ||
+              String(targetOrder.notes || "").includes("[VOIDED]"))
+          ) {
+            return res.status(403).json({
+              data: null,
+              error: {
+                message: `HARD_DELETE_FORBIDDEN: Closed or settled financial invoice #${targetOrder.order_number || targetOrder.id} cannot be permanently deleted. Use void_closed_order_atomic or amend_closed_order_atomic instead.`
+              }
+            });
+          }
+        }
       }
 
       let query = supabase.from(cleanTable).delete();

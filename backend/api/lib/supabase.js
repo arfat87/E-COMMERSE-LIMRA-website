@@ -2,38 +2,76 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { createClient } from "@supabase/supabase-js";
+import {
+  isProductionEnvironment,
+  isProductionDatabaseUrl,
+  createTestDatabaseSandbox
+} from "./test-guard.js";
 
-export const SUPABASE_URL =
-  process.env.SUPABASE_URL ||
-  process.env.VITE_SUPABASE_URL;
+const isTestEnv = process.env.NODE_ENV === "test" || process.env.LIMRA_TEST_ENV === "true";
 
-if (!SUPABASE_URL) {
+// Dedicated Development / Testing Supabase project support
+const devSupabaseUrl = process.env.SUPABASE_TEST_URL || process.env.DEV_SUPABASE_URL;
+const devSupabaseAnonKey = process.env.SUPABASE_TEST_ANON_KEY || process.env.DEV_SUPABASE_ANON_KEY;
+const devSupabaseServiceKey = process.env.SUPABASE_TEST_SERVICE_ROLE_KEY || process.env.DEV_SUPABASE_SERVICE_ROLE_KEY;
+
+export const IS_TEST_MODE = isTestEnv;
+export const USING_SEPARATE_DEV_DB = Boolean(isTestEnv && devSupabaseUrl && !isProductionDatabaseUrl(devSupabaseUrl));
+
+let activeSupabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+let activeAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+let activeServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ADMIN_KEY;
+
+// When in test mode with a dedicated development database configured:
+if (isTestEnv && devSupabaseUrl && !isProductionDatabaseUrl(devSupabaseUrl)) {
+  activeSupabaseUrl = devSupabaseUrl;
+  activeAnonKey = devSupabaseAnonKey || activeAnonKey;
+  activeServiceKey = devSupabaseServiceKey || activeServiceKey;
+}
+
+export const SUPABASE_URL = activeSupabaseUrl;
+
+if (!SUPABASE_URL && !isTestEnv) {
   console.error("❌ CRITICAL: SUPABASE_URL is not set in .env file!");
 }
 
-export const SUPABASE_ANON_KEY =
-  process.env.SUPABASE_ANON_KEY ||
-  process.env.VITE_SUPABASE_ANON_KEY;
+export const SUPABASE_ANON_KEY = activeAnonKey;
 
-if (!SUPABASE_ANON_KEY) {
+if (!SUPABASE_ANON_KEY && !isTestEnv) {
   console.error("❌ CRITICAL: SUPABASE_ANON_KEY is not set in .env file!");
 }
 
-export const SUPABASE_SERVICE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_ADMIN_KEY;
+export const SUPABASE_SERVICE_KEY = activeServiceKey;
 
-if (!SUPABASE_SERVICE_KEY) {
+if (!SUPABASE_SERVICE_KEY && !isTestEnv) {
   console.warn("⚠️ WARNING: SUPABASE_SERVICE_ROLE_KEY is not set — falling back to anon key. RLS may block backend operations.");
 }
 
-// Create Supabase Admin client for backend operations
-export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false
-  }
-});
+// -----------------------------------------------------------------------------
+// DATABASE ISOLATION & CLIENT INITIALIZATION
+// -----------------------------------------------------------------------------
+let clientInstance;
+let isSandboxActive = false;
+
+// If we are in test mode and NOT connected to a dedicated non-production dev database,
+// activate the isolated in-memory test database sandbox to ensure NO production data is touched!
+if (isTestEnv && (!devSupabaseUrl || isProductionDatabaseUrl(activeSupabaseUrl))) {
+  clientInstance = createTestDatabaseSandbox();
+  isSandboxActive = true;
+} else {
+  // Production or live dev client:
+  const targetUrl = SUPABASE_URL || "https://ynrtlcasbndkrqeotgzt.supabase.co";
+  const targetKey = SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY || "dummy_key_for_offline";
+  clientInstance = createClient(targetUrl, targetKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
+}
+
+export const IS_DATABASE_SANDBOX_ACTIVE = isSandboxActive;
+export const supabase = clientInstance;
 
 // Alias for backward compatibility
 export const insforge = supabase;

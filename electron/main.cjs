@@ -9,12 +9,15 @@
  * - DevTools shortcut (F12 / Ctrl+Shift+I) for easy debugging
  */
 
-const { app, BrowserWindow, ipcMain, globalShortcut } = require('electron');
+const electron = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut } = (electron && typeof electron === 'object' && electron.app) ? electron : {};
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
 
-app.setName('Limra Restaurant POS');
+if (app && typeof app.setName === 'function') {
+  app.setName('Limra Restaurant POS');
+}
 
 let mainWindow = null;
 let localServer = null;
@@ -204,117 +207,315 @@ async function createWindow() {
 }
 
 // ---------------------------------------------------------------------------
-// Thermal Printing Hardware Bridge (Silent ESC/POS)
+// Thermal Printing Hardware Bridge (Silent Direct ESC/POS & Driver)
 // ---------------------------------------------------------------------------
 
-ipcMain.handle('get-printers', async () => {
-  if (!mainWindow) return [];
-  return await mainWindow.webContents.getPrintersAsync();
-});
+/**
+ * Resolves the requested printer name against actual installed system printers.
+ * Eliminates driver name mismatches (e.g. 'TVS RP3200 Plus' vs 'RP3200 plus(U) 1')
+ * so Chromium's webContents.print({ silent: true }) never opens the OS print dialog.
+ */
+async function resolvePrinterDevice(requestedName, targetWebContents) {
+  try {
+    let printers = [];
+    if (targetWebContents && typeof targetWebContents.getPrintersAsync === 'function') {
+      printers = await targetWebContents.getPrintersAsync();
+    } else if (mainWindow && typeof mainWindow.webContents.getPrintersAsync === 'function') {
+      printers = await mainWindow.webContents.getPrintersAsync();
+    }
 
-ipcMain.handle('print-receipt', async (event, options = {}) => {
-  const { html, printerName, silent = true, paperWidth = 80 } = options;
+    if (!printers || printers.length === 0) {
+      return { resolvedName: requestedName || '', found: false, matchedRule: 'empty_printer_list' };
+    }
 
-  if (html) {
-    return new Promise((resolve) => {
-      let resolved = false;
-      const widthPx = String(paperWidth) === '58' ? 220 : 310;
-      const printWin = new BrowserWindow({
-        show: false,
-        width: widthPx,
-        height: 600,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true
-        }
+    const req = (requestedName || '').trim();
+    const reqLower = req.toLowerCase();
+
+    // 1. Exact match (case-insensitive)
+    if (req) {
+      const exact = printers.find(p => p.name.toLowerCase() === reqLower);
+      if (exact) {
+        return { resolvedName: exact.name, found: true, isDefault: Boolean(exact.isDefault), matchedRule: 'exact' };
+      }
+    }
+
+    // 2. Normalized match (alphanumeric only, e.g. "tvsrp3200plus" vs "rp3200plusu1")
+    if (req) {
+      const reqNorm = reqLower.replace(/[^a-z0-9]/g, '');
+      const normMatch = printers.find(p => {
+        const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return pNorm.includes(reqNorm) || reqNorm.includes(pNorm);
       });
+      if (normMatch) {
+        return { resolvedName: normMatch.name, found: true, isDefault: Boolean(normMatch.isDefault), matchedRule: 'normalized' };
+      }
+    }
 
-      const timer = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          try { printWin.close(); } catch (e) {}
-          resolve({ success: false, error: 'Thermal print timed out after 10 seconds' });
-        }
-      }, 10000);
+    // 3. Known TVS / RP3200 / POS-80 / Thermal patterns
+    const tvsMatch = printers.find(p => /rp\s*3200|tvs|pos-?80|thermal|receipt|ticket/i.test(p.name));
+    if (tvsMatch) {
+      return { resolvedName: tvsMatch.name, found: true, isDefault: Boolean(tvsMatch.isDefault), matchedRule: 'thermal_pattern' };
+    }
 
-      printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    // 4. System default printer
+    const defaultPrinter = printers.find(p => p.isDefault);
+    if (defaultPrinter) {
+      return { resolvedName: defaultPrinter.name, found: true, isDefault: true, matchedRule: 'system_default' };
+    }
 
-      printWin.webContents.on('did-finish-load', () => {
-        printWin.webContents.print(
-          {
-            silent: Boolean(silent),
-            printBackground: true,
-            deviceName: printerName || '',
-            margins: { marginType: 'none' }
-          },
-          (success, failureReason) => {
-            clearTimeout(timer);
-            if (!resolved) {
-              resolved = true;
-              try { printWin.close(); } catch (e) {}
-              if (!success) {
-                console.error('[Limra Desktop Print] Failed:', failureReason);
-                resolve({ success: false, error: failureReason || 'Printer rejected print job' });
-              } else {
-                console.log('[Limra Desktop Print] Printed successfully via hidden thermal window');
-                resolve({ success: true, hardware_confirmed: true });
+    // 5. Fallback to first available printer
+    return { resolvedName: printers[0].name, found: true, isDefault: Boolean(printers[0].isDefault), matchedRule: 'first_available' };
+  } catch (err) {
+    console.warn('[Limra Desktop Print] Printer device resolution error:', err);
+    return { resolvedName: requestedName || '', found: false, matchedRule: 'error_fallback' };
+  }
+}
+
+let _printWorkerWin = null;
+let _cachedResolvedDeviceName = null;
+let _cachedResolvedDeviceTime = 0;
+
+function getOrCreatePrintWorkerWindow() {
+  if (_printWorkerWin && !_printWorkerWin.isDestroyed()) {
+    return _printWorkerWin;
+  }
+  _printWorkerWin = new BrowserWindow({
+    show: false,
+    width: 272,
+    height: 800,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+  return _printWorkerWin;
+}
+
+if (ipcMain) {
+  ipcMain.handle('get-printers', async () => {
+    if (!mainWindow) return [];
+    return await mainWindow.webContents.getPrintersAsync();
+  });
+
+  ipcMain.handle('get-printer-status', async (event, requestedName) => {
+    const printers = mainWindow ? await mainWindow.webContents.getPrintersAsync() : [];
+    const resolution = await resolvePrinterDevice(requestedName, mainWindow?.webContents);
+    _cachedResolvedDeviceName = resolution.resolvedName;
+    _cachedResolvedDeviceTime = Date.now();
+    return {
+      printers,
+      resolvedName: resolution.resolvedName,
+      matchedRule: resolution.matchedRule,
+      isDefault: resolution.isDefault
+    };
+  });
+
+  ipcMain.handle('print-receipt', async (event, options = {}) => {
+    const { html, printerName, silent = true, paperWidth = 80 } = options;
+
+    if (html) {
+      return new Promise(async (resolve) => {
+        let resolved = false;
+        const printWin = getOrCreatePrintWorkerWindow();
+
+        const timer = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            resolve({ success: false, error: 'Thermal print timed out after 10 seconds' });
+          }
+        }, 10000);
+
+        // Wrap html with strict print styles ensuring zero margin and direct 72mm thermal roll bounds
+        const is58 = String(paperWidth) === '58';
+        const paperWidthMm = is58 ? '58' : '72';
+        const targetWidthPx = is58 ? 220 : 272;
+        try {
+          const currentBounds = printWin.getBounds();
+          if (currentBounds.width !== targetWidthPx) {
+            printWin.setSize(targetWidthPx, 800);
+          }
+        } catch (e) {}
+
+        const styledHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              @page {
+                size: ${paperWidthMm}mm auto;
+                margin: 0mm;
+              }
+              * {
+                box-sizing: border-box;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff;
+                color: #000;
+                width: 100% !important;
+                font-family: 'Courier New', Courier, monospace, sans-serif;
+                -webkit-font-smoothing: antialiased;
+              }
+              .limra-print-container {
+                width: ${targetWidthPx}px !important;
+                max-width: ${targetWidthPx}px !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                color: #000;
+                text-align: left;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="limra-print-container">
+              ${html}
+            </div>
+          </body>
+          </html>
+        `;
+
+        const os = require('os');
+        const tmpPrintFile = path.join(os.tmpdir(), `limra-desk-print-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.html`);
+        try { fs.writeFileSync(tmpPrintFile, styledHtml, 'utf8'); } catch (e) {}
+
+        const cleanupTmp = () => {
+          try { if (tmpPrintFile && fs.existsSync(tmpPrintFile)) fs.unlinkSync(tmpPrintFile); } catch (e) {}
+        };
+
+        const onFinishLoad = async () => {
+          // Remove listener after execution to prevent stacking
+          printWin.webContents.removeListener('did-finish-load', onFinishLoad);
+
+          // Ensure all Base64 images are decoded before rasterizing to print spooler
+          try {
+            await printWin.webContents.executeJavaScript(`
+              new Promise((resolve) => {
+                const imgs = Array.from(document.querySelectorAll('img'));
+                if (!imgs.length) return resolve();
+                let count = imgs.length;
+                imgs.forEach(img => {
+                  if (img.complete) {
+                    if (--count === 0) resolve();
+                  } else {
+                    img.onload = img.onerror = () => { if (--count === 0) resolve(); };
+                  }
+                });
+              })
+            `);
+            await new Promise(r => setTimeout(r, 40));
+          } catch (e) {}
+
+          let resolvedDevice = _cachedResolvedDeviceName;
+          if (!resolvedDevice || (Date.now() - _cachedResolvedDeviceTime > 300000)) {
+            const resolution = await resolvePrinterDevice(printerName, printWin.webContents);
+            resolvedDevice = resolution.resolvedName;
+            _cachedResolvedDeviceName = resolvedDevice;
+            _cachedResolvedDeviceTime = Date.now();
+          }
+
+          console.log(`[Limra Desktop Print] Dispatching silent print to: "${resolvedDevice}" (requested: "${printerName}")`);
+
+          printWin.webContents.print(
+            {
+              silent: silent !== false,
+              printBackground: true,
+              deviceName: resolvedDevice,
+              margins: { marginType: 'none' }
+            },
+            (success, failureReason) => {
+              clearTimeout(timer);
+              cleanupTmp();
+              if (!resolved) {
+                resolved = true;
+                if (!success) {
+                  console.error('[Limra Desktop Print] Failed:', failureReason);
+                  // Invalidate cache if printer failed
+                  _cachedResolvedDeviceName = null;
+                  resolve({ success: false, error: failureReason || 'Printer rejected print job', deviceName: resolvedDevice });
+                } else {
+                  console.log(`[Limra Desktop Print] Printed silently to ${resolvedDevice} ✓`);
+                  resolve({ success: true, hardware_confirmed: true, deviceName: resolvedDevice });
+                }
               }
             }
+          );
+        };
+
+        printWin.webContents.on('did-finish-load', onFinishLoad);
+
+        printWin.webContents.once('did-fail-load', (e, code, desc) => {
+          printWin.webContents.removeListener('did-finish-load', onFinishLoad);
+          clearTimeout(timer);
+          cleanupTmp();
+          if (!resolved) {
+            resolved = true;
+            resolve({ success: false, error: desc || 'Failed to load receipt HTML in printer window' });
           }
-        );
-      });
+        });
 
-      printWin.webContents.on('did-fail-load', (e, code, desc) => {
-        clearTimeout(timer);
-        if (!resolved) {
-          resolved = true;
-          try { printWin.close(); } catch (err) {}
-          resolve({ success: false, error: desc || 'Failed to load receipt HTML in printer window' });
-        }
-      });
-    });
-  }
-
-  if (!mainWindow) return { success: false, error: 'Window not active' };
-
-  return new Promise((resolve) => {
-    mainWindow.webContents.print(
-      {
-        silent: Boolean(silent),
-        printBackground: true,
-        deviceName: printerName || '',
-        margins: { marginType: 'none' }
-      },
-      (success, failureReason) => {
-        if (!success) {
-          console.error('[Limra Desktop Print] Failed:', failureReason);
-          resolve({ success: false, error: failureReason });
+        if (fs.existsSync(tmpPrintFile)) {
+          printWin.loadFile(tmpPrintFile);
         } else {
-          console.log('[Limra Desktop Print] Printed successfully');
-          resolve({ success: true, hardware_confirmed: true });
+          printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(styledHtml)}`);
         }
-      }
-    );
+      });
+    }
+
+    if (!mainWindow) return { success: false, error: 'Window not active' };
+
+    const resolution = await resolvePrinterDevice(printerName, mainWindow.webContents);
+    return new Promise((resolve) => {
+      mainWindow.webContents.print(
+        {
+          silent: silent !== false,
+          printBackground: true,
+          deviceName: resolution.resolvedName,
+          margins: { marginType: 'none' }
+        },
+        (success, failureReason) => {
+          if (!success) {
+            console.error('[Limra Desktop Print] Failed:', failureReason);
+            resolve({ success: false, error: failureReason, deviceName: resolution.resolvedName });
+          } else {
+            console.log(`[Limra Desktop Print] Printed silently to ${resolution.resolvedName} ✓`);
+            resolve({ success: true, hardware_confirmed: true, deviceName: resolution.resolvedName });
+          }
+        }
+      );
+    });
   });
-});
+}
 
 // ---------------------------------------------------------------------------
 // App Lifecycle
 // ---------------------------------------------------------------------------
 
-app.whenReady().then(createWindow);
+if (app) {
+  app.whenReady().then(createWindow);
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
+  app.on('activate', () => {
+    if (BrowserWindow && BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 
-app.on('window-all-closed', () => {
-  if (localServer) {
-    try {
-      localServer.close();
-    } catch (e) {}
-  }
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+  app.on('window-all-closed', () => {
+    if (localServer) {
+      try {
+        localServer.close();
+      } catch (e) {}
+    }
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+}
+
+// Export helper for automated test verification
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    resolvePrinterDevice
+  };
+}
