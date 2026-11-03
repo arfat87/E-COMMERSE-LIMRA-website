@@ -42,19 +42,58 @@ export const ERROR_TYPES = {
 export function classifyError(err, response = null) {
   const errMsg = String(err?.message || response?.error || err || '').toLowerCase();
   const status = Number(response?.status || err?.status || 0);
+  const code = String(err?.code || response?.code || '').toLowerCase();
 
+  // 1. Conflict errors (409, order already settled / cancelled / table session conflict)
   if (status === 409 || errMsg.includes('already settled') || errMsg.includes('order_already_settled') || errMsg.includes('order_cancelled') || errMsg.includes('conflict')) {
     return ERROR_TYPES.CONFLICT;
   }
-  if (status >= 400 && status < 500) {
+
+  // 2. Client & Authorization / Validation errors (400-499, Postgres 42501, PGRST, constraints)
+  if (
+    (status >= 400 && status < 500) ||
+    code === '42501' ||
+    code === '42703' ||
+    code === '23502' ||
+    code === '23505' ||
+    code === 'p0001' ||
+    code.startsWith('pgrst') ||
+    errMsg.includes('permission denied') ||
+    errMsg.includes('row-level security') ||
+    errMsg.includes('violates') ||
+    errMsg.includes('forbidden') ||
+    errMsg.includes('unauthorized') ||
+    errMsg.includes('jwt') ||
+    errMsg.includes('constraint') ||
+    errMsg.includes('not-null') ||
+    errMsg.includes('order_not_found') ||
+    errMsg.includes('target_table_occupied') ||
+    errMsg.includes('source_table_empty')
+  ) {
     return ERROR_TYPES.VALIDATION;
   }
-  if (status >= 500) {
+
+  // 3. Server errors (500-599)
+  if (status >= 500 || errMsg.includes('500') || errMsg.includes('502') || errMsg.includes('503') || errMsg.includes('504') || errMsg.includes('internal server error') || errMsg.includes('service unavailable')) {
     return ERROR_TYPES.SERVER_ERROR;
   }
-  if (status === 0 || err?.name === 'TypeError' || errMsg.includes('fetch') || errMsg.includes('network') || errMsg.includes('offline') || errMsg.includes('aborted') || errMsg.includes('connection') || errMsg.includes('enotfound')) {
+
+  // 4. Genuine network disconnections and fetch failures
+  if (
+    err?.name === 'TypeError' ||
+    errMsg.includes('fetch') ||
+    errMsg.includes('network') ||
+    errMsg.includes('offline') ||
+    errMsg.includes('aborted') ||
+    errMsg.includes('connection') ||
+    errMsg.includes('enotfound') ||
+    errMsg.includes('econnrefused') ||
+    errMsg.includes('timeout') ||
+    (typeof navigator !== 'undefined' && !navigator.onLine)
+  ) {
     return ERROR_TYPES.NETWORK;
   }
+
   return ERROR_TYPES.NETWORK;
 }
 

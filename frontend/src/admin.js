@@ -7779,6 +7779,7 @@ async function settleBill(billId, paymentMethod = 'cash', txnRef = '', idempoten
     // 1. Atomic database settlement via settle_order_atomic RPC
     let rpcResult = null;
     let rpcError = null;
+    let rpcResponse = null;
 
     try {
       const res = await insforge.database.rpc('settle_order_atomic', {
@@ -7787,6 +7788,7 @@ async function settleBill(billId, paymentMethod = 'cash', txnRef = '', idempoten
         p_notes: updatedNotes,
         p_idempotency_key: settleIdempotencyKey
       });
+      rpcResponse = res;
       rpcResult = res.data;
       rpcError = res.error;
     } catch (ex) {
@@ -7795,7 +7797,7 @@ async function settleBill(billId, paymentMethod = 'cash', txnRef = '', idempoten
 
     if (rpcError) {
       const errMsg = String(rpcError.message || '');
-      const errType = typeof classifyError === 'function' ? classifyError(rpcError) : 'NETWORK';
+      const errType = typeof classifyError === 'function' ? classifyError(rpcError, rpcResponse) : 'NETWORK';
 
       if (errMsg.includes('ORDER_ALREADY_SETTLED')) {
         showAdminToast(`Bill #${bill.order_number} was already settled by another cashier.`, 'error');

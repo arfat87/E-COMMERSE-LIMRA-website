@@ -3256,17 +3256,25 @@ CREATE POLICY "Admins can manage stock logs" ON public.stock_logs FOR ALL TO aut
 -- Customer active orders & bookings access
 DROP POLICY IF EXISTS "Public full access orders" ON public.orders;
 DROP POLICY IF EXISTS "Public can view orders" ON public.orders;
+CREATE POLICY "Public can view orders" ON public.orders FOR SELECT TO public USING (true);
 DROP POLICY IF EXISTS "Users can view own orders" ON public.orders;
 CREATE POLICY "Users can view own orders" ON public.orders FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "Public can create orders" ON public.orders;
+CREATE POLICY "Public can create orders" ON public.orders FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "Public can update orders" ON public.orders;
+CREATE POLICY "Public can update orders" ON public.orders FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Admins can manage orders" ON public.orders;
 CREATE POLICY "Admins can manage orders" ON public.orders FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 
 DROP POLICY IF EXISTS "Public full access order_items" ON public.order_items;
 DROP POLICY IF EXISTS "Public can view order items" ON public.order_items;
+CREATE POLICY "Public can view order items" ON public.order_items FOR SELECT TO public USING (true);
 DROP POLICY IF EXISTS "Users can view own order items" ON public.order_items;
 CREATE POLICY "Users can view own order items" ON public.order_items FOR SELECT TO authenticated USING (EXISTS (
   SELECT 1 FROM public.orders o WHERE o.id = order_items.order_id AND o.user_id = auth.uid()
 ));
+DROP POLICY IF EXISTS "Public can manage order items" ON public.order_items;
+CREATE POLICY "Public can manage order items" ON public.order_items FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Admins can manage order items" ON public.order_items;
 CREATE POLICY "Admins can manage order items" ON public.order_items FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 
