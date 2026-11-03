@@ -241,10 +241,22 @@ wss.on("connection", (ws) => {
           sendToWindowsSpooler,
           convertEscPosToPlainText,
           convertHtmlToPlainText,
-          resolveElectronBinary
+          resolveElectronBinary,
+          isDuplicateJob
         } = await import(`./api/print-silent.js?t=${Date.now()}`);
 
         const { html, escposText, plainText, printerName, paperWidth, jobId } = msg;
+
+        if (typeof isDuplicateJob === 'function' && isDuplicateJob(jobId, html || escposText || plainText)) {
+          return ws.send(JSON.stringify({
+            success: true,
+            action: "print_result",
+            jobId: jobId || null,
+            hardware_confirmed: true,
+            deduplicated: true,
+            deviceName: printerName || "RP3200 plus(U) 1"
+          }));
+        }
         const printers = await getWindowsPrinters();
         const resolvedDevice = resolvePrinterNameFromList(printerName || "RP3200 plus(U) 1", printers);
 

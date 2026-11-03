@@ -67,6 +67,20 @@ class PrintQueueManager {
    * @returns {Promise<Object>} The enqueued job
    */
   async enqueue(jobData, customExecutor = null) {
+    // Deduplication check: if an identical non-reprint job for this order & type is already pending or printing, return the existing job
+    if (!jobData.isReprint && jobData.orderId) {
+      const existing = this.jobs.find(j => 
+        String(j.orderId) === String(jobData.orderId) && 
+        j.type === (jobData.type || 'BILL') && 
+        Number(j.roundNumber || 1) === Number(jobData.roundNumber || 1) &&
+        (j.status === 'pending' || j.status === 'printing')
+      );
+      if (existing) {
+        console.log(`[PrintQueue] Active job already queued for order ${jobData.orderId} (${jobData.type}). Skipping duplicate enqueue.`);
+        return existing;
+      }
+    }
+
     const job = {
       id: `print-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       orderId: String(jobData.orderId || ''),

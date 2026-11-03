@@ -59,6 +59,23 @@ let _cachedPrintersTime = Date.now();
 let _isRefreshingPrinters = false;
 const PRINTER_CACHE_TTL = 300000; // 5 minutes
 
+// In-memory deduplication cache to prevent duplicate Windows spooling for retry requests
+const _recentSpoolJobs = new Map();
+
+export function isDuplicateJob(jobId, content) {
+  const now = Date.now();
+  for (const [k, time] of _recentSpoolJobs.entries()) {
+    if (now - time > 30000) _recentSpoolJobs.delete(k);
+  }
+  const key = jobId ? String(jobId) : (content ? String(content).length + '_' + String(content).slice(0, 100) : null);
+  if (!key) return false;
+  if (_recentSpoolJobs.has(key) && (now - _recentSpoolJobs.get(key) < 5000)) {
+    return true;
+  }
+  _recentSpoolJobs.set(key, now);
+  return false;
+}
+
 // Known ESC/POS command sequences to strip for plain text fallback
 const ESCPOS_COMMAND_PATTERNS = [
   /\x1B\x40/g,                  // INIT
@@ -406,7 +423,18 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     try {
-      const { html, escposText, plainText, type, printerName, paperWidth } = req.body || {};
+      const { html, escposText, plainText, type, printerName, paperWidth, jobId } = req.body || {};
+
+      if (isDuplicateJob(jobId, html || escposText || plainText)) {
+        console.log(`[Print API] Duplicate job skipped for ${jobId || 'content hash'}`);
+        return res.status(200).json({
+          success: true,
+          hardware_confirmed: true,
+          deduplicated: true,
+          deviceName: printerName || 'RP3200 plus(U) 1',
+          paperWidth: paperWidth || 80
+        });
+      }
 
       const printers = await getWindowsPrinters();
       const resolvedDevice = resolvePrinterNameFromList(printerName || 'RP3200 plus(U) 1', printers);

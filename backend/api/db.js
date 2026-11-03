@@ -158,11 +158,9 @@ export default async function handler(req, res) {
             });
           }
           if (rpcName === "void_closed_order_atomic") {
+            // For voiding, default reason to standard audit entry if left blank
             if (reason.length < 3) {
-              return res.status(400).json({
-                data: null,
-                error: { message: "REASON_REQUIRED: A recorded reason (minimum 3 characters) is required to void a closed invoice." }
-              });
+              rpcParams.p_reason = reason ? `Order voided: ${reason}` : "Order voided by authorized staff";
             }
           } else if (rpcName === "amend_closed_order_atomic") {
             // For editing/amending, reason is optional. Default to standard reason if missing or short.

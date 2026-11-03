@@ -7768,7 +7768,7 @@ async function confirmHeldTableOrder(tableNum) {
   }
 }
 
-async function settleBill(billId, paymentMethod = 'cash', txnRef = '', idempotencyKey = null) {
+async function settleBill(billId, paymentMethod = 'cash', txnRef = '', idempotencyKey = null, autoPrintBill = false) {
   if (isSettlingTableBill) return { success: false, error: 'SETTLEMENT_IN_PROGRESS' };
   isSettlingTableBill = true;
 
@@ -7919,13 +7919,15 @@ async function settleBill(billId, paymentMethod = 'cash', txnRef = '', idempoten
 
     persistOrdersCache();
 
-    // 3. Thermal Receipt Printout
-    try {
-      const rawItems = getItemsForOrder(bill.id);
-      const items = consolidateOrderItems(rawItems);
-      await printOrderReceiptWithTax(bill, items);
-    } catch (printErr) {
-      console.warn('[Print Receipt Warning]:', printErr);
+    // 3. Thermal Receipt Printout (only when explicitly requested, prevented by default during payment recording)
+    if (autoPrintBill) {
+      try {
+        const rawItems = getItemsForOrder(bill.id);
+        const items = consolidateOrderItems(rawItems);
+        await printOrderReceiptWithTax(bill, items);
+      } catch (printErr) {
+        console.warn('[Print Receipt Warning]:', printErr);
+      }
     }
 
     // 4. Auto-sync to Google Sheet if enabled
@@ -7974,8 +7976,8 @@ async function settleBill(billId, paymentMethod = 'cash', txnRef = '', idempoten
   }
 }
 
-async function settleTableBill(billId, paymentMethod = 'cash', txnRef = '', idempotencyKey = null) {
-  return settleBill(billId, paymentMethod, txnRef, idempotencyKey);
+async function settleTableBill(billId, paymentMethod = 'cash', txnRef = '', idempotencyKey = null, autoPrintBill = false) {
+  return settleBill(billId, paymentMethod, txnRef, idempotencyKey, autoPrintBill);
 }
 
 function renderTablesBillSection(search = '') {
@@ -12865,6 +12867,14 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false, provid
       customer_name: custName,
       customer_phone: custPhone,
       total_amount: newGrandTotal,
+      subtotal_amount: billing.subtotal || newGrandTotal,
+      taxable_amount: billing.taxableAmount || (billing.subtotal - (billing.discountAmt || 0)),
+      cgst_amount: billing.cgstAmt || 0,
+      sgst_amount: billing.sgstAmt || 0,
+      discount_amount: billing.discountAmt || 0,
+      discount_pct: billing.discountPct || 0,
+      delivery_fee: deliveryFee || 0,
+      round_off_amount: billing.roundOff || 0,
       order_type: newType,
       table_number: newType === 'table' ? (newTableNum || null) : null,
       notes: updatedNotes
@@ -12876,45 +12886,17 @@ async function saveClosedOrderCorrections(orderId, shouldReprint = false, provid
       `amend-${orderId}-${Date.now()}`;
     order._amendIdempotencyKey = idempotencyKey;
 
-    // 2. Execute server-side atomic closed-order amendment RPC (enforces manager auth, audit snapshot & trigger safety)
-    let rpcResult = null;
-    let rpcSuccess = false;
-    try {
-      const { data, error: rpcError } = await insforge.database.rpc('amend_closed_order_atomic', {
-        p_order_id: orderId,
-        p_updated_items: updatedItemsPayload,
-        p_updated_fields: updatedFieldsPayload,
-        p_reason: cleanReason,
-        p_idempotency_key: idempotencyKey
-      });
+    // 2. Execute server-side atomic closed-order amendment RPC (enforces transactional item replacement & audit log)
+    const { data: rpcResult, error: rpcError } = await insforge.database.rpc('amend_closed_order_atomic', {
+      p_order_id: orderId,
+      p_updated_items: updatedItemsPayload,
+      p_updated_fields: updatedFieldsPayload,
+      p_reason: cleanReason,
+      p_idempotency_key: idempotencyKey
+    });
 
-      if (rpcError) {
-        console.warn('[Closed Order Amendment RPC warning, attempting direct update fallback]', rpcError);
-      } else {
-        rpcResult = data;
-        rpcSuccess = true;
-      }
-    } catch (rpcCallErr) {
-      console.warn('[Closed Order Amendment RPC exception, attempting direct update fallback]', rpcCallErr);
-    }
-
-    if (!rpcSuccess) {
-      // Fallback: direct table update for resilience
-      const { error: updateErr } = await insforge.database.from('orders')
-        .update({
-          customer_name: custName,
-          customer_phone: custPhone,
-          total_amount: newGrandTotal,
-          order_type: newType,
-          table_number: newType === 'table' ? (newTableNum && /^\d+$/.test(newTableNum) ? parseInt(newTableNum, 10) : null) : null,
-          notes: updatedNotes,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', orderId);
-
-      if (updateErr) {
-        throw updateErr;
-      }
+    if (rpcError) {
+      throw rpcError;
     }
 
     // 3. Synchronize in-memory state from authoritative RPC result
@@ -12986,18 +12968,17 @@ async function voidClosedOrder(orderId, providedReason = null, providedIdempoten
     return { ok: false, error: 'ORDER_ALREADY_VOIDED' };
   }
 
-  let cleanReason = String(providedReason ?? ($('closed-edit-reason-input')?.value || '')).trim();
-  if (cleanReason.length < 3 && typeof prompt === 'function') {
-    const prompted = prompt(
-      `Enter mandatory financial audit reason to VOID Invoice #${orderNum} (₹${amountStr}) (minimum 3 characters):\n\nNote: Original invoice and payment history will be preserved for audit compliance.`
+  // Confirmation step before voiding
+  if (typeof confirm === 'function' && !providedReason && !providedIdempotencyKey) {
+    const confirmed = confirm(
+      `Are you sure you want to VOID and cancel Invoice #${orderNum} (₹${amountStr})?\n\nNote: Original invoice and payment history will be preserved for financial audit compliance.`
     );
-    if (prompted === null) return { ok: false, cancelled: true };
-    cleanReason = String(prompted || '').trim();
+    if (!confirmed) return { ok: false, cancelled: true };
   }
 
+  let cleanReason = String(providedReason ?? ($('closed-edit-reason-input')?.value || '')).trim();
   if (cleanReason.length < 3) {
-    showAdminToast('REASON_REQUIRED: A recorded reason (minimum 3 characters) is required to void an invoice.', 'error');
-    return { ok: false, error: 'REASON_REQUIRED' };
+    cleanReason = cleanReason ? `Order voided: ${cleanReason}` : 'Order voided by authorized staff';
   }
 
   try {
@@ -19801,6 +19782,7 @@ function saveAdminPrintedTokens(set) {
 }
 
 const adminPrintedTokens = getAdminPrintedTokens();
+const inFlightPrintJobs = new Set();
 
 function hasAdminJobBeenPrinted(token) {
   return adminPrintedTokens.has(token);
@@ -19831,55 +19813,65 @@ async function printKOT(order, itemsList, options = false) {
 
   const dedupeKey = `kot:${order.id}:${kotOpts.roundNumber || 1}`;
 
-  // If this is an automatic print (not manual reprint) and has already been printed, skip to prevent duplicates
-  if (!kotOpts.isReprint && hasAdminJobBeenPrinted(dedupeKey)) {
-    console.log(`[Silent Print] KOT for order ${order.id} round ${kotOpts.roundNumber} already printed. Skipping duplicate.`);
+  // If this is an automatic print (not manual reprint) and has already been printed or is currently in flight, skip to prevent duplicates
+  if (!kotOpts.isReprint && (hasAdminJobBeenPrinted(dedupeKey) || inFlightPrintJobs.has(dedupeKey))) {
+    console.log(`[Silent Print] KOT for order ${order.id} round ${kotOpts.roundNumber} already printed or in flight. Skipping duplicate.`);
     return { status: 'printed', alreadyPrinted: true, orderNumber: formatDailyOrderNumber(order) };
   }
-
-  let items = itemsList;
-  if (!items || items.length === 0) {
-    items = getItemsForOrder(order.id);
-  }
-  if ((!items || items.length === 0) && order.id) {
-    try {
-      const { data: dbItems } = await insforge.database.from('order_items').select('*').eq('order_id', order.id);
-      if (dbItems && dbItems.length > 0) {
-        items = dbItems;
-        orderItems.push(...dbItems);
-      }
-    } catch (e) {
-      console.warn('Could not fetch items from DB for KOT:', e);
-    }
+  if (!kotOpts.isReprint) {
+    inFlightPrintJobs.add(dedupeKey);
   }
 
-  const p = printerSettings;
-  const html = await generateKOTHtml(order, items, kotOpts);
-  let escposText = '';
   try {
-    escposText = buildEscPosKOT(order, items, p, kotOpts);
-  } catch (e) {
-    console.warn('[ESC/POS] Error building KOT command stream:', e);
-  }
+    let items = itemsList;
+    if (!items || items.length === 0) {
+      items = getItemsForOrder(order.id);
+    }
+    if ((!items || items.length === 0) && order.id) {
+      try {
+        const { data: dbItems } = await insforge.database.from('order_items').select('*').eq('order_id', order.id);
+        if (dbItems && dbItems.length > 0) {
+          items = dbItems;
+          orderItems.push(...dbItems);
+        }
+      } catch (e) {
+        console.warn('Could not fetch items from DB for KOT:', e);
+      }
+    }
 
-  // Enqueue job into resilient queue with immediate execution
-  const job = await printQueue.enqueue({
-    orderId: order.id,
-    orderNumber: formatDailyOrderNumber(order),
-    type: 'KOT',
-    paperWidth: p.kot_paper_width || 80,
-    isReprint: kotOpts.isReprint,
-    roundNumber: kotOpts.roundNumber,
-    payload: { html, escposText, order, items }
-  });
+    const p = printerSettings;
+    const html = await generateKOTHtml(order, items, kotOpts);
+    let escposText = '';
+    try {
+      escposText = buildEscPosKOT(order, items, p, kotOpts);
+    } catch (e) {
+      console.warn('[ESC/POS] Error building KOT command stream:', e);
+    }
 
-  const isSuccess = job && (job.status === 'printed' || job.status === 'hardware_confirmed' || job.status === 'spooled');
-  if (isSuccess) {
-    markAdminJobAsPrinted(dedupeKey);
-    const reprintTag = kotOpts.isReprint ? ' (Reprint)' : '';
-    showAdminToast(`Printed ✓ KOT #${job.orderNumber}${reprintTag}`, 'success');
-  } else {
-    showAdminToast(`⚠️ Print failed for KOT #${job?.orderNumber || 'Order'} (Saved to Queue)`, 'error');
+    // Enqueue job into resilient queue with immediate execution
+    const job = await printQueue.enqueue({
+      orderId: order.id,
+      orderNumber: formatDailyOrderNumber(order),
+      type: 'KOT',
+      paperWidth: p.kot_paper_width || 80,
+      isReprint: kotOpts.isReprint,
+      roundNumber: kotOpts.roundNumber,
+      payload: { html, escposText, order, items }
+    });
+
+    const isSuccess = job && (job.status === 'printed' || job.status === 'hardware_confirmed' || job.status === 'spooled');
+    if (isSuccess) {
+      markAdminJobAsPrinted(dedupeKey);
+      const reprintTag = kotOpts.isReprint ? ' (Reprint)' : '';
+      showAdminToast(`Printed ✓ KOT #${job.orderNumber}${reprintTag}`, 'success');
+    } else {
+      showAdminToast(`⚠️ Print failed for KOT #${job?.orderNumber || 'Order'} (Saved to Queue)`, 'error');
+    }
+    return job;
+  } finally {
+    if (!kotOpts.isReprint) {
+      inFlightPrintJobs.delete(dedupeKey);
+    }
   }
 }
 
@@ -20142,54 +20134,64 @@ async function printOrderReceiptWithTax(order, itemsList, options = {}) {
   const isPaid = order.payment_status === 'paid' || order.ticket_status === 'CLOSED';
   const dedupeKey = isPaid ? `bill_paid:${order.id}` : `bill_unpaid:${order.id}`;
 
-  // If this is an automatic print (not manual user click) and has already been printed, skip to prevent duplicates
-  if (!forcePrint && hasAdminJobBeenPrinted(dedupeKey)) {
-    console.log(`[Silent Print] Bill for order ${order.id} (${isPaid ? 'PAID' : 'UNPAID'}) already printed. Skipping duplicate.`);
+  // If this is an automatic print (not manual user click) and has already been printed or is currently in flight, skip to prevent duplicates
+  if (!forcePrint && (hasAdminJobBeenPrinted(dedupeKey) || inFlightPrintJobs.has(dedupeKey))) {
+    console.log(`[Silent Print] Bill for order ${order.id} (${isPaid ? 'PAID' : 'UNPAID'}) already printed or in flight. Skipping duplicate.`);
     return { status: 'printed', alreadyPrinted: true, orderNumber: formatDailyOrderNumber(order) };
   }
-
-  let items = itemsList;
-  if (!items || items.length === 0) {
-    items = getItemsForOrder(order.id);
-  }
-  if ((!items || items.length === 0) && order.id) {
-    try {
-      const { data: dbItems } = await insforge.database.from('order_items').select('*').eq('order_id', order.id);
-      if (dbItems && dbItems.length > 0) {
-        items = dbItems;
-        orderItems.push(...dbItems);
-      }
-    } catch (e) {
-      console.warn('Could not fetch items from DB for Bill:', e);
-    }
+  if (!forcePrint) {
+    inFlightPrintJobs.add(dedupeKey);
   }
 
-  const p = printerSettings;
-  const html = await generateBillWithTaxHtml(order, items, options);
-  let escposText = '';
   try {
-    escposText = buildEscPosBill(order, items, p, options);
-  } catch (e) {
-    console.warn('[ESC/POS] Error building Bill command stream:', e);
-  }
+    let items = itemsList;
+    if (!items || items.length === 0) {
+      items = getItemsForOrder(order.id);
+    }
+    if ((!items || items.length === 0) && order.id) {
+      try {
+        const { data: dbItems } = await insforge.database.from('order_items').select('*').eq('order_id', order.id);
+        if (dbItems && dbItems.length > 0) {
+          items = dbItems;
+          orderItems.push(...dbItems);
+        }
+      } catch (e) {
+        console.warn('Could not fetch items from DB for Bill:', e);
+      }
+    }
 
-  // Enqueue job into resilient queue with immediate execution
-  const job = await printQueue.enqueue({
-    orderId: order.id,
-    orderNumber: formatDailyOrderNumber(order),
-    type: 'BILL',
-    paperWidth: p.bill_paper_width || 80,
-    isReprint: isReprint,
-    payload: { html, escposText, order, items }
-  });
+    const p = printerSettings;
+    const html = await generateBillWithTaxHtml(order, items, options);
+    let escposText = '';
+    try {
+      escposText = buildEscPosBill(order, items, p, options);
+    } catch (e) {
+      console.warn('[ESC/POS] Error building Bill command stream:', e);
+    }
 
-  const isSuccess = job && (job.status === 'printed' || job.status === 'hardware_confirmed' || job.status === 'spooled');
-  if (isSuccess) {
-    markAdminJobAsPrinted(dedupeKey);
-    const reprintTag = showDuplicateBanner ? ' (Reprint)' : '';
-    showAdminToast(`Printed ✓ Bill #${job.orderNumber}${reprintTag}`, 'success');
-  } else {
-    showAdminToast(`⚠️ Print failed for Bill #${job?.orderNumber || 'Order'} (Saved to Queue)`, 'error');
+    // Enqueue job into resilient queue with immediate execution
+    const job = await printQueue.enqueue({
+      orderId: order.id,
+      orderNumber: formatDailyOrderNumber(order),
+      type: 'BILL',
+      paperWidth: p.bill_paper_width || 80,
+      isReprint: isReprint,
+      payload: { html, escposText, order, items }
+    });
+
+    const isSuccess = job && (job.status === 'printed' || job.status === 'hardware_confirmed' || job.status === 'spooled');
+    if (isSuccess) {
+      markAdminJobAsPrinted(dedupeKey);
+      const reprintTag = showDuplicateBanner ? ' (Reprint)' : '';
+      showAdminToast(`Printed ✓ Bill #${job.orderNumber}${reprintTag}`, 'success');
+    } else {
+      showAdminToast(`⚠️ Print failed for Bill #${job?.orderNumber || 'Order'} (Saved to Queue)`, 'error');
+    }
+    return job;
+  } finally {
+    if (!forcePrint) {
+      inFlightPrintJobs.delete(dedupeKey);
+    }
   }
 }
 
@@ -20312,60 +20314,41 @@ async function executePrintJob(job) {
   }
 
   // 3. Local Backend Direct Silent Print (/api/print-silent) — Zero Dialog, Direct Windows Spooler
-  const silentEndpoints = [
-    'http://127.0.0.1:3000/api/print-silent',
-    'http://localhost:3000/api/print-silent'
-  ];
-  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    silentEndpoints.push('/api/print-silent');
-  }
-
-  const probeTimeoutMs = 2000;
-  for (const ep of silentEndpoints) {
-    try {
-      const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      const tid = controller ? setTimeout(() => controller.abort(), probeTimeoutMs) : null;
-      const res = await fetch(ep, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller?.signal,
-        body: JSON.stringify({
-          html: job.payload?.html,
-          escposText: job.payload?.escposText,
-          printerName: printerName || 'RP3200 plus(U) 1',
-          paperWidth: paperWidth
-        })
-      });
-      if (tid) clearTimeout(tid);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.success) {
-          return {
-            success: true,
-            hardware_confirmed: Boolean(data.hardware_confirmed),
-            deviceName: data.deviceName,
-            method: 'http_pna_bridge'
-          };
-        }
-      }
-    } catch (apiErr) {
-      // Continue to next endpoint
-    }
-  }
-
-  // 4. Native driver silent bridge fallback (checks Electron/backend)
-  if (job.payload?.html || job.payload?.escposText) {
-    const success = await printViaNativeDriver(job.payload.html, paperWidth, sideGap, {
-      escposText: job.payload.escposText,
-      order: job.payload.order,
-      items: job.payload.items
+  const isLocalHost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const silentEndpoint = isLocalHost ? '/api/print-silent' : 'http://127.0.0.1:3000/api/print-silent';
+  const probeTimeoutMs = 6000;
+  try {
+    const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const tid = controller ? setTimeout(() => controller.abort(), probeTimeoutMs) : null;
+    const res = await fetch(silentEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller?.signal,
+      body: JSON.stringify({
+        html: job.payload?.html,
+        escposText: job.payload?.escposText,
+        printerName: printerName || 'RP3200 plus(U) 1',
+        paperWidth: paperWidth,
+        jobId: job.orderNumber || job.id
+      })
     });
-    if (success) {
-      return { success: true, hardware_confirmed: true, spooled: true };
+    if (tid) clearTimeout(tid);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success) {
+        return {
+          success: true,
+          hardware_confirmed: Boolean(data.hardware_confirmed),
+          deviceName: data.deviceName || printerName,
+          method: 'http_pna_bridge'
+        };
+      }
     }
+  } catch (apiErr) {
+    console.warn('[PrintQueue] Local silent print endpoint notice:', apiErr?.message);
   }
 
-  // 5. Clean Browser Thermal Print Fallback for Pure Web Sessions:
+  // 4. Clean Browser Thermal Print Fallback for Pure Web Sessions:
   // When running in a standard web browser on the live domain (https://www.limraresturent.in)
   // and NO desktop Electron app or local Node.js spooler is running on localhost:3000:
   // Render the exact 72mm monospace thermal invoice in an offscreen iframe and trigger print.
@@ -20381,7 +20364,7 @@ async function executePrintJob(job) {
     }
   }
 
-  // 6. Strict Fallback Warning
+  // 5. Strict Fallback Warning
   throw new Error('Direct thermal printer bridge unavailable (Connect Electron POS Desktop or Local Server on localhost:3000)');
 }
 
@@ -22198,34 +22181,59 @@ function initBillingPanel() {
   }
 
   $('pos-kot-hold-btn')?.addEventListener('click', async () => {
-    const result = await buildOrderFromPos('hold');
-    if (!result) return;
-    await printKOT(result.order, result.items);
-    showAdminToast(`Order #${result.order.order_number} held & KOT printed! 🖨️`, 'success');
-    resetPosWorkstation();
+    const btn = $('pos-kot-hold-btn');
+    if (btn && btn.disabled) return;
+    if (btn) btn.disabled = true;
+    try {
+      const result = await buildOrderFromPos('hold');
+      if (!result) return;
+      await printKOT(result.order, result.items);
+      showAdminToast(`Order #${result.order.order_number} held & KOT printed! 🖨️`, 'success');
+      resetPosWorkstation();
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   });
 
   $('pos-kot-only-btn')?.addEventListener('click', async () => {
-    const result = await buildOrderFromPos('kot');
-    if (!result) return;
-    await printKOT(result.order, result.items);
-    showAdminToast(`Order #${result.order.order_number} sent to Kitchen & KOT printed! 👨‍🍳`, 'success');
-    resetPosWorkstation();
+    const btn = $('pos-kot-only-btn');
+    if (btn && btn.disabled) return;
+    if (btn) btn.disabled = true;
+    try {
+      const result = await buildOrderFromPos('kot');
+      if (!result) return;
+      await printKOT(result.order, result.items);
+      showAdminToast(`Order #${result.order.order_number} sent to Kitchen & KOT printed! 👨‍🍳`, 'success');
+      resetPosWorkstation();
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   });
 
   $('pos-kot-bill-btn')?.addEventListener('click', async () => {
-    const result = await buildOrderFromPos('bill');
-    if (!result) return;
-    // Print both KOT and final bill for Table, Pickup, and Delivery in unified job
-    await printCombinedKOTAndBill(result.order, result.items);
-    showAdminToast(`Order #${result.order.order_number} bill generated (${formatBillAmount(result.order.total_amount)})! Moved to Bill section. 🧾`, 'success');
-    resetPosWorkstation();
-    // Switch to Tables -> Bill section so cashier immediately sees the unpaid bill in Bill section
-    tablesSubtab = 'bill';
-    document.querySelectorAll('#tables-filter-pills button').forEach(p => {
-      p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'bill');
-    });
-    renderTablesPanel();
+    const btn = $('pos-kot-bill-btn');
+    if (btn && btn.disabled) return;
+    if (btn) btn.disabled = true;
+    try {
+      const result = await buildOrderFromPos('bill');
+      if (!result) return;
+      // For Delivery and Takeaway/Pickup, print Customer Bill only (avoids redundant KOT prints)
+      if (posOrderType === 'delivery' || posOrderType === 'pickup') {
+        await printOrderReceiptWithTax(result.order, result.items);
+      } else {
+        await printCombinedKOTAndBill(result.order, result.items);
+      }
+      showAdminToast(`Order #${result.order.order_number} bill generated (${formatBillAmount(result.order.total_amount)})! Moved to Bill section. 🧾`, 'success');
+      resetPosWorkstation();
+      // Switch to Tables -> Bill section so cashier immediately sees the unpaid bill in Bill section
+      tablesSubtab = 'bill';
+      document.querySelectorAll('#tables-filter-pills button').forEach(p => {
+        p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'bill');
+      });
+      renderTablesPanel();
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   });
 
   // Fast Billing Keyboard Shortcuts (F1: KOT Hold, F2 / Ctrl+Enter: KOT & Bill, Escape: Close Drawer / Popover)
