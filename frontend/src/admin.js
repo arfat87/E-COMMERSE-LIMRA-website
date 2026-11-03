@@ -14069,6 +14069,7 @@ function initDashboardUI() {
   }
 
   let realtimeDebounceTimer = null;
+  let realtimeReconnectTimer = null;
 
   function scheduleRealtimeRefresh(delayMs = 120) {
     if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
@@ -14079,13 +14080,28 @@ function initDashboardUI() {
   }
 
   function initAdminRealtime() {
-    if (adminRealtimeSubscription) return;
+    if (adminRealtimeSubscription) {
+      try {
+        const client = (typeof insforge !== 'undefined' && insforge.removeChannel) ? insforge : (typeof supabase !== 'undefined' ? supabase : null);
+        if (client && typeof client.removeChannel === 'function') {
+          client.removeChannel(adminRealtimeSubscription);
+        }
+      } catch (e) {}
+      adminRealtimeSubscription = null;
+    }
+
+    if (realtimeReconnectTimer) {
+      clearTimeout(realtimeReconnectTimer);
+      realtimeReconnectTimer = null;
+    }
+
     try {
       const client = (typeof insforge !== 'undefined' && insforge.channel) ? insforge : (typeof supabase !== 'undefined' ? supabase : null);
       if (!client || typeof client.channel !== 'function') return;
 
+      const channelName = `limra-admin-realtime-${Date.now()}`;
       adminRealtimeSubscription = client
-        .channel('limra-admin-realtime')
+        .channel(channelName)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
           console.log('[Realtime] Instant order event:', payload.eventType);
           scheduleRealtimeRefresh();
@@ -14102,16 +14118,35 @@ function initDashboardUI() {
           console.log('[Realtime] Instant booking event:', payload.eventType);
           scheduleRealtimeRefresh();
         })
-        .subscribe((status) => {
-          console.log('[Realtime] Admin live event stream status:', status);
+        .subscribe((status, err) => {
+          console.log('[Realtime] Admin live event stream status:', status, err || '');
           if (status === 'SUBSCRIBED') {
             // Reconcile committed database state upon initial connect or reconnect
             scheduleRealtimeRefresh(50);
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            console.warn(`[Realtime] Subscription interrupted (${status}), scheduling reconnect in 5s...`);
+            adminRealtimeSubscription = null;
+            if (realtimeReconnectTimer) clearTimeout(realtimeReconnectTimer);
+            realtimeReconnectTimer = setTimeout(() => {
+              realtimeReconnectTimer = null;
+              initAdminRealtime();
+            }, 5000);
           }
         });
     } catch (err) {
       console.warn('[Realtime] Setup error, relying on adaptive heartbeat:', err);
     }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => {
+      console.log('[Network] Browser back online. Triggering immediate realtime reconnect, outbox sync, and dashboard refresh...');
+      initAdminRealtime();
+      refreshDashboard(true);
+      if (typeof offlineSync !== 'undefined' && offlineSync && typeof offlineSync.triggerSync === 'function') {
+        offlineSync.triggerSync();
+      }
+    });
   }
 
   function setupSmartPolling() {
@@ -16259,6 +16294,171 @@ async function generateReviewQrDataUrl(reviewUrl) {
 
 let _nativePrintLock = Promise.resolve();
 
+function printViaWebSocketBridge(payload, timeoutMs = 2500) {
+  return new Promise((resolve) => {
+    if (typeof WebSocket === 'undefined') return resolve(null);
+    let ws = null;
+    let timer = null;
+    let settled = false;
+
+    const cleanup = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        try { ws.close(); } catch (e) {}
+        ws = null;
+      }
+    };
+
+    timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        resolve(null);
+      }
+    }, timeoutMs);
+
+    try {
+      ws = new WebSocket('ws://127.0.0.1:3000');
+      ws.onopen = () => {
+        try {
+          ws.send(JSON.stringify({
+            action: 'print',
+            html: payload.html,
+            escposText: payload.escposText,
+            plainText: payload.plainText,
+            printerName: payload.printerName || 'RP3200 plus(U) 1',
+            paperWidth: payload.paperWidth || 80,
+            jobId: payload.jobId || Date.now()
+          }));
+        } catch (sendErr) {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            resolve(null);
+          }
+        }
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && (data.action === 'print_result' || data.success)) {
+            if (!settled) {
+              settled = true;
+              cleanup();
+              resolve(data);
+            }
+          }
+        } catch (parseErr) {}
+      };
+
+      ws.onerror = () => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          resolve(null);
+        }
+      };
+
+      ws.onclose = () => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          resolve(null);
+        }
+      };
+    } catch (err) {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        resolve(null);
+      }
+    }
+  });
+}
+
+function checkLocalPrintBridgeStatus(timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    if (typeof WebSocket === 'undefined') return resolve(false);
+    let ws = null;
+    let timer = null;
+    let settled = false;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        try { ws.close(); } catch (e) {}
+      }
+    };
+
+    timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        resolve(false);
+      }
+    }, timeoutMs);
+
+    try {
+      ws = new WebSocket('ws://127.0.0.1:3000');
+      ws.onopen = () => {
+        try {
+          ws.send(JSON.stringify({ action: 'ping' }));
+        } catch (e) {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            resolve(false);
+          }
+        }
+      };
+      ws.onmessage = (evt) => {
+        try {
+          const res = JSON.parse(evt.data);
+          if (res && res.status === 'ok') {
+            if (!settled) {
+              settled = true;
+              cleanup();
+              resolve(true);
+            }
+          }
+        } catch (e) {}
+      };
+      ws.onerror = () => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          resolve(false);
+        }
+      };
+      ws.onclose = () => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          resolve(false);
+        }
+      };
+    } catch (err) {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        resolve(false);
+      }
+    }
+  });
+}
+
 function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2, extraPayload = {}) {
   const pName = printerSettings.active_printer_name || 'RP3200 plus(U) 1';
 
@@ -16283,17 +16483,33 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2, extraPay
 
   // 2. Direct Local Silent Print Service (/api/print-silent) — Zero Dialog, Direct Windows Spooler
   const printTask = async () => {
+    // 2a. Try persistent local WebSocket bridge first
+    const wsResult = await printViaWebSocketBridge({
+      html: receiptHtml,
+      escposText: extraPayload.escposText,
+      printerName: pName,
+      paperWidth: widthMm || 80
+    }, 2000);
+
+    if (wsResult && wsResult.success) {
+      console.log(`[printViaNativeDriver] Direct Silent Print sent to ${wsResult.deviceName || pName} via WebSocket Bridge ✓ (Zero Dialog)`);
+      return true;
+    }
+
+    // 2b. HTTP Loopback Endpoints with Private Network Access headers
     const endpoints = [];
-    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    if (typeof window !== 'undefined') {
       endpoints.push('http://127.0.0.1:3000/api/print-silent');
       endpoints.push('http://localhost:3000/api/print-silent');
     }
-    endpoints.push('/api/print-silent');
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      endpoints.push('/api/print-silent');
+    }
 
     for (const ep of endpoints) {
       try {
         const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        const tid = controller ? setTimeout(() => controller.abort(), 2500) : null;
+        const tid = controller ? setTimeout(() => controller.abort(), 2000) : null;
         const res = await fetch(ep, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -20041,18 +20257,38 @@ async function executePrintJob(job) {
     }
   }
 
-  // 3. Local Backend Direct Silent Print (/api/print-silent) — Zero Dialog, Direct Windows Spooler
-  const isHttpsWebSession = typeof window !== 'undefined' && window.location.protocol === 'https:' && !window.electronPOS?.isDesktop;
-  const silentEndpoints = [];
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    if (!isHttpsWebSession) {
-      silentEndpoints.push('http://127.0.0.1:3000/api/print-silent');
-      silentEndpoints.push('http://localhost:3000/api/print-silent');
-    }
-  }
-  silentEndpoints.push('/api/print-silent');
+  // 2b. Local Thermal Print Bridge via WebSocket (Zero-preflight, bi-directional loopback on ws://127.0.0.1:3000)
+  try {
+    const wsResult = await printViaWebSocketBridge({
+      html: job.payload?.html,
+      escposText: job.payload?.escposText,
+      printerName: printerName || 'RP3200 plus(U) 1',
+      paperWidth: paperWidth,
+      jobId: job.orderNumber || job.id
+    }, 2500);
 
-  const probeTimeoutMs = isHttpsWebSession ? 350 : 1500;
+    if (wsResult && wsResult.success) {
+      return {
+        success: true,
+        hardware_confirmed: Boolean(wsResult.hardware_confirmed),
+        deviceName: wsResult.deviceName || printerName,
+        method: 'websocket_bridge'
+      };
+    }
+  } catch (wsErr) {
+    console.warn('[PrintQueue] WebSocket bridge probe notice:', wsErr.message);
+  }
+
+  // 3. Local Backend Direct Silent Print (/api/print-silent) — Zero Dialog, Direct Windows Spooler
+  const silentEndpoints = [
+    'http://127.0.0.1:3000/api/print-silent',
+    'http://localhost:3000/api/print-silent'
+  ];
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    silentEndpoints.push('/api/print-silent');
+  }
+
+  const probeTimeoutMs = 2000;
   for (const ep of silentEndpoints) {
     try {
       const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -20072,7 +20308,12 @@ async function executePrintJob(job) {
       if (res.ok) {
         const data = await res.json();
         if (data && data.success) {
-          return { success: true, hardware_confirmed: Boolean(data.hardware_confirmed), deviceName: data.deviceName };
+          return {
+            success: true,
+            hardware_confirmed: Boolean(data.hardware_confirmed),
+            deviceName: data.deviceName,
+            method: 'http_pna_bridge'
+          };
         }
       }
     } catch (apiErr) {

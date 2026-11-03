@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
+import { WebSocketServer } from "ws";
 
 dotenv.config();
 
@@ -206,10 +207,109 @@ const server = http.createServer(async (req, res) => {
   res.end("404 Not Found");
 });
 
+// ═════════════════════════════════════════════════════════════════════════════
+// LOCAL THERMAL PRINT BRIDGE — WEBSOCKET SERVER (Port 3000 Loopback Channel)
+// Zero-preflight, bi-directional channel directly accessible from HTTPS POS
+// ═════════════════════════════════════════════════════════════════════════════
+const wss = new WebSocketServer({ server });
+
+wss.on("connection", (ws) => {
+  ws.on("message", async (data) => {
+    let msg = {};
+    try {
+      msg = JSON.parse(data.toString());
+    } catch (parseErr) {
+      return ws.send(JSON.stringify({ success: false, error: "Invalid JSON message" }));
+    }
+
+    if (msg.action === "ping") {
+      return ws.send(JSON.stringify({
+        status: "ok",
+        service: "limra-thermal-bridge",
+        printer: "RP3200 plus(U) 1",
+        model: "TVS RP 3200 Plus",
+        timestamp: Date.now()
+      }));
+    }
+
+    if (msg.action === "print") {
+      try {
+        const {
+          getWindowsPrinters,
+          resolvePrinterNameFromList,
+          printHtmlViaWorker,
+          sendToWindowsSpooler,
+          convertEscPosToPlainText,
+          convertHtmlToPlainText,
+          resolveElectronBinary
+        } = await import(`./api/print-silent.js?t=${Date.now()}`);
+
+        const { html, escposText, plainText, printerName, paperWidth, jobId } = msg;
+        const printers = await getWindowsPrinters();
+        const resolvedDevice = resolvePrinterNameFromList(printerName || "RP3200 plus(U) 1", printers);
+
+        let printResult = null;
+        const electronBin = resolveElectronBinary();
+        if (html && process.platform === "win32" && electronBin) {
+          try {
+            printResult = await printHtmlViaWorker(html, resolvedDevice, paperWidth || 80);
+          } catch (workerErr) {
+            console.warn("[WS Print] Worker error, falling back to direct spooler:", workerErr.message);
+          }
+        }
+
+        if (!printResult) {
+          let textToPrint = "";
+          if (escposText) textToPrint = convertEscPosToPlainText(escposText);
+          else if (plainText) textToPrint = String(plainText);
+          else if (html) textToPrint = convertHtmlToPlainText(html);
+
+          if (!textToPrint) {
+            return ws.send(JSON.stringify({
+              success: false,
+              action: "print_result",
+              jobId: jobId || null,
+              error: "No printable content provided in print job"
+            }));
+          }
+
+          if (!textToPrint.endsWith("\r\n\r\n")) {
+            textToPrint += "\r\n\r\n";
+          }
+          printResult = await sendToWindowsSpooler(textToPrint, resolvedDevice);
+        }
+
+        return ws.send(JSON.stringify({
+          success: true,
+          action: "print_result",
+          jobId: jobId || null,
+          hardware_confirmed: Boolean(printResult?.hardware_confirmed || printResult?.simulated),
+          deviceName: resolvedDevice,
+          paperWidth: paperWidth || 80,
+          method: printResult?.method || "windows_spooler"
+        }));
+      } catch (printErr) {
+        console.error("[WS Print Error]:", printErr);
+        return ws.send(JSON.stringify({
+          success: false,
+          action: "print_result",
+          jobId: msg?.jobId || null,
+          error: printErr.message
+        }));
+      }
+    }
+  });
+
+  ws.on("error", (err) => {
+    console.warn("[WS Bridge Connection Error]:", err.message);
+  });
+});
+
 server.listen(PORT, async () => {
   console.log(`\n==================================================`);
   console.log(`🚀 LIMRA RESTAURANT — BACKEND API SERVER RUNNING`);
   console.log(`📍 Local URL:       http://localhost:${PORT}`);
+  console.log(`🖨️ Thermal Bridge: ws://127.0.0.1:${PORT} (TVS RP 3200 Plus)`);
   console.log(`📊 Admin Login:     http://localhost:${PORT}/admin-login.html`);
   console.log(`🍽️ Table Order:     http://localhost:${PORT}/table/index.html`);
   console.log(`📦 Stock Inventory: http://localhost:${PORT}/admin.html#panel-stock`);
