@@ -4,7 +4,7 @@
  * Strictly bypasses API requests, Razorpay, Supabase, and dynamic database endpoints.
  */
 
-const CACHE_NAME = 'limra-pwa-v2.1';
+const CACHE_NAME = 'limra-pwa-v2.2';
 
 const STATIC_PRECACHE = [
   '/',

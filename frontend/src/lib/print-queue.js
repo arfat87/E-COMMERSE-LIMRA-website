@@ -176,11 +176,36 @@ class PrintQueueManager {
   }
 
   /**
+   * Clear all failed print jobs from queue and localStorage
+   */
+  clearFailed() {
+    this.jobs = this.jobs.filter(j => j.status !== 'failed');
+    this.notify();
+  }
+
+  /**
    * Remove a job from queue
    */
   removeJob(jobId) {
     this.jobs = this.jobs.filter(j => j.id !== jobId);
     this.notify();
+  }
+
+  /**
+   * Clean up failed jobs whose corresponding orders are already settled/paid
+   */
+  clearStaleJobsForPaidOrders(paidOrderIds = new Set(), paidOrderNumbers = new Set()) {
+    if (!paidOrderIds.size && !paidOrderNumbers.size) return;
+    const initialLen = this.jobs.length;
+    this.jobs = this.jobs.filter(j => {
+      if (j.status !== 'failed') return true;
+      const isPaidId = j.orderId && paidOrderIds.has(String(j.orderId));
+      const isPaidNum = j.orderNumber && paidOrderNumbers.has(String(j.orderNumber));
+      return !(isPaidId || isPaidNum);
+    });
+    if (this.jobs.length !== initialLen) {
+      this.notify();
+    }
   }
 
   /**

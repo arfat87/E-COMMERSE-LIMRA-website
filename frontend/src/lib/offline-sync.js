@@ -867,10 +867,22 @@ class OfflineSyncEngine {
             job.error = null;
             job.result = result;
             syncedCount++;
+
+            // Propagate server-assigned order ID to subsequent pending mutations in queue
+            const oldLocalId = job.payload.order?.id;
+            const newServerId = result?.id;
+            if (oldLocalId && newServerId && String(oldLocalId) !== String(newServerId)) {
+              for (const pendingJob of queue) {
+                if (pendingJob.payload && String(pendingJob.payload.orderId) === String(oldLocalId)) {
+                  pendingJob.payload.orderId = newServerId;
+                }
+              }
+            }
+
             this.notifyListeners({
               type: 'pos_order_synced',
               jobId: job.id,
-              localId: job.payload.order?.id,
+              localId: oldLocalId,
               serverOrder: result,
               idempotencyKey: job.idempotencyKey
             });
@@ -970,6 +982,10 @@ class OfflineSyncEngine {
                 // Idempotent replay confirmed!
                 resOk = true;
                 result = { already_settled: true, order_id: job.payload.orderId };
+              } else if (errMsg.includes('ORDER_NOT_FOUND') || rpcRes.error.code === '22P02') {
+                // Stale or nonexistent order that cannot be found or settled in cloud — discard to unblock queue
+                resOk = true;
+                result = { discarded_stale: true, order_id: job.payload.orderId };
               } else {
                 throw rpcRes.error;
               }

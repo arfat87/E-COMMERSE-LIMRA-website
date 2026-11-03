@@ -1703,7 +1703,16 @@ async function loadData(isManual = false) {
     if (bookingsRes && bookingsRes.error) throw bookingsRes.error;
     if (notifsRes && notifsRes.error) throw notifsRes.error;
 
-    const pendingLocalOrders = (orders || []).filter(o => o && (o._isOfflineQueued || String(o.id || '').startsWith('offline-')));
+    const maxPendingAge = Date.now() - 2 * 60 * 60 * 1000; // 2 hours
+    const isRecentLocalOrder = (o) => {
+      if (!o) return false;
+      const isLocal = o._isOfflineQueued || String(o.id || '').startsWith('offline-');
+      if (!isLocal) return false;
+      const t = o.created_at ? new Date(o.created_at).getTime() : 0;
+      return t > maxPendingAge;
+    };
+
+    const pendingLocalOrders = (orders || []).filter(isRecentLocalOrder);
 
     if (ordersRes && ordersRes.data) {
       orders = ordersRes.data;
@@ -1731,7 +1740,7 @@ async function loadData(isManual = false) {
 
     try {
       const cachedRaw = JSON.parse(localStorage.getItem('limra_cached_orders') || '[]');
-      const cachedPending = cachedRaw.filter(o => o && (o._isOfflineQueued || String(o.id || '').startsWith('offline-')));
+      const cachedPending = cachedRaw.filter(isRecentLocalOrder);
       for (const cachedOrd of cachedPending) {
         const exists = orders.some(o => o.id === cachedOrd.id || (cachedOrd.idempotency_key && o.idempotency_key === cachedOrd.idempotency_key));
         if (!exists) {
@@ -6538,8 +6547,15 @@ async function createFinalBillForTableSession(tableNum, paymentMethod = 'cash', 
     if (rpcError) {
       const msg = String(rpcError.message || '');
       if (msg.includes('ORDER_ALREADY_SETTLED')) {
-        showAdminToast(`Table ${tableNum} was already closed by another cashier.`, 'error');
-        await refreshDashboard(true);
+        primaryOrder.ticket_status = 'CLOSED';
+        primaryOrder.payment_status = 'paid';
+        primaryOrder.status = 'delivered';
+        primaryOrder._settlementPendingSync = false;
+        persistOrdersCache();
+        showAdminToast(`Table ${tableNum} is already settled & closed in cloud! ✓`, 'success');
+        renderTablesPanel();
+        renderHoldOrdersPanel();
+        renderClosedOrdersPanel();
         return;
       }
       throw rpcError;
@@ -6710,8 +6726,15 @@ async function settleSingleHeldOrder(orderId, paymentMethod = 'cash', txnRef = '
     if (rpcError) {
       const errMsg = String(rpcError.message || '');
       if (errMsg.includes('ORDER_ALREADY_SETTLED')) {
-        showAdminToast(`Order #${order.order_number} was already settled by another cashier.`, 'error');
-        await refreshDashboard(true);
+        order.payment_status = 'paid';
+        order.ticket_status = 'CLOSED';
+        order.status = 'delivered';
+        order._settlementPendingSync = false;
+        persistOrdersCache();
+        showAdminToast(`Order #${order.order_number} is already settled & closed in cloud! ✓`, 'success');
+        renderTablesPanel();
+        renderHoldOrdersPanel();
+        renderClosedOrdersPanel();
         return;
       }
       if (errMsg.includes('ORDER_CANCELLED')) {
@@ -7800,9 +7823,17 @@ async function settleBill(billId, paymentMethod = 'cash', txnRef = '', idempoten
       const errType = typeof classifyError === 'function' ? classifyError(rpcError, rpcResponse) : 'NETWORK';
 
       if (errMsg.includes('ORDER_ALREADY_SETTLED')) {
-        showAdminToast(`Bill #${bill.order_number} was already settled by another cashier.`, 'error');
-        await refreshDashboard(true);
-        return { success: false, error: errMsg, code: 'ORDER_ALREADY_SETTLED' };
+        bill.payment_status = 'paid';
+        bill.ticket_status = 'CLOSED';
+        bill.status = 'delivered';
+        bill._settlementPendingSync = false;
+        persistOrdersCache();
+        showAdminToast(`Bill #${bill.order_number} is already settled & closed in cloud! ✓`, 'success');
+        renderTablesPanel();
+        renderHoldOrdersPanel();
+        renderBillingQuickCards();
+        renderBillingTotalBills();
+        return { success: true, alreadySettled: true, bill };
       }
       if (errMsg.includes('ORDER_CANCELLED')) {
         showAdminToast(`Bill #${bill.order_number} is cancelled and cannot be settled.`, 'error');
@@ -14266,6 +14297,15 @@ function initPrintQueueUI() {
   let alertDismissed = false;
 
   const updateQueueUI = (jobs = []) => {
+    // 0. Auto-prune failed jobs for orders that are already settled/paid in cloud database
+    if (orders && orders.length > 0) {
+      const paidOrderIds = new Set(orders.filter(o => o.payment_status === 'paid' || o.ticket_status === 'CLOSED').map(o => String(o.id)));
+      const paidOrderNums = new Set(orders.filter(o => o.payment_status === 'paid' || o.ticket_status === 'CLOSED').map(o => String(o.order_number)));
+      if (typeof printQueue.clearStaleJobsForPaidOrders === 'function') {
+        printQueue.clearStaleJobsForPaidOrders(paidOrderIds, paidOrderNums);
+      }
+    }
+
     const failedJobs = jobs.filter(j => j.status === 'failed');
     const failedCount = failedJobs.length;
 
@@ -14410,6 +14450,9 @@ function initPrintQueueUI() {
 
   alertDismissBtn?.addEventListener('click', () => {
     alertDismissed = true;
+    if (typeof printQueue.clearFailed === 'function') {
+      printQueue.clearFailed();
+    }
     alertBar?.classList.add('adm-hidden');
   });
 }
@@ -19999,17 +20042,21 @@ async function executePrintJob(job) {
   }
 
   // 3. Local Backend Direct Silent Print (/api/print-silent) — Zero Dialog, Direct Windows Spooler
+  const isHttpsWebSession = typeof window !== 'undefined' && window.location.protocol === 'https:' && !window.electronPOS?.isDesktop;
   const silentEndpoints = [];
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    silentEndpoints.push('http://127.0.0.1:3000/api/print-silent');
-    silentEndpoints.push('http://localhost:3000/api/print-silent');
+    if (!isHttpsWebSession) {
+      silentEndpoints.push('http://127.0.0.1:3000/api/print-silent');
+      silentEndpoints.push('http://localhost:3000/api/print-silent');
+    }
   }
   silentEndpoints.push('/api/print-silent');
 
+  const probeTimeoutMs = isHttpsWebSession ? 350 : 1500;
   for (const ep of silentEndpoints) {
     try {
       const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      const tid = controller ? setTimeout(() => controller.abort(), 2500) : null;
+      const tid = controller ? setTimeout(() => controller.abort(), probeTimeoutMs) : null;
       const res = await fetch(ep, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -20048,7 +20095,7 @@ async function executePrintJob(job) {
   // 5. Clean Browser Thermal Print Fallback for Pure Web Sessions:
   // When running in a standard web browser on the live domain (https://www.limraresturent.in)
   // and NO desktop Electron app or local Node.js spooler is running on localhost:3000:
-  // Render the exact 72mm monospace thermal invoice in a hidden iframe and trigger print.
+  // Render the exact 72mm monospace thermal invoice in an offscreen iframe and trigger print.
   // This ensures the customer bill ALWAYS prints on the TVS RP3200 Plus printer and NEVER fails!
   if (typeof window !== 'undefined' && job.payload?.html) {
     try {
@@ -20076,13 +20123,8 @@ function printReceiptViaBrowserIframe(html) {
       if (!iframe) {
         iframe = document.createElement('iframe');
         iframe.id = 'limra-thermal-print-frame';
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = '0';
-        iframe.style.visibility = 'hidden';
+        // Offscreen positioning instead of visibility:hidden or 0x0 size so Chromium print engine executes correctly
+        iframe.setAttribute('style', 'position:fixed;top:-9999px;left:-9999px;width:300px;height:400px;border:none;opacity:0;pointer-events:none;');
         document.body.appendChild(iframe);
       }
 
@@ -20103,6 +20145,20 @@ function printReceiptViaBrowserIframe(html) {
           resolve(true);
         } catch (e) {
           console.warn('[printReceiptViaBrowserIframe] Print trigger warning:', e);
+          try {
+            const printWindow = window.open('', '_blank', 'width=350,height=600');
+            if (printWindow) {
+              printWindow.document.write(html);
+              printWindow.document.close();
+              printWindow.focus();
+              printWindow.print();
+              setTimeout(() => { try { printWindow.close(); } catch(e){} }, 1000);
+              resolve(true);
+              return;
+            }
+          } catch (wErr) {
+            console.warn('[printReceiptViaBrowserIframe] Popup fallback warning:', wErr);
+          }
           resolve(false);
         }
       }, 350);
