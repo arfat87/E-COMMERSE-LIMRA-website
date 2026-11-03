@@ -157,13 +157,18 @@ export default async function handler(req, res) {
               error: { message: "ORDER_ID_REQUIRED: Order ID is required." }
             });
           }
-          if (reason.length < 3) {
-            return res.status(400).json({
-              data: null,
-              error: { message: "REASON_REQUIRED: A recorded reason (minimum 3 characters) is required to void or amend a closed invoice." }
-            });
-          }
-          if (rpcName === "amend_closed_order_atomic") {
+          if (rpcName === "void_closed_order_atomic") {
+            if (reason.length < 3) {
+              return res.status(400).json({
+                data: null,
+                error: { message: "REASON_REQUIRED: A recorded reason (minimum 3 characters) is required to void a closed invoice." }
+              });
+            }
+          } else if (rpcName === "amend_closed_order_atomic") {
+            // For editing/amending, reason is optional. Default to standard reason if missing or short.
+            if (reason.length < 3) {
+              rpcParams.p_reason = reason ? `Order edited: ${reason}` : "Order edited by authorized staff";
+            }
             const items = rpcParams.p_updated_items;
             if (!Array.isArray(items) || items.length === 0) {
               return res.status(400).json({
