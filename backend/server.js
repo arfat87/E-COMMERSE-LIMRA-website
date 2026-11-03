@@ -90,11 +90,13 @@ const server = http.createServer(async (req, res) => {
     "Access-Control-Allow-Headers",
     "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, X-Idempotency-Key"
   );
+  res.setHeader("Access-Control-Allow-Private-Network", "true");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
 
   if (req.method === "OPTIONS") {
-    res.statusCode = 200;
+    res.setHeader("Access-Control-Allow-Private-Network", "true");
+    res.statusCode = 204;
     return res.end();
   }
 

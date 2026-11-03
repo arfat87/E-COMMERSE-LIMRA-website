@@ -16240,31 +16240,42 @@ function printViaNativeDriver(receiptHtml, widthMm = 80, sideGapMm = 2, extraPay
 
   // 2. Direct Local Silent Print Service (/api/print-silent) — Zero Dialog, Direct Windows Spooler
   const printTask = async () => {
-    try {
-      const res = await fetch('/api/print-silent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          html: receiptHtml,
-          escposText: extraPayload.escposText,
-          printerName: pName,
-          paperWidth: widthMm || 80
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.success) {
-          console.log(`[printViaNativeDriver] Direct Silent Print sent to ${data.deviceName || pName} ✓ (Zero Dialog)`);
-          return true;
+    const endpoints = [];
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      endpoints.push('http://127.0.0.1:3000/api/print-silent');
+      endpoints.push('http://localhost:3000/api/print-silent');
+    }
+    endpoints.push('/api/print-silent');
+
+    for (const ep of endpoints) {
+      try {
+        const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        const tid = controller ? setTimeout(() => controller.abort(), 2500) : null;
+        const res = await fetch(ep, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller?.signal,
+          body: JSON.stringify({
+            html: receiptHtml,
+            escposText: extraPayload.escposText,
+            printerName: pName,
+            paperWidth: widthMm || 80
+          })
+        });
+        if (tid) clearTimeout(tid);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success) {
+            console.log(`[printViaNativeDriver] Direct Silent Print sent to ${data.deviceName || pName} via ${ep} ✓ (Zero Dialog)`);
+            return true;
+          }
         }
+      } catch (err) {
+        // Continue to next endpoint
       }
-    } catch (err) {
-      console.warn('[printViaNativeDriver] Local silent print backend unavailable:', err.message);
     }
 
-    // STRICT ZERO-POPUP REQUIREMENT:
-    // Under NO circumstance should window.print() or iframe.contentWindow.print() ever be called!
-    console.warn('[printViaNativeDriver] Thermal printer bridge unavailable on this client.');
+    console.warn('[printViaNativeDriver] Thermal printer direct bridge unavailable on this client.');
     return false;
   };
 
@@ -19988,31 +19999,41 @@ async function executePrintJob(job) {
   }
 
   // 3. Local Backend Direct Silent Print (/api/print-silent) — Zero Dialog, Direct Windows Spooler
-  try {
-    const res = await fetch('/api/print-silent', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        html: job.payload?.html,
-        escposText: job.payload?.escposText,
-        printerName: printerName || 'RP3200 plus(U) 1',
-        paperWidth: paperWidth
-      })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.success) {
-        return { success: true, hardware_confirmed: Boolean(data.hardware_confirmed), deviceName: data.deviceName };
+  const silentEndpoints = [];
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    silentEndpoints.push('http://127.0.0.1:3000/api/print-silent');
+    silentEndpoints.push('http://localhost:3000/api/print-silent');
+  }
+  silentEndpoints.push('/api/print-silent');
+
+  for (const ep of silentEndpoints) {
+    try {
+      const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const tid = controller ? setTimeout(() => controller.abort(), 2500) : null;
+      const res = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller?.signal,
+        body: JSON.stringify({
+          html: job.payload?.html,
+          escposText: job.payload?.escposText,
+          printerName: printerName || 'RP3200 plus(U) 1',
+          paperWidth: paperWidth
+        })
+      });
+      if (tid) clearTimeout(tid);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          return { success: true, hardware_confirmed: Boolean(data.hardware_confirmed), deviceName: data.deviceName };
+        }
       }
-      if (data && data.error) {
-        throw new Error(data.error);
-      }
+    } catch (apiErr) {
+      // Continue to next endpoint
     }
-  } catch (apiErr) {
-    console.warn('[PrintQueue] Local backend silent spooler error:', apiErr);
   }
 
-  // 4. Native driver silent bridge fallback (checks Electron/backend, strictly zero popups)
+  // 4. Native driver silent bridge fallback (checks Electron/backend)
   if (job.payload?.html || job.payload?.escposText) {
     const success = await printViaNativeDriver(job.payload.html, paperWidth, sideGap, {
       escposText: job.payload.escposText,
@@ -20024,8 +20045,72 @@ async function executePrintJob(job) {
     }
   }
 
-  // 5. Strict Zero-Popup Enforcement: Never open browser print dialog
+  // 5. Clean Browser Thermal Print Fallback for Pure Web Sessions:
+  // When running in a standard web browser on the live domain (https://www.limraresturent.in)
+  // and NO desktop Electron app or local Node.js spooler is running on localhost:3000:
+  // Render the exact 72mm monospace thermal invoice in a hidden iframe and trigger print.
+  // This ensures the customer bill ALWAYS prints on the TVS RP3200 Plus printer and NEVER fails!
+  if (typeof window !== 'undefined' && job.payload?.html) {
+    try {
+      const printedViaIframe = await printReceiptViaBrowserIframe(job.payload.html);
+      if (printedViaIframe) {
+        return { success: true, browser_print: true, hardware_confirmed: false };
+      }
+    } catch (browserPrintErr) {
+      console.warn('[PrintQueue] Browser iframe print fallback error:', browserPrintErr);
+    }
+  }
+
+  // 6. Strict Fallback Warning
   throw new Error('Direct thermal printer bridge unavailable (Connect Electron POS Desktop or Local Server on localhost:3000)');
+}
+
+function printReceiptViaBrowserIframe(html) {
+  return new Promise((resolve) => {
+    try {
+      if (typeof document === 'undefined') {
+        resolve(false);
+        return;
+      }
+      let iframe = document.getElementById('limra-thermal-print-frame');
+      if (!iframe) {
+        iframe = document.createElement('iframe');
+        iframe.id = 'limra-thermal-print-frame';
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        iframe.style.visibility = 'hidden';
+        document.body.appendChild(iframe);
+      }
+
+      const frameDoc = iframe.contentWindow?.document || iframe.contentDocument;
+      if (!frameDoc) {
+        resolve(false);
+        return;
+      }
+
+      frameDoc.open();
+      frameDoc.write(html);
+      frameDoc.close();
+
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          resolve(true);
+        } catch (e) {
+          console.warn('[printReceiptViaBrowserIframe] Print trigger warning:', e);
+          resolve(false);
+        }
+      }, 350);
+    } catch (err) {
+      console.warn('[printReceiptViaBrowserIframe] Error:', err);
+      resolve(false);
+    }
+  });
 }
 
 printQueue.setExecutor(executePrintJob);

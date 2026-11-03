@@ -58,3 +58,6 @@ scratch
 scratch/
 supabase/.temp/
 supabase/
+
+.vercel
+.env*
