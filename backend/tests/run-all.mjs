@@ -76,7 +76,8 @@ const TEST_STEPS = [
   { name: "32. Reliable Offline Mutation Queuing for POS (Task 5.2)", cmd: "node --test backend/tests/task-5-2-offline-mutation-queue.test.mjs" },
   { name: "33. Domain ES Modules Architecture for POS Frontend (Task 6.1)", cmd: "node --test backend/tests/task-6-1-modular-pos-architecture.test.mjs" },
   { name: "34. Complete Menu Management — Edit, Delete, Optimization & Immutability", cmd: "node --test test/menu-management.test.js" },
-  { name: "35. Universal Direct Silent Thermal Printing (TVS 3200)", cmd: "node --test backend/tests/thermal-silent-printing.test.mjs" }
+  { name: "35. Universal Direct Silent Thermal Printing (TVS 3200)", cmd: "node --test backend/tests/thermal-silent-printing.test.mjs" },
+  { name: "36. Printing Workflow & Navigation Performance Optimization", cmd: "node --test backend/tests/printing-and-navigation-optimization.test.mjs" }
 ];
 
 let allPassed = true;

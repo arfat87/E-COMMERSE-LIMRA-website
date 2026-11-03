@@ -341,4 +341,13 @@ server.listen(PORT, async () => {
   } catch (err) {
     console.error(`❌ Supabase Connection Notice:`, err.message);
   }
+
+  // Pre-warm the persistent background Electron thermal print worker daemon on Windows for instant 0ms first print
+  if (process.platform === "win32") {
+    import("./api/print-silent.js").then(({ getOrStartPrintDaemon }) => {
+      if (typeof getOrStartPrintDaemon === "function") {
+        getOrStartPrintDaemon().catch(e => console.warn("⚠️ [PrintDaemon Warmup Notice]:", e.message));
+      }
+    }).catch(() => {});
+  }
 });

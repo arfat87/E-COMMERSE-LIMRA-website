@@ -41,24 +41,39 @@ function formatMovementDateTime(dateVal, createdVal) {
   return dateStr;
 }
 
+let _stockUiInitialized = false;
+let _lastStockSyncTime = 0;
+
 // ───────────── Mount / Initialization ─────────────
 export function initStockUI() {
   const panel = document.getElementById('panel-stock');
   if (!panel) return;
 
-  // Initial load from cache
-  stockStore.loadCache();
+  if (!_stockUiInitialized) {
+    _stockUiInitialized = true;
+    // Initial load from cache
+    stockStore.loadCache();
+    // Render initial frame
+    render();
+    // Subscribe to data updates (single persistent subscription)
+    stockStore.subscribe(() => {
+      render();
+    });
+    // Background fetch from database
+    stockStore.syncDB();
+    _lastStockSyncTime = Date.now();
+    return;
+  }
 
-  // Render initial frame
+  // Already initialized: render cached stock data immediately (0ms latency, zero re-subscription)
   render();
 
-  // Subscribe to data updates
-  stockStore.subscribe(() => {
-    render();
-  });
-
-  // Background fetch from database
-  stockStore.syncDB();
+  // Background refresh only if cache is older than 60 seconds
+  const now = Date.now();
+  if (now - _lastStockSyncTime > 60000) {
+    _lastStockSyncTime = now;
+    stockStore.syncDB();
+  }
 }
 
 // ───────────── Main Render ─────────────

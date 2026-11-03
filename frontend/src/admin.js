@@ -372,6 +372,9 @@ function escapeHtml(str) {
 }
 
 function parseNotesMetadata(notes, order = null) {
+  if (order && order._cachedMeta && order._cachedMetaNotes === notes && order._cachedMetaType === order.order_type) {
+    return order._cachedMeta;
+  }
   const result = {
     email: '',
     type: 'pickup',
@@ -552,6 +555,9 @@ function parseNotesMetadata(notes, order = null) {
     if (order.settled_at) {
       result.settledAt = String(order.settled_at);
     }
+    order._cachedMeta = result;
+    order._cachedMetaNotes = notes;
+    order._cachedMetaType = order.order_type;
   }
 
   return result;
@@ -10864,8 +10870,19 @@ function initFoodsFilters() {
   });
 }
 
-async function loadAndRenderFoods() {
+let _lastFoodsFetchTime = 0;
+async function loadAndRenderFoods(force = false) {
   try {
+    const now = Date.now();
+    const hasData = activeMenuOverrides !== null && customCreatedFoods !== null && customCreatedFoods.length > 0;
+    const isFresh = hasData && (now - _lastFoodsFetchTime < 60000);
+
+    if (isFresh && !force) {
+      initFoodsFilters();
+      renderFoods();
+      return;
+    }
+
     const grid = $('foods-grid');
     if (grid && (!customCreatedFoods || customCreatedFoods.length === 0)) {
       grid.innerHTML = '<div class="adm-empty col-span-full" style="padding:2.5rem;text-align:center;">Loading menu items & database dishes...</div>';
@@ -10877,6 +10894,7 @@ async function loadAndRenderFoods() {
     
     if (Array.isArray(overrides)) activeMenuOverrides = overrides;
     if (Array.isArray(dbCustomDishes)) customCreatedFoods = dbCustomDishes;
+    _lastFoodsFetchTime = Date.now();
   } catch (e) {
     console.error("Failed to load menu data:", e);
   }
@@ -11855,7 +11873,7 @@ export function switchPanel(panelId, pushHistory = true) {
   if (panelId === 'customers') renderCustomers();
   if (panelId === 'customer-analysis') renderCustomerAnalysis();
   if (panelId === 'analytics') renderAnalytics();
-  if (panelId === 'foods') { initFoodsFilters(); loadAndRenderFoods(); }
+  if (panelId === 'foods') { loadAndRenderFoods(); }
   if (panelId === 'bookings') {
     renderBookingCalendar();
     renderBookingsList();
@@ -11875,7 +11893,6 @@ export function switchPanel(panelId, pushHistory = true) {
   if (panelId === 'order-detail') {
     const wasAlreadyMounted = posBillingMounted;
     renderOrderDetailPicker();
-    renderBillingQuickCards();
     initBillingPanel();
     const posEl = $('billing-pos');
     if (posEl) posEl.style.display = 'block';
@@ -14792,14 +14809,26 @@ let couponSort = 'default';
 let couponSearch = '';
 let editingCouponCode = null;
 
-async function loadAndRenderCoupons() {
+let _lastCouponsFetchTime = 0;
+async function loadAndRenderCoupons(force = false) {
   try {
     const tbody = $('coupons-table-body');
     const grid = $('coupons-grid');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--adm-muted);">Loading promo codes...</td></tr>';
-    if (grid) grid.innerHTML = '<div class="adm-card adm-empty" style="grid-column:1/-1;padding:2.5rem;text-align:center;">Loading promo codes...</div>';
+    const now = Date.now();
+    const isFresh = adminCoupons && adminCoupons.length > 0 && (now - _lastCouponsFetchTime < 60000);
+
+    if (isFresh && !force) {
+      renderCouponsTable();
+      return;
+    }
+
+    if (!adminCoupons || adminCoupons.length === 0) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--adm-muted);">Loading promo codes...</td></tr>';
+      if (grid) grid.innerHTML = '<div class="adm-card adm-empty" style="grid-column:1/-1;padding:2.5rem;text-align:center;">Loading promo codes...</div>';
+    }
     
     adminCoupons = await getCoupons();
+    _lastCouponsFetchTime = Date.now();
     renderCouponsTable();
   } catch (err) {
     console.error('Failed to load coupons:', err);
@@ -15316,14 +15345,26 @@ let comboStatusFilter = 'all';
 let comboSort = 'default';
 let comboSearch = '';
 
-async function loadAndRenderCombos() {
+let _lastCombosFetchTime = 0;
+async function loadAndRenderCombos(force = false) {
   try {
     const tbody = $('combos-table-body');
     const grid = $('combos-grid');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--adm-muted);">Loading combo packages...</td></tr>';
-    if (grid) grid.innerHTML = '<div class="adm-card adm-empty" style="grid-column:1/-1;padding:2.5rem;text-align:center;">Loading combo meal deals...</div>';
+    const now = Date.now();
+    const isFresh = adminCombos && adminCombos.length > 0 && (now - _lastCombosFetchTime < 60000);
+
+    if (isFresh && !force) {
+      renderCombosTable();
+      return;
+    }
+
+    if (!adminCombos || adminCombos.length === 0) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--adm-muted);">Loading combo packages...</td></tr>';
+      if (grid) grid.innerHTML = '<div class="adm-card adm-empty" style="grid-column:1/-1;padding:2.5rem;text-align:center;">Loading combo meal deals...</div>';
+    }
     
     adminCombos = await getCombos();
+    _lastCombosFetchTime = Date.now();
     renderCombosTable();
   } catch (err) {
     console.error('Failed to load combos:', err);
@@ -15907,8 +15948,16 @@ function setupComboModalListeners() {
 
 // ── Places & Charges Management ───────────────────────────
 
-async function loadAndRenderPlaces() {
+let _lastPlacesFetchTime = 0;
+async function loadAndRenderPlaces(force = false) {
   try {
+    const now = Date.now();
+    const isFresh = adminPlaces && adminPlaces.length > 0 && (now - _lastPlacesFetchTime < 60000);
+    if (isFresh && !force) {
+      renderPlacesTable();
+      if (typeof renderPosPlaceChips === 'function') renderPosPlaceChips();
+      return;
+    }
     const res = await insforge.database.from('delivery_areas').select('*').order('name', { ascending: true });
     if (res.error) throw res.error;
     adminPlaces = (res.data || []).map(p => ({
@@ -15918,6 +15967,7 @@ async function loadAndRenderPlaces() {
       charge: Number(p.delivery_fee ?? p.charge ?? 0),
       delivery_fee: Number(p.delivery_fee ?? p.charge ?? 0)
     }));
+    _lastPlacesFetchTime = Date.now();
     renderPlacesTable();
     if (typeof renderPosPlaceChips === 'function') renderPosPlaceChips();
   } catch (err) {
@@ -16310,6 +16360,10 @@ let _nativePrintLock = Promise.resolve();
 function printViaWebSocketBridge(payload, timeoutMs = 2500) {
   return new Promise((resolve) => {
     if (typeof WebSocket === 'undefined') return resolve(null);
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+      // Insecure WebSocket ws:// is blocked by modern browsers under HTTPS (Mixed Content)
+      return resolve(null);
+    }
     let ws = null;
     let timer = null;
     let settled = false;
@@ -18377,7 +18431,10 @@ function clearPosSelectedPlace() {
   updatePosCartUI();
 }
 
+let _posPlaceSearchInitialized = false;
 function initPosPlaceSearch() {
+  if (_posPlaceSearchInitialized) return;
+  _posPlaceSearchInitialized = true;
   const searchInp = $('pos-place-search');
   const suggs = $('pos-place-suggestions');
   const clearBtn = $('pos-clear-place-btn');
@@ -20221,8 +20278,8 @@ async function printCombinedKOTAndBill(order, itemsList, options = {}) {
     // The printer hardware driver triggers a clean auto-cut upon finishing KOT.
     await printKOT(order, items, options);
 
-    // 2. Cooldown delay so printer physical blade cycle finishes and driver spooler clears
-    await new Promise(r => setTimeout(r, 450));
+    // 2. Micro-gap (60ms) so Windows print spooler registers distinct job boundaries
+    await new Promise(r => setTimeout(r, 60));
 
     // 3. Next print Final Customer Bill as dedicated job with its own auto-cut.
     await printOrderReceiptWithTax(order, items, options);
@@ -20235,6 +20292,8 @@ async function printCombinedKOTAndBill(order, itemsList, options = {}) {
 // ════════════════════════════════════════════════════════
 // THERMAL PRINT EXECUTOR & DISPATCH ENGINE (Phase 3)
 // ════════════════════════════════════════════════════════
+
+let _activeBridgeMethod = null; // 'electron' | 'http_pna' | 'websocket_bridge'
 
 async function executePrintJob(job) {
   const p = printerSettings;
@@ -20255,6 +20314,7 @@ async function executePrintJob(job) {
         sideGap: sideGap
       });
       if (res && res.success) {
+        _activeBridgeMethod = 'electron';
         return { success: true, hardware_confirmed: Boolean(res.hardware_confirmed), deviceName: res.deviceName };
       }
       if (res && res.error) {
@@ -20291,61 +20351,79 @@ async function executePrintJob(job) {
     }
   }
 
-  // 2b. Local Thermal Print Bridge via WebSocket (Zero-preflight, bi-directional loopback on ws://127.0.0.1:3000)
-  try {
-    const wsResult = await printViaWebSocketBridge({
-      html: job.payload?.html,
-      escposText: job.payload?.escposText,
-      printerName: printerName || 'RP3200 plus(U) 1',
-      paperWidth: paperWidth,
-      jobId: job.orderNumber || job.id
-    }, 2500);
-
-    if (wsResult && wsResult.success) {
-      return {
-        success: true,
-        hardware_confirmed: Boolean(wsResult.hardware_confirmed),
-        deviceName: wsResult.deviceName || printerName,
-        method: 'websocket_bridge'
-      };
-    }
-  } catch (wsErr) {
-    console.warn('[PrintQueue] WebSocket bridge probe notice:', wsErr.message);
-  }
-
-  // 3. Local Backend Direct Silent Print (/api/print-silent) — Zero Dialog, Direct Windows Spooler
   const isLocalHost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
   const silentEndpoint = isLocalHost ? '/api/print-silent' : 'http://127.0.0.1:3000/api/print-silent';
-  const probeTimeoutMs = 6000;
-  try {
-    const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    const tid = controller ? setTimeout(() => controller.abort(), probeTimeoutMs) : null;
-    const res = await fetch(silentEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller?.signal,
-      body: JSON.stringify({
+
+  // Helper for immediate HTTP silent print via Private Network Access (PNA)
+  const tryHttpSilentPrint = async (timeoutMs = 6000) => {
+    try {
+      const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const tid = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+      const res = await fetch(silentEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller?.signal,
+        body: JSON.stringify({
+          html: job.payload?.html,
+          escposText: job.payload?.escposText,
+          printerName: printerName || 'RP3200 plus(U) 1',
+          paperWidth: paperWidth,
+          jobId: job.orderNumber || job.id
+        })
+      });
+      if (tid) clearTimeout(tid);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          _activeBridgeMethod = 'http_pna';
+          return {
+            success: true,
+            hardware_confirmed: Boolean(data.hardware_confirmed),
+            deviceName: data.deviceName || printerName,
+            method: 'http_pna_bridge'
+          };
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[PrintQueue] Local silent print endpoint notice:', apiErr?.message);
+    }
+    return null;
+  };
+
+  // 3. Fast Bridge Routing:
+  // On HTTPS (live site https://www.limraresturent.in) OR if HTTP bridge was previously established,
+  // dispatch direct to HTTP loopback immediately with ZERO WebSocket timeout penalty (0ms probe latency)!
+  if (isHttps || _activeBridgeMethod === 'http_pna') {
+    const httpResult = await tryHttpSilentPrint(6000);
+    if (httpResult) return httpResult;
+  } else {
+    // On local HTTP / development, try WebSocket bridge with short 400ms timeout
+    try {
+      const wsResult = await printViaWebSocketBridge({
         html: job.payload?.html,
         escposText: job.payload?.escposText,
         printerName: printerName || 'RP3200 plus(U) 1',
         paperWidth: paperWidth,
         jobId: job.orderNumber || job.id
-      })
-    });
-    if (tid) clearTimeout(tid);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.success) {
+      }, 400);
+
+      if (wsResult && wsResult.success) {
+        _activeBridgeMethod = 'websocket_bridge';
         return {
           success: true,
-          hardware_confirmed: Boolean(data.hardware_confirmed),
-          deviceName: data.deviceName || printerName,
-          method: 'http_pna_bridge'
+          hardware_confirmed: Boolean(wsResult.hardware_confirmed),
+          deviceName: wsResult.deviceName || printerName,
+          method: 'websocket_bridge'
         };
       }
+    } catch (wsErr) {
+      console.warn('[PrintQueue] WebSocket bridge probe notice:', wsErr.message);
     }
-  } catch (apiErr) {
-    console.warn('[PrintQueue] Local silent print endpoint notice:', apiErr?.message);
+
+    // Fall back to HTTP silent print if WS did not respond within 400ms
+    const httpResult = await tryHttpSilentPrint(6000);
+    if (httpResult) return httpResult;
   }
 
   // 4. Clean Browser Thermal Print Fallback for Pure Web Sessions:
@@ -21635,6 +21713,15 @@ function renderCategoryPills() {
 
 // ── Panel Initialization ─────────────────────────────────────────
 function initBillingPanel() {
+  if (posBillingMounted) {
+    // Fast path: POS workstation is already mounted. Refresh only dynamic counters and cart UI in 0ms!
+    renderBillingQuickCards();
+    renderBillingTotalBills();
+    updatePosCartUI(true);
+    return;
+  }
+  posBillingMounted = true;
+
   loadFoodsCache();
 
   // Populate existing order picker
@@ -21679,9 +21766,6 @@ function initBillingPanel() {
   } else {
     renderPosCouponPicker();
   }
-
-  if (posBillingMounted) return;
-  posBillingMounted = true;
 
   // 0. Header Quick Action Buttons
   $('pos-quick-held-btn')?.addEventListener('click', () => {
@@ -22217,12 +22301,9 @@ function initBillingPanel() {
     try {
       const result = await buildOrderFromPos('bill');
       if (!result) return;
-      // For Delivery and Takeaway/Pickup, print Customer Bill only (avoids redundant KOT prints)
-      if (posOrderType === 'delivery' || posOrderType === 'pickup') {
-        await printOrderReceiptWithTax(result.order, result.items);
-      } else {
-        await printCombinedKOTAndBill(result.order, result.items);
-      }
+      // Direct Create Bill & Settle prints BOTH Kitchen Order Ticket (KOT) and Customer Bill
+      // for all order types: Table (Dine-in), Takeaway (Pickup), and Delivery
+      await printCombinedKOTAndBill(result.order, result.items);
       showAdminToast(`Order #${result.order.order_number} bill generated (${formatBillAmount(result.order.total_amount)})! Moved to Bill section. 🧾`, 'success');
       resetPosWorkstation();
       // Switch to Tables -> Bill section so cashier immediately sees the unpaid bill in Bill section

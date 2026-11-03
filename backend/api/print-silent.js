@@ -225,7 +225,7 @@ let _daemonStartingPromise = null;
 /**
  * Spawns and keeps alive a single persistent Electron background worker daemon
  */
-function getOrStartPrintDaemon() {
+export function getOrStartPrintDaemon() {
   if (_daemonPort && _daemonProcess && !_daemonProcess.killed) {
     return Promise.resolve(_daemonPort);
   }

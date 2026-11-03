@@ -132,10 +132,6 @@ export function invalidateSalesReportCache() {
 
 // ── Fetch & Aggregate Sales Data ───────────────────────────────────────────
 export async function loadSalesReportData(force = false) {
-  reportState.loading = true;
-  reportState.error = null;
-  renderLoadingState();
-
   try {
     const { startIso, endIso, label } = computeDateRange(
       reportState.range,
@@ -159,6 +155,10 @@ export async function loadSalesReportData(force = false) {
       rawOrders = cachedEntry.rawOrders;
       allItems = cachedEntry.allItems;
     } else {
+      reportState.loading = true;
+      reportState.error = null;
+      renderLoadingState();
+
       // 1. Fetch Orders from Supabase
       let query = insforge.database
         .from('orders')
