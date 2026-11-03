@@ -1703,6 +1703,8 @@ async function loadData(isManual = false) {
     if (bookingsRes && bookingsRes.error) throw bookingsRes.error;
     if (notifsRes && notifsRes.error) throw notifsRes.error;
 
+    const pendingLocalOrders = (orders || []).filter(o => o && (o._isOfflineQueued || String(o.id || '').startsWith('offline-')));
+
     if (ordersRes && ordersRes.data) {
       orders = ordersRes.data;
     } else if (ordersRes && ordersRes.error) {
@@ -1716,6 +1718,27 @@ async function loadData(isManual = false) {
     } else {
       orders = [];
     }
+
+    // Preserve and re-merge unconfirmed local/offline orders so browser refresh never erases held orders
+    if (pendingLocalOrders.length > 0) {
+      for (const localOrd of pendingLocalOrders) {
+        const existsInCloud = orders.some(o => o.id === localOrd.id || (localOrd.idempotency_key && o.idempotency_key === localOrd.idempotency_key));
+        if (!existsInCloud) {
+          orders.unshift(localOrd);
+        }
+      }
+    }
+
+    try {
+      const cachedRaw = JSON.parse(localStorage.getItem('limra_cached_orders') || '[]');
+      const cachedPending = cachedRaw.filter(o => o && (o._isOfflineQueued || String(o.id || '').startsWith('offline-')));
+      for (const cachedOrd of cachedPending) {
+        const exists = orders.some(o => o.id === cachedOrd.id || (cachedOrd.idempotency_key && o.idempotency_key === cachedOrd.idempotency_key));
+        if (!exists) {
+          orders.unshift(cachedOrd);
+        }
+      }
+    } catch (e) {}
 
     // Step 2: Fetch order_items strictly scoped to active, today's, and visible first-page orders
     const scopedOrderIds = getScopedActiveOrderIdsForItems(orders);
@@ -6490,10 +6513,19 @@ async function createFinalBillForTableSession(tableNum, paymentMethod = 'cash', 
       if (moveErr) throw moveErr;
     }
 
-    const { error: totalErr } = await insforge.database
+    let { error: totalErr } = await insforge.database
       .from('orders')
       .update(primaryFinancials)
       .eq('id', primaryOrder.id);
+    if (totalErr && (totalErr.code === '42703' || (totalErr.message || '').includes('does not exist'))) {
+      console.warn('[Table Settle] Extended financial columns missing in orders table (42703). Retrying with baseline total.');
+      const baselineFinancials = {
+        total_amount: grandTotal,
+        updated_at: nowIso
+      };
+      const fallbackTotalRes = await insforge.database.from('orders').update(baselineFinancials).eq('id', primaryOrder.id);
+      totalErr = fallbackTotalRes.error;
+    }
     if (totalErr) throw totalErr;
 
     const { data: rpcResult, error: rpcError } = await insforge.database.rpc('settle_order_atomic', {
@@ -19231,6 +19263,25 @@ async function buildOrderFromPos(action) {
       delete fallbackData.ticket_status;
       insertRes = await insforge.database.from('orders').insert([fallbackData]).select().single();
     }
+    if (insertRes.error && (insertRes.error.code === '42703' || (insertRes.error.message || '').includes('does not exist'))) {
+      console.warn('[POS Insert] Extended columns missing in DB (42703). Retrying with baseline schema payload.');
+      const baselineData = {
+        order_number: orderData.order_number,
+        customer_name: orderData.customer_name,
+        customer_phone: orderData.customer_phone,
+        order_type: orderData.order_type,
+        table_number: orderData.table_number,
+        total_amount: orderData.total_amount,
+        payment_method: orderData.payment_method,
+        status: orderData.status,
+        payment_status: orderData.payment_status,
+        ticket_status: orderData.ticket_status,
+        notes: orderData.notes,
+        created_at: orderData.created_at,
+        updated_at: orderData.updated_at
+      };
+      insertRes = await insforge.database.from('orders').insert([baselineData]).select().single();
+    }
     if (insertRes.error) {
       throw insertRes.error;
     }
@@ -19238,7 +19289,13 @@ async function buildOrderFromPos(action) {
       newOrder = insertRes.data;
     }
   } catch (err) {
-    console.warn('[POS Insert] Cloud insert warning (running local-first):', err);
+    console.error('[POS Insert Failure]', {
+      operation: 'POS_ORDER_CREATE',
+      table: 'orders',
+      code: err?.code || 'UNKNOWN',
+      message: err?.message || String(err),
+      correlationId: `pos_${orderData.order_number}_${Date.now()}`
+    });
     cloudInsertFailed = true;
   }
 
@@ -19290,7 +19347,7 @@ async function buildOrderFromPos(action) {
         itemRows,
         idempotencyKey: newOrder.idempotency_key || `pos_create_${newOrder.id}`
       });
-      showAdminToast('Order created locally. Cloud sync queued.', 'warning');
+      showAdminToast(`⚠️ Offline Queue: Order #${newOrder.order_number} saved locally. Will sync to cloud once connected.`, 'warning');
     } catch (queueErr) {
       console.warn('[POS Insert] Failed to enqueue POS order create:', queueErr);
     }

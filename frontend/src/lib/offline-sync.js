@@ -761,11 +761,38 @@ class OfflineSyncEngine {
               ...(job.payload.order || job.payload),
               idempotency_key: job.idempotencyKey
             };
+            // Clean local temporary fields before sending to database
+            delete orderPayload._isOfflineQueued;
+            delete orderPayload._settlementPendingSync;
+            delete orderPayload._pendingPaymentMethod;
+            if (String(orderPayload.id || '').startsWith('offline-')) {
+              delete orderPayload.id;
+            }
+
             let insRes = await db.from('orders').insert([orderPayload]).select().single();
             if (insRes.error && (insRes.error.message || '').includes('ticket_status')) {
               const fallback = { ...orderPayload };
               delete fallback.ticket_status;
               insRes = await db.from('orders').insert([fallback]).select().single();
+            }
+            if (insRes.error && (insRes.error.code === '42703' || (insRes.error.message || '').includes('does not exist'))) {
+              const baseline = {
+                order_number: orderPayload.order_number,
+                customer_name: orderPayload.customer_name,
+                customer_phone: orderPayload.customer_phone,
+                order_type: orderPayload.order_type,
+                table_number: orderPayload.table_number,
+                total_amount: orderPayload.total_amount,
+                payment_method: orderPayload.payment_method,
+                status: orderPayload.status,
+                payment_status: orderPayload.payment_status,
+                ticket_status: orderPayload.ticket_status,
+                notes: orderPayload.notes,
+                idempotency_key: job.idempotencyKey,
+                created_at: orderPayload.created_at,
+                updated_at: orderPayload.updated_at
+              };
+              insRes = await db.from('orders').insert([baseline]).select().single();
             }
             if (insRes.error) {
               throw insRes.error;

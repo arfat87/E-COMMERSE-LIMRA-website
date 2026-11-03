@@ -56,3 +56,5 @@ src/MEDIA/**
 .vercel
 scratch
 scratch/
+supabase/.temp/
+supabase/
