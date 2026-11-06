@@ -78,7 +78,9 @@ const TEST_STEPS = [
   { name: "34. Complete Menu Management — Edit, Delete, Optimization & Immutability", cmd: "node --test test/menu-management.test.js" },
   { name: "35. Universal Direct Silent Thermal Printing (TVS 3200)", cmd: "node --test backend/tests/thermal-silent-printing.test.mjs" },
   { name: "36. Printing Workflow & Navigation Performance Optimization", cmd: "node --test backend/tests/printing-and-navigation-optimization.test.mjs" },
-  { name: "37. POS Hold → Close + Bill Dual Visibility & Payment Lifecycle Repair", cmd: "node --test backend/tests/hold-bill-close-lifecycle.test.mjs" }
+  { name: "37. POS Hold → Close + Bill Dual Visibility & Payment Lifecycle Repair", cmd: "node --test backend/tests/hold-bill-close-lifecycle.test.mjs" },
+  { name: "38. Phase 3 Close & Settle Historical Orders Repair", cmd: "node --test backend/tests/close-orders-repair-phase3.test.mjs" },
+  { name: "39. Phase 4 Offline Sync Failed Queue Recovery & Reconciliation", cmd: "node --test backend/tests/offline-sync-recovery-phase4.test.mjs" }
 ];
 
 let allPassed = true;

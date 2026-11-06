@@ -19,6 +19,7 @@ export const QUEUE_KEYS = {
   TABLE_ROUNDS: 'limra_pending_table_rounds',
   ADMIN_MUTATIONS: 'limra_pending_admin_mutations',
   STOCK_MUTATIONS: 'limra_pending_stock_mutations',
+  QUARANTINED_MUTATIONS: 'limra_quarantined_mutations',
   SCHEMA_VERSION: 'limra_cache_schema_version'
 };
 
@@ -35,6 +36,50 @@ export const ERROR_TYPES = {
   CONFLICT: 'CONFLICT',
   VALIDATION: 'VALIDATION'
 };
+
+export const MUTATION_CLASSIFICATIONS = {
+  PENDING: 'PENDING',
+  RETRYABLE: 'RETRYABLE',
+  FAILED: 'FAILED',
+  CONFLICT: 'CONFLICT',
+  STALE: 'STALE',
+  SYNCED: 'SYNCED'
+};
+
+/**
+ * Classify a mutation job by lifecycle disposition
+ */
+export function classifyJob(job) {
+  if (!job) return MUTATION_CLASSIFICATIONS.PENDING;
+  if (job.status === 'synced') return MUTATION_CLASSIFICATIONS.SYNCED;
+  if (job.status === 'conflict') return MUTATION_CLASSIFICATIONS.CONFLICT;
+  if (job.status === 'stale') return MUTATION_CLASSIFICATIONS.STALE;
+  if (job.status === 'failed') return MUTATION_CLASSIFICATIONS.FAILED;
+
+  if (job.status === 'pending' || job.status === 'syncing') {
+    const attempts = job.attempts || 0;
+    const maxAttempts = job.maxAttempts || 5;
+    if (attempts > 0 && attempts < maxAttempts && (job.errorType === ERROR_TYPES.NETWORK || job.errorType === ERROR_TYPES.SERVER_ERROR)) {
+      return MUTATION_CLASSIFICATIONS.RETRYABLE;
+    }
+    return MUTATION_CLASSIFICATIONS.PENDING;
+  }
+
+  return MUTATION_CLASSIFICATIONS.PENDING;
+}
+
+/**
+ * Identify business-critical financial, order, or inventory mutations
+ * that must NEVER be silently discarded or purged without explicit resolution.
+ */
+export function isCriticalMutation(job) {
+  if (!job) return false;
+  const t = job.type;
+  if (t === POS_MUTATION_TYPES.ORDER_CREATE || t === 'ORDER_CREATE' || t === 'CUSTOMER_ORDER') return true;
+  if (t === POS_MUTATION_TYPES.SETTLE_ORDER || t === 'ORDER_SETTLE') return true;
+  if (t === 'STOCK_IN' || t === 'STOCK_OUT') return true;
+  return false;
+}
 
 /**
  * Classify error for appropriate retry or failure disposition
@@ -466,14 +511,147 @@ class OfflineSyncEngine {
   removeJobByOrderId(orderId) {
     if (!orderId) return;
     const strId = String(orderId);
-    const queue = this.loadQueue(QUEUE_KEYS.ADMIN_MUTATIONS);
-    const filtered = queue.filter(job => {
-      const p = job.payload || {};
-      const jobOrdId = String(p.orderId || p.order?.id || p.id || '');
-      return jobOrdId !== strId;
-    });
-    this.saveQueue(QUEUE_KEYS.ADMIN_MUTATIONS, filtered);
+    const queueKeys = [
+      QUEUE_KEYS.ADMIN_MUTATIONS,
+      QUEUE_KEYS.CUSTOMER_ORDERS,
+      QUEUE_KEYS.TABLE_ROUNDS
+    ];
+
+    for (const qKey of queueKeys) {
+      const queue = this.loadQueue(qKey);
+      const filtered = queue.filter(job => {
+        const p = job.payload || {};
+        const jobOrdId = String(p.orderId || p.order?.id || p.id || '');
+        if (jobOrdId === strId) return false;
+        if (String(job.id || '') === strId) return false;
+        if (String(job.idempotencyKey || '') === strId) return false;
+        return true;
+      });
+      if (filtered.length !== queue.length) {
+        this.saveQueue(qKey, filtered);
+      }
+    }
     this.updateSyncIndicator();
+  }
+
+  /**
+   * Resolve a temporary local order ID ('offline-xxx' / 'temp-xxx')
+   * to a server-confirmed UUID from the queue or result cache.
+   */
+  resolveServerOrderId(localOrderId, currentQueue = null) {
+    if (!localOrderId) return null;
+    const strId = String(localOrderId);
+    if (!strId.startsWith('offline-') && !strId.startsWith('temp-')) {
+      return strId;
+    }
+
+    const queue = currentQueue || this.loadQueue(QUEUE_KEYS.ADMIN_MUTATIONS);
+    for (const job of queue) {
+      const p = job.payload?.order || job.payload || {};
+      const jobLocalId = String(p.id || job.id || '');
+      if (jobLocalId === strId && job.result?.id) {
+        return job.result.id;
+      }
+      if (job.payload?.orderId && String(job.payload.orderId) !== strId && jobLocalId === strId) {
+        return job.payload.orderId;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Intelligently verify if an order or its items already exist in cloud database,
+   * reconcile missing items without duplication, and propagate server ID.
+   */
+  async verifyAndReconcileCloudOrder(job, db) {
+    if (!db || typeof db.from !== 'function') return null;
+
+    const payload = job.payload?.order || job.payload || {};
+    const localId = payload.id || job.payload?.orderId;
+    const idempotencyKey = job.idempotencyKey || payload.idempotency_key;
+    const orderNumber = payload.order_number;
+
+    let existingOrder = null;
+
+    try {
+      // 1. Search by idempotency_key first (most reliable)
+      if (idempotencyKey) {
+        const query = db.from('orders').select('*').eq('idempotency_key', idempotencyKey);
+        const res = typeof query.maybeSingle === 'function' ? await query.maybeSingle() : await query.single().catch(() => ({ data: null }));
+        if (res && res.data) existingOrder = res.data;
+      }
+
+      // 2. Search by UUID if localId is a valid non-temporary UUID
+      if (!existingOrder && localId && !String(localId).startsWith('offline-') && !String(localId).startsWith('temp-')) {
+        const query = db.from('orders').select('*').eq('id', localId);
+        const res = typeof query.maybeSingle === 'function' ? await query.maybeSingle() : await query.single().catch(() => ({ data: null }));
+        if (res && res.data) existingOrder = res.data;
+      }
+
+      // 3. Search by order_number if not generic 'PENDING'
+      if (!existingOrder && orderNumber && orderNumber !== 'PENDING') {
+        const query = db.from('orders').select('*').eq('order_number', orderNumber);
+        const res = typeof query.maybeSingle === 'function' ? await query.maybeSingle() : await query.single().catch(() => ({ data: null }));
+        if (res && res.data) existingOrder = res.data;
+      }
+    } catch (e) {
+      console.warn('[OfflineSync] Cloud verification search warning:', e);
+    }
+
+    if (!existingOrder) {
+      return { exists: false, order: null, missingItems: [], insertedItems: [] };
+    }
+
+    // Existing order found in cloud! Reconcile items
+    const rawItems = Array.isArray(job.payload?.items) ? job.payload.items : (Array.isArray(payload.items) ? payload.items : []);
+    let insertedItems = [];
+    let missingItems = [];
+
+    if (rawItems.length > 0) {
+      try {
+        const { data: existingItems } = await db.from('order_items').select('*').eq('order_id', existingOrder.id);
+        const existingList = Array.isArray(existingItems) ? existingItems : [];
+
+        // Match items by dish_name/item_name and price/qty to find genuinely missing items
+        missingItems = rawItems.filter(localItem => {
+          const lName = (localItem.dish_name || localItem.name || localItem.item_name || '').trim().toLowerCase();
+          const lQty = Number(localItem.quantity || localItem.qty || 1);
+          const lPrice = Number(localItem.price || 0);
+
+          const found = existingList.some(cloudItem => {
+            const cName = (cloudItem.dish_name || cloudItem.name || cloudItem.item_name || '').trim().toLowerCase();
+            const cQty = Number(cloudItem.quantity || cloudItem.qty || 1);
+            const cPrice = Number(cloudItem.price || 0);
+            return cName === lName && Math.abs(cPrice - lPrice) < 0.01 && cQty === lQty;
+          });
+
+          return !found;
+        });
+
+        if (missingItems.length > 0) {
+          const itemsToInsert = missingItems.map(item => {
+            const copy = { ...item, order_id: existingOrder.id };
+            if (String(copy.id || '').startsWith('temp-') || String(copy.id || '').startsWith('offline-')) {
+              delete copy.id;
+            }
+            return copy;
+          });
+          const insRes = await db.from('order_items').insert(itemsToInsert);
+          if (!insRes?.error) {
+            insertedItems = Array.isArray(insRes?.data) ? insRes.data : itemsToInsert;
+          }
+        }
+      } catch (err) {
+        console.warn('[OfflineSync] Item reconciliation warning:', err);
+      }
+    }
+
+    return {
+      exists: true,
+      order: existingOrder,
+      missingItems,
+      insertedItems
+    };
   }
 
   /**
@@ -828,64 +1006,66 @@ class OfflineSyncEngine {
               delete orderPayload.id;
             }
 
-            let insRes = await db.from('orders').insert([orderPayload]).select().single();
-            if (insRes.error && (insRes.error.message || '').includes('ticket_status')) {
-              const fallback = { ...orderPayload };
-              delete fallback.ticket_status;
-              insRes = await db.from('orders').insert([fallback]).select().single();
-            }
-            if (insRes.error && (insRes.error.code === '42703' || (insRes.error.message || '').includes('does not exist'))) {
-              const baseline = {
-                order_number: orderPayload.order_number,
-                customer_name: orderPayload.customer_name,
-                customer_phone: orderPayload.customer_phone,
-                order_type: orderPayload.order_type,
-                table_number: orderPayload.table_number,
-                total_amount: orderPayload.total_amount,
-                payment_method: orderPayload.payment_method,
-                status: orderPayload.status,
-                payment_status: orderPayload.payment_status,
-                ticket_status: orderPayload.ticket_status,
-                notes: orderPayload.notes,
-                idempotency_key: job.idempotencyKey,
-                created_at: orderPayload.created_at,
-                updated_at: orderPayload.updated_at
-              };
-              insRes = await db.from('orders').insert([baseline]).select().single();
-            }
+            // Pre-flight check: verify if order already exists in cloud
+            const recon = await this.verifyAndReconcileCloudOrder(job, db);
+            if (recon && recon.exists) {
+              result = recon.order;
+              resOk = true;
+            } else {
+              let insRes = await db.from('orders').insert([orderPayload]).select().single();
+              if (insRes.error && (insRes.error.message || '').includes('ticket_status')) {
+                const fallback = { ...orderPayload };
+                delete fallback.ticket_status;
+                insRes = await db.from('orders').insert([fallback]).select().single();
+              }
+              if (insRes.error && (insRes.error.code === '42703' || (insRes.error.message || '').includes('does not exist'))) {
+                const baseline = {
+                  order_number: orderPayload.order_number,
+                  customer_name: orderPayload.customer_name,
+                  customer_phone: orderPayload.customer_phone,
+                  order_type: orderPayload.order_type,
+                  table_number: orderPayload.table_number,
+                  total_amount: orderPayload.total_amount,
+                  payment_method: orderPayload.payment_method,
+                  status: orderPayload.status,
+                  payment_status: orderPayload.payment_status,
+                  ticket_status: orderPayload.ticket_status,
+                  notes: orderPayload.notes,
+                  idempotency_key: job.idempotencyKey,
+                  created_at: orderPayload.created_at,
+                  updated_at: orderPayload.updated_at
+                };
+                insRes = await db.from('orders').insert([baseline]).select().single();
+              }
 
-            // RECOVERY: If header was already created in DB (e.g. earlier attempt or duplicate key)
-            if (insRes.error && (insRes.error.code === '23505' || (insRes.error.message || '').includes('duplicate key') || (insRes.error.message || '').includes('orders_pkey'))) {
-              console.log('[OfflineSync] Order header already exists in DB; fetching existing record for:', originalLocalId || job.idempotencyKey);
-              if (originalLocalId && !String(originalLocalId).startsWith('offline-')) {
-                const fetchRes = await db.from('orders').select().eq('id', originalLocalId).single();
-                if (fetchRes.data) insRes = fetchRes;
-              } else if (job.idempotencyKey) {
-                const fetchRes = await db.from('orders').select().eq('idempotency_key', job.idempotencyKey).single();
-                if (fetchRes.data) insRes = fetchRes;
+              // RECOVERY: If header was already created in DB (e.g. duplicate key 23505)
+              if (insRes.error && (insRes.error.code === '23505' || (insRes.error.message || '').includes('duplicate key') || (insRes.error.message || '').includes('orders_pkey'))) {
+                console.log('[OfflineSync] Duplicate key encountered; reconciling with cloud order:', originalLocalId || job.idempotencyKey);
+                const retryRecon = await this.verifyAndReconcileCloudOrder(job, db);
+                if (retryRecon && retryRecon.exists) {
+                  result = retryRecon.order;
+                  resOk = true;
+                } else {
+                  throw insRes.error;
+                }
+              } else if (insRes.error) {
+                throw insRes.error;
+              } else {
+                result = insRes.data;
+
+                if (Array.isArray(job.payload.items) && job.payload.items.length > 0) {
+                  const itemsToInsert = job.payload.items.map(i => {
+                    const copy = { ...i, order_id: result.id };
+                    if (String(copy.id || '').startsWith('temp-') || String(copy.id || '').startsWith('offline-')) {
+                      delete copy.id;
+                    }
+                    return copy;
+                  });
+                  await db.from('order_items').insert(itemsToInsert);
+                }
+                resOk = true;
               }
             }
-
-            if (insRes.error) {
-              throw insRes.error;
-            }
-            result = insRes.data;
-
-            if (Array.isArray(job.payload.items) && job.payload.items.length > 0) {
-              // Check if items already exist for this order in cloud DB to prevent duplicate order_items
-              const { data: existingItems } = await db.from('order_items').select('id').eq('order_id', result.id);
-              if (!existingItems || existingItems.length === 0) {
-                const itemsToInsert = job.payload.items.map(i => {
-                  const copy = { ...i, order_id: result.id };
-                  if (String(copy.id || '').startsWith('temp-') || String(copy.id || '').startsWith('offline-')) {
-                    delete copy.id;
-                  }
-                  return copy;
-                });
-                await db.from('order_items').insert(itemsToInsert);
-              }
-            }
-            resOk = true;
           } else {
             const res = await fetch('/api/orders', {
               method: 'POST',
@@ -899,7 +1079,15 @@ class OfflineSyncEngine {
             const data = await res.json().catch(() => ({}));
             resOk = res.ok && data.success;
             result = data.data;
-            if (!resOk) errMessage = data.error || `HTTP ${res.status}`;
+            if (!resOk) {
+              if (resStatus === 409 || (data.error && /already|duplicate|exists/i.test(data.error))) {
+                if (data.data || data.order) {
+                  resOk = true;
+                  result = data.data || data.order;
+                }
+              }
+              if (!resOk) errMessage = data.error || `HTTP ${res.status}`;
+            }
           }
 
           if (resOk) {
@@ -928,15 +1116,26 @@ class OfflineSyncEngine {
             });
           }
         } else if (job.type === POS_MUTATION_TYPES.ORDER_UPDATE) {
+          const targetOrderId = this.resolveServerOrderId(job.payload.orderId, queue) || job.payload.orderId;
+          job.payload.orderId = targetOrderId;
+
           if (db && typeof db.from === 'function') {
-            const updRes = await db.from('orders').update(job.payload.updateData).eq('id', job.payload.orderId).select().single();
-            if (updRes.error) throw updRes.error;
-            result = updRes.data;
-            if (Array.isArray(job.payload.items)) {
-              await db.from('order_items').delete().eq('order_id', job.payload.orderId);
-              await db.from('order_items').insert(job.payload.items.map(i => ({ ...i, order_id: job.payload.orderId })));
+            const query = db.from('orders').select('*').eq('id', targetOrderId);
+            const { data: cloudOrder } = typeof query.maybeSingle === 'function' ? await query.maybeSingle() : await query.single().catch(() => ({ data: null }));
+
+            if (cloudOrder && (cloudOrder.ticket_status === 'CLOSED' || (job.payload.updateData?.ticket_status && cloudOrder.ticket_status === job.payload.updateData.ticket_status))) {
+              result = cloudOrder;
+              resOk = true;
+            } else {
+              const updRes = await db.from('orders').update(job.payload.updateData).eq('id', targetOrderId).select().single();
+              if (updRes.error) throw updRes.error;
+              result = updRes.data;
+              if (Array.isArray(job.payload.items)) {
+                await db.from('order_items').delete().eq('order_id', targetOrderId);
+                await db.from('order_items').insert(job.payload.items.map(i => ({ ...i, order_id: targetOrderId })));
+              }
+              resOk = true;
             }
-            resOk = true;
           } else {
             const res = await fetch('/api/orders', {
               method: 'PATCH',
@@ -944,13 +1143,20 @@ class OfflineSyncEngine {
                 'Content-Type': 'application/json',
                 'x-idempotency-key': job.idempotencyKey
               },
-              body: JSON.stringify({ id: job.payload.orderId, ...job.payload.updateData, items: job.payload.items })
+              body: JSON.stringify({ id: targetOrderId, ...job.payload.updateData, items: job.payload.items })
             });
             resStatus = res.status;
             const data = await res.json().catch(() => ({}));
             resOk = res.ok && data.success;
             result = data.data;
-            if (!resOk) errMessage = data.error || `HTTP ${res.status}`;
+            if (!resOk) {
+              if (resStatus === 409 || (data.error && /already|closed|updated/i.test(data.error))) {
+                resOk = true;
+                result = data.data || { order_id: targetOrderId };
+              } else {
+                errMessage = data.error || `HTTP ${res.status}`;
+              }
+            }
           }
 
           if (resOk) {
@@ -961,37 +1167,62 @@ class OfflineSyncEngine {
             this.notifyListeners({
               type: 'pos_order_updated',
               jobId: job.id,
-              orderId: job.payload.orderId,
+              orderId: targetOrderId,
               serverOrder: result
             });
           }
         } else if (job.type === POS_MUTATION_TYPES.CONFIRM_BILL) {
-          if (db && typeof db.from === 'function') {
-            if (job.payload.isTable && Array.isArray(job.payload.siblingOrderIds) && job.payload.siblingOrderIds.length > 0) {
-              await db.from('order_items').update({ order_id: job.payload.orderId }).in('order_id', job.payload.siblingOrderIds);
-              for (const sId of job.payload.siblingOrderIds) {
-                await db.from('orders').update({ status: 'delivered', payment_status: 'paid', ticket_status: 'CLOSED' }).eq('id', sId);
-              }
-            }
-            const cRes = await db.from('orders').update(job.payload.updatePayload).eq('id', job.payload.orderId).select().single();
-            if (cRes.error) throw cRes.error;
-            result = cRes.data;
+          const targetOrderId = this.resolveServerOrderId(job.payload.orderId, queue) || job.payload.orderId;
+          job.payload.orderId = targetOrderId;
 
-            // Ensure items are persisted in cloud DB if missing
-            if (Array.isArray(job.payload.items) && job.payload.items.length > 0) {
-              const { data: existingItems } = await db.from('order_items').select('id').eq('order_id', job.payload.orderId);
-              if (!existingItems || existingItems.length === 0) {
-                const itemsToInsert = job.payload.items.map(i => {
-                  const copy = { ...i, order_id: job.payload.orderId };
-                  if (String(copy.id || '').startsWith('temp-') || String(copy.id || '').startsWith('offline-')) {
-                    delete copy.id;
-                  }
-                  return copy;
-                });
-                await db.from('order_items').insert(itemsToInsert);
+          if (db && typeof db.from === 'function') {
+            const query = db.from('orders').select('*').eq('id', targetOrderId);
+            const { data: cloudOrder } = typeof query.maybeSingle === 'function' ? await query.maybeSingle() : await query.single().catch(() => ({ data: null }));
+
+            if (cloudOrder && (cloudOrder.ticket_status === 'BILLED' || cloudOrder.ticket_status === 'CLOSED')) {
+              // Already billed or closed in cloud! Reconcile missing items if needed
+              if (Array.isArray(job.payload.items) && job.payload.items.length > 0) {
+                const { data: existingItems } = await db.from('order_items').select('id').eq('order_id', targetOrderId);
+                if (!existingItems || existingItems.length === 0) {
+                  const itemsToInsert = job.payload.items.map(i => {
+                    const copy = { ...i, order_id: targetOrderId };
+                    if (String(copy.id || '').startsWith('temp-') || String(copy.id || '').startsWith('offline-')) {
+                      delete copy.id;
+                    }
+                    return copy;
+                  });
+                  await db.from('order_items').insert(itemsToInsert);
+                }
               }
+              result = cloudOrder;
+              resOk = true;
+            } else {
+              if (job.payload.isTable && Array.isArray(job.payload.siblingOrderIds) && job.payload.siblingOrderIds.length > 0) {
+                await db.from('order_items').update({ order_id: targetOrderId }).in('order_id', job.payload.siblingOrderIds);
+                for (const sId of job.payload.siblingOrderIds) {
+                  await db.from('orders').update({ status: 'delivered', payment_status: 'paid', ticket_status: 'CLOSED' }).eq('id', sId);
+                }
+              }
+              const cRes = await db.from('orders').update(job.payload.updatePayload).eq('id', targetOrderId).select().single();
+              if (cRes.error) throw cRes.error;
+              result = cRes.data;
+
+              // Ensure items are persisted in cloud DB if missing
+              if (Array.isArray(job.payload.items) && job.payload.items.length > 0) {
+                const { data: existingItems } = await db.from('order_items').select('id').eq('order_id', targetOrderId);
+                if (!existingItems || existingItems.length === 0) {
+                  const itemsToInsert = job.payload.items.map(i => {
+                    const copy = { ...i, order_id: targetOrderId };
+                    if (String(copy.id || '').startsWith('temp-') || String(copy.id || '').startsWith('offline-')) {
+                      delete copy.id;
+                    }
+                    return copy;
+                  });
+                  await db.from('order_items').insert(itemsToInsert);
+                }
+              }
+              resOk = true;
             }
-            resOk = true;
           } else {
             const res = await fetch('/api/orders', {
               method: 'PATCH',
@@ -999,13 +1230,20 @@ class OfflineSyncEngine {
                 'Content-Type': 'application/json',
                 'x-idempotency-key': job.idempotencyKey
               },
-              body: JSON.stringify({ id: job.payload.orderId, ...job.payload.updatePayload })
+              body: JSON.stringify({ id: targetOrderId, ...job.payload.updatePayload })
             });
             resStatus = res.status;
             const data = await res.json().catch(() => ({}));
             resOk = res.ok && data.success;
             result = data.data;
-            if (!resOk) errMessage = data.error || `HTTP ${res.status}`;
+            if (!resOk) {
+              if (resStatus === 409 || (data.error && /already|billed|closed/i.test(data.error))) {
+                resOk = true;
+                result = data.data || { already_billed: true, order_id: targetOrderId };
+              } else {
+                errMessage = data.error || `HTTP ${res.status}`;
+              }
+            }
           }
 
           if (resOk) {
@@ -1016,39 +1254,53 @@ class OfflineSyncEngine {
             this.notifyListeners({
               type: 'pos_bill_confirmed',
               jobId: job.id,
-              orderId: job.payload.orderId,
+              orderId: targetOrderId,
               serverOrder: result
             });
           }
         } else if (job.type === POS_MUTATION_TYPES.SETTLE_ORDER || job.type === 'ORDER_SETTLE') {
+          const targetOrderId = this.resolveServerOrderId(job.payload.orderId, queue) || job.payload.orderId;
+          job.payload.orderId = targetOrderId;
+
           // CRITICAL FINANCIAL RULE:
           // Call settle_order_atomic RPC. Authoritative server settlement only!
           if (db && typeof db.rpc === 'function') {
-            const rpcRes = await db.rpc('settle_order_atomic', {
-              p_order_id: job.payload.orderId,
-              p_payment_method: job.payload.paymentMethod || 'cash',
-              p_notes: job.payload.notes || null,
-              p_idempotency_key: job.idempotencyKey
-            });
-
-            if (rpcRes.error) {
-              const errMsg = String(rpcRes.error.message || '');
-              if (errMsg.includes('ORDER_ALREADY_SETTLED')) {
-                // Idempotent replay confirmed!
+            if (typeof db.from === 'function') {
+              const query = db.from('orders').select('*').eq('id', targetOrderId);
+              const { data: cloudOrder } = typeof query.maybeSingle === 'function' ? await query.maybeSingle() : await query.single().catch(() => ({ data: null }));
+              if (cloudOrder && (cloudOrder.payment_status === 'paid' || cloudOrder.ticket_status === 'CLOSED')) {
                 resOk = true;
-                result = { already_settled: true, order_id: job.payload.orderId };
-              } else if (errMsg.includes('ORDER_NOT_FOUND') || rpcRes.error.code === '22P02') {
-                // Stale or nonexistent order that cannot be found or settled in cloud — discard to unblock queue
-                resOk = true;
-                result = { discarded_stale: true, order_id: job.payload.orderId };
-              } else {
-                throw rpcRes.error;
+                result = { already_settled: true, order_id: targetOrderId, closed_at: cloudOrder.closed_at || cloudOrder.updated_at };
               }
-            } else if (rpcRes.data && rpcRes.data.success !== false) {
-              resOk = true;
-              result = rpcRes.data;
-            } else {
-              throw new Error(rpcRes.data?.error || 'Settlement rejected by RPC');
+            }
+
+            if (!resOk) {
+              const rpcRes = await db.rpc('settle_order_atomic', {
+                p_order_id: targetOrderId,
+                p_payment_method: job.payload.paymentMethod || 'cash',
+                p_notes: job.payload.notes || null,
+                p_idempotency_key: job.idempotencyKey
+              });
+
+              if (rpcRes.error) {
+                const errMsg = String(rpcRes.error.message || '');
+                if (errMsg.includes('ORDER_ALREADY_SETTLED')) {
+                  // Idempotent replay confirmed!
+                  resOk = true;
+                  result = { already_settled: true, order_id: targetOrderId };
+                } else if (errMsg.includes('ORDER_NOT_FOUND') || rpcRes.error.code === '22P02') {
+                  // Stale or nonexistent order that cannot be found or settled in cloud — discard to unblock queue
+                  resOk = true;
+                  result = { discarded_stale: true, order_id: targetOrderId };
+                } else {
+                  throw rpcRes.error;
+                }
+              } else if (rpcRes.data && rpcRes.data.success !== false) {
+                resOk = true;
+                result = rpcRes.data;
+              } else {
+                throw new Error(rpcRes.data?.error || 'Settlement rejected by RPC');
+              }
             }
           } else {
             const res = await fetch('/api/orders', {
@@ -1058,7 +1310,7 @@ class OfflineSyncEngine {
                 'x-idempotency-key': job.idempotencyKey
               },
               body: JSON.stringify({
-                id: job.payload.orderId,
+                id: targetOrderId,
                 payment_status: 'paid',
                 ticket_status: 'CLOSED',
                 payment_method: job.payload.paymentMethod,
@@ -1070,7 +1322,14 @@ class OfflineSyncEngine {
             const data = await res.json().catch(() => ({}));
             resOk = res.ok && data.success;
             result = data.data;
-            if (!resOk) errMessage = data.error || `HTTP ${res.status}`;
+            if (!resOk) {
+              if (resStatus === 409 || (data.error && /already|closed|settled/i.test(data.error))) {
+                resOk = true;
+                result = data.data || { already_settled: true, order_id: targetOrderId };
+              } else {
+                errMessage = data.error || `HTTP ${res.status}`;
+              }
+            }
           }
 
           if (resOk) {
@@ -1082,7 +1341,7 @@ class OfflineSyncEngine {
             this.notifyListeners({
               type: 'pos_settlement_confirmed',
               jobId: job.id,
-              orderId: job.payload.orderId,
+              orderId: targetOrderId,
               serverResult: result,
               paymentMethod: job.payload.paymentMethod,
               idempotencyKey: job.idempotencyKey
@@ -1165,6 +1424,7 @@ class OfflineSyncEngine {
 
     let syncedCount = 0;
     const now = Date.now();
+    const db = typeof window !== 'undefined' ? (window.insforge?.database || window.supabase) : null;
 
     for (const job of pending) {
       if (job.nextRetryAt && now < job.nextRetryAt) continue;
@@ -1176,28 +1436,53 @@ class OfflineSyncEngine {
 
       try {
         const rpcName = job.type === 'STOCK_IN' ? 'record_stock_in' : 'record_stock_out';
-        const res = await fetch('/api/db', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-idempotency-key': job.idempotencyKey
-          },
-          body: JSON.stringify({
-            action: 'rpc',
-            rpc: rpcName,
-            params: job.payload
-          })
-        });
+        let resOk = false;
+        let errMessage = null;
 
-        const data = await res.json().catch(() => ({}));
+        if (db && typeof db.rpc === 'function') {
+          const rpcRes = await db.rpc(rpcName, job.payload);
+          if (rpcRes.error) {
+            const errMsg = String(rpcRes.error.message || '');
+            if (errMsg.includes('ALREADY_RECORDED') || errMsg.includes('duplicate')) {
+              resOk = true;
+            } else {
+              throw rpcRes.error;
+            }
+          } else {
+            resOk = true;
+          }
+        } else {
+          const res = await fetch('/api/db', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-idempotency-key': job.idempotencyKey
+            },
+            body: JSON.stringify({
+              action: 'rpc',
+              rpc: rpcName,
+              params: job.payload
+            })
+          });
 
-        if (res.ok && data.success) {
+          const data = await res.json().catch(() => ({}));
+          resOk = res.ok && data.success;
+          if (!resOk) {
+            if (res.status === 409 || (data.error && /already|duplicate/i.test(data.error))) {
+              resOk = true;
+            } else {
+              errMessage = data.error || `HTTP ${res.status}`;
+            }
+          }
+        }
+
+        if (resOk) {
           job.status = 'synced';
           job.error = null;
           syncedCount++;
         } else {
           job.status = 'pending';
-          job.error = data.error || `HTTP ${res.status}`;
+          job.error = errMessage || 'Stock mutation failed';
           job.nextRetryAt = Date.now() + Math.min(60000, 1000 * Math.pow(2, job.attempts));
           if (job.attempts >= (job.maxAttempts || 5)) job.status = 'failed';
         }
@@ -1263,6 +1548,191 @@ class OfflineSyncEngine {
     };
   }
 
+  /**
+   * Get failed queue counts across all offline queues
+   */
+  getFailedCounts() {
+    const admin = this.loadQueue(QUEUE_KEYS.ADMIN_MUTATIONS).filter(j => j.status === 'failed').length;
+    const cust = this.loadQueue(QUEUE_KEYS.CUSTOMER_ORDERS).filter(j => j.status === 'failed').length;
+    const tbl = this.loadQueue(QUEUE_KEYS.TABLE_ROUNDS).filter(j => j.status === 'failed').length;
+    const stk = this.loadQueue(QUEUE_KEYS.STOCK_MUTATIONS).filter(j => j.status === 'failed').length;
+    return {
+      adminMutations: admin,
+      customerOrders: cust,
+      tableRounds: tbl,
+      stockMutations: stk,
+      total: admin + cust + tbl + stk
+    };
+  }
+
+  /**
+   * Inspect all queues for failed, stale, or retry-exhausted mutations
+   */
+  inspectStaleJobs() {
+    const queueKeys = [
+      QUEUE_KEYS.ADMIN_MUTATIONS,
+      QUEUE_KEYS.CUSTOMER_ORDERS,
+      QUEUE_KEYS.TABLE_ROUNDS,
+      QUEUE_KEYS.STOCK_MUTATIONS
+    ];
+
+    const report = {
+      totalStale: 0,
+      totalFailed: 0,
+      unresolvedCritical: 0,
+      alreadySynced: 0,
+      recoverable: 0,
+      items: []
+    };
+
+    for (const qKey of queueKeys) {
+      const queue = this.loadQueue(qKey);
+      for (const job of queue) {
+        const isFailed = job.status === 'failed';
+        const isStale = job.status === 'stale';
+        const isExhausted = (job.attempts || 0) >= (job.maxAttempts || 5);
+
+        if (isFailed || isStale || isExhausted) {
+          const critical = isCriticalMutation(job);
+          const itemSummary = {
+            id: job.id,
+            type: job.type,
+            queue: qKey,
+            status: job.status,
+            attempts: job.attempts,
+            error: job.error,
+            isCritical: critical,
+            verifiedCloudSynced: !!job._verifiedCloudSynced
+          };
+
+          if (isFailed) report.totalFailed++;
+          if (isStale) report.totalStale++;
+          if (critical && !job._verifiedCloudSynced) {
+            report.unresolvedCritical++;
+          } else if (job._verifiedCloudSynced) {
+            report.alreadySynced++;
+          } else {
+            report.recoverable++;
+          }
+
+          report.items.push(itemSummary);
+        }
+      }
+    }
+
+    return report;
+  }
+
+  /**
+   * Safely archive stale or obsolete failed mutations into quarantine.
+   * STRICT SAFETY RULE:
+   * - Requires explicit confirmation { confirmed: true }
+   * - Never hard-deletes; archives into QUEUE_KEYS.QUARANTINED_MUTATIONS
+   * - NEVER archives unresolved critical mutations (unconfirmed orders, unpaid settlements, stock movements)
+   */
+  clearStaleQueue(options = { confirmed: false, reason: 'Manual stale queue cleanup' }) {
+    if (!options || options.confirmed !== true) {
+      throw new Error('Explicit confirmation required to clear stale queue (options.confirmed = true)');
+    }
+
+    const quarantined = this.loadQueue(QUEUE_KEYS.QUARANTINED_MUTATIONS) || [];
+    let archivedCount = 0;
+    let remainingCriticalCount = 0;
+
+    const queueKeys = [
+      QUEUE_KEYS.ADMIN_MUTATIONS,
+      QUEUE_KEYS.CUSTOMER_ORDERS,
+      QUEUE_KEYS.TABLE_ROUNDS,
+      QUEUE_KEYS.STOCK_MUTATIONS
+    ];
+
+    for (const key of queueKeys) {
+      const queue = this.loadQueue(key);
+      const remaining = [];
+
+      for (const job of queue) {
+        const isFailed = job.status === 'failed';
+        const isStale = job.status === 'stale';
+        const isExhausted = (job.attempts || 0) >= (job.maxAttempts || 5);
+
+        if (isFailed || isStale || isExhausted) {
+          // CRITICAL SAFETY RULE: Never clear unresolved payments, orders, or stock deductions
+          // unless explicitly verified as already synced in cloud
+          if (isCriticalMutation(job) && !job._verifiedCloudSynced) {
+            remainingCriticalCount++;
+            remaining.push(job);
+            continue;
+          }
+
+          // Move to quarantine
+          quarantined.push({
+            ...job,
+            quarantinedAt: new Date().toISOString(),
+            quarantineReason: options.reason || 'Stale queue cleanup'
+          });
+          archivedCount++;
+        } else {
+          remaining.push(job);
+        }
+      }
+
+      this.saveQueue(key, remaining);
+    }
+
+    this.saveQueue(QUEUE_KEYS.QUARANTINED_MUTATIONS, quarantined);
+    this.updateSyncIndicator();
+
+    return {
+      success: true,
+      archivedCount,
+      remainingCriticalCount,
+      quarantinedTotal: quarantined.length
+    };
+  }
+
+  /**
+   * Re-evaluates failed and conflict mutations across all queues,
+   * resets them to pending, and triggers an immediate sync cycle.
+   */
+  async recoverFailedMutations() {
+    const queueKeys = [
+      QUEUE_KEYS.ADMIN_MUTATIONS,
+      QUEUE_KEYS.CUSTOMER_ORDERS,
+      QUEUE_KEYS.TABLE_ROUNDS,
+      QUEUE_KEYS.STOCK_MUTATIONS
+    ];
+
+    let recoveredCount = 0;
+
+    for (const key of queueKeys) {
+      const queue = this.loadQueue(key);
+      let changed = false;
+
+      for (const job of queue) {
+        if (job.status === 'failed' || job.status === 'conflict') {
+          job.status = 'pending';
+          job.attempts = 0;
+          job.nextRetryAt = null;
+          job.error = null;
+          job.errorType = null;
+          changed = true;
+          recoveredCount++;
+        }
+      }
+
+      if (changed) {
+        this.saveQueue(key, queue);
+      }
+    }
+
+    this.updateSyncIndicator();
+    if (this.isOnline()) {
+      await this.triggerSync();
+    }
+
+    return { recoveredCount };
+  }
+
   // ═════════════════════════════════════════════════════════════════
   // 4. #SYNC-INDICATOR UI CONTROLLER
   // ═════════════════════════════════════════════════════════════════
@@ -1279,19 +1749,34 @@ class OfflineSyncEngine {
           e.stopPropagation();
           const counts = this.getPendingCounts();
           const totalPending = (counts.customerOrders || 0) + (counts.tableRounds || 0) + (counts.adminMutations || 0) + (counts.stockMutations || 0);
-          const queue = this.loadQueue(QUEUE_KEYS.ADMIN_MUTATIONS);
-          const failedCount = queue.filter(j => j.status === 'failed').length;
+          const failedCounts = this.getFailedCounts();
+          const totalFailed = failedCounts.total;
 
-          if (failedCount > 0) {
-            // Reset failed jobs to pending and retry
-            queue.forEach(j => {
-              if (j.status === 'failed') {
-                j.status = 'pending';
-                j.attempts = 0;
-                j.nextRetryAt = null;
+          if (totalFailed > 0) {
+            // Reset failed jobs across all queues synchronously
+            const queueKeys = [
+              QUEUE_KEYS.ADMIN_MUTATIONS,
+              QUEUE_KEYS.CUSTOMER_ORDERS,
+              QUEUE_KEYS.TABLE_ROUNDS,
+              QUEUE_KEYS.STOCK_MUTATIONS
+            ];
+            for (const qKey of queueKeys) {
+              const q = this.loadQueue(qKey);
+              let qChanged = false;
+              q.forEach(j => {
+                if (j.status === 'failed' || j.status === 'conflict') {
+                  j.status = 'pending';
+                  j.attempts = 0;
+                  j.nextRetryAt = null;
+                  j.error = null;
+                  j.errorType = null;
+                  qChanged = true;
+                }
+              });
+              if (qChanged) {
+                this.saveQueue(qKey, q);
               }
-            });
-            this.saveQueue(QUEUE_KEYS.ADMIN_MUTATIONS, queue);
+            }
             this.triggerSync();
           } else if (totalPending > 0) {
             this.triggerSync();
@@ -1320,8 +1805,8 @@ class OfflineSyncEngine {
 
     const counts = this.getPendingCounts();
     const totalPending = (counts.customerOrders || 0) + (counts.tableRounds || 0) + (counts.adminMutations || 0) + (counts.stockMutations || 0);
-    const queue = this.loadQueue(QUEUE_KEYS.ADMIN_MUTATIONS);
-    const failedCount = queue.filter(j => j.status === 'failed').length;
+    const failedCounts = this.getFailedCounts();
+    const totalFailed = failedCounts.total;
 
     if (!this.isOnline()) {
       el.textContent = `📡 Offline${totalPending > 0 ? ` (${totalPending} queued)` : ''}`;
@@ -1337,8 +1822,8 @@ class OfflineSyncEngine {
       el.style.border = '1px solid rgba(59, 130, 246, 0.25)';
       el.style.cursor = 'default';
       el.title = 'Background synchronization in progress.';
-    } else if (failedCount > 0) {
-      el.innerHTML = `⚠️ Sync Failed (${failedCount}) <span style="text-decoration:underline;margin-left:2px;">Retry</span>`;
+    } else if (totalFailed > 0) {
+      el.innerHTML = `⚠️ Sync Failed (${totalFailed}) <span style="text-decoration:underline;margin-left:2px;">Retry</span>`;
       el.style.background = 'rgba(239, 68, 68, 0.14)';
       el.style.color = '#dc2626';
       el.style.border = '1px solid rgba(239, 68, 68, 0.35)';
