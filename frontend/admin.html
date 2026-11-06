@@ -1757,20 +1757,13 @@
                   </div>
                 </div>
 
-                <!-- Payment Mode Buttons -->
-                <div class="pos-canva-payment-section">
-                  <div class="pos-canva-pay-grid" id="pos-quick-pay-modes">
-                    <button type="button" class="pos-pay-mode-pill adm-btn adm-btn-outline" data-pay="cash">Cash</button>
-                    <button type="button" class="pos-pay-mode-pill adm-btn adm-btn-primary" data-pay="upi">UPI</button>
-                    <button type="button" class="pos-pay-mode-pill adm-btn adm-btn-outline" data-pay="card">Card</button>
-                  </div>
-                  <select id="pos-payment-mode" class="adm-select" style="display:none;">
-                    <option value="cash">Cash</option>
-                    <option value="upi" selected>UPI</option>
-                    <option value="card">Card</option>
-                    <option value="pay_later">Pay Later</option>
-                  </select>
-                </div>
+                <!-- Hidden Payment Mode State (Preserved for compatibility) -->
+                <select id="pos-payment-mode" class="adm-select" style="display:none;" aria-hidden="true">
+                  <option value="cash" selected>Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="pay_later">Pay Later</option>
+                </select>
 
                 <!-- Primary Bottom Settle & Action Buttons -->
                 <div class="pos-cart-action-group">
