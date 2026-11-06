@@ -890,7 +890,11 @@ function computeOrderTaxDetails(order, optionalItemsList) {
     const totalGst = Math.round((cgstAmt + sgstAmt) * 100) / 100;
     const deliveryFee = Number(order.delivery_fee) || 0;
     const packagingFee = Number(order.packaging_fee) || 0;
-    const grandTotal = Math.floor(Math.max(0, Number(order.total_amount) || 0));
+    let grandTotal = Number(order.total_amount);
+    if (!grandTotal || isNaN(grandTotal) || grandTotal <= 0) {
+      grandTotal = taxableValue + totalGst + deliveryFee + packagingFee;
+    }
+    grandTotal = Math.floor(Math.max(0, grandTotal));
     const roundOff = (order.round_off_amount !== undefined && order.round_off_amount !== null)
       ? Number(order.round_off_amount)
       : Math.round((grandTotal - (taxableValue + totalGst + deliveryFee + packagingFee)) * 100) / 100;
@@ -1757,12 +1761,26 @@ async function loadData(isManual = false) {
 
     // Step 2: Fetch order_items strictly scoped to active, today's, and visible first-page orders
     const scopedOrderIds = getScopedActiveOrderIdsForItems(orders);
+    const pendingLocalItemRows = (orderItems || []).filter(item => {
+      return pendingLocalOrders.some(po => String(po.id) === String(item.order_id)) ||
+             String(item.order_id || '').startsWith('offline-') ||
+             String(item.id || '').startsWith('temp-');
+    });
+
     if (isManual) {
       loadedItemOrderIds.clear();
       orderItems = [];
     }
     if (scopedOrderIds.length > 0) {
       await ensureOrderItemsLoaded(scopedOrderIds, { force: isManual });
+    }
+
+    if (pendingLocalItemRows.length > 0) {
+      for (const pItem of pendingLocalItemRows) {
+        if (!orderItems.some(i => String(i.id) === String(pItem.id) || (pItem.order_id && String(i.order_id) === String(pItem.order_id) && i.item_name === pItem.item_name))) {
+          orderItems.push(pItem);
+        }
+      }
     }
 
     bookings = (bookingsRes && bookingsRes.data) || [];
@@ -5029,6 +5047,24 @@ async function cancelOrderRecord(ord) {
     throw new Error(`Order #${canonical.order_number || canonical.id} is already paid or closed and cannot be cancelled.`);
   }
 
+  // Safe removal for offline/pending-sync orders without leaving orphaned items
+  if (String(canonical.id || '').startsWith('offline-')) {
+    canonical.status = 'cancelled';
+    canonical.ticket_status = 'CANCELLED';
+    canonical.updated_at = new Date().toISOString();
+    if (typeof offlineSync !== 'undefined' && offlineSync.removeJobByOrderId) {
+      offlineSync.removeJobByOrderId(canonical.id);
+    }
+    orderItems = orderItems.filter(i => String(i.order_id) !== String(canonical.id));
+    persistOrdersCache();
+    if (canonical !== ord) {
+      ord.status = 'cancelled';
+      ord.ticket_status = 'CANCELLED';
+      ord.updated_at = canonical.updated_at;
+    }
+    return canonical;
+  }
+
   const cancelPayload = {
     status: 'cancelled',
     ticket_status: 'CANCELLED',
@@ -7070,6 +7106,7 @@ function renderHoldOrdersPanel() {
   const tableSessions = getActiveTableSessions();
   const nonTableHoldOrders = orders.filter(o => {
     if (o.status !== 'hold' && o.status !== 'preparing') return false;
+    if (o.ticket_status === 'BILLED' || o.ticket_status === 'CLOSED' || o.payment_status === 'paid' || o.status === 'cancelled') return false;
     const meta = parseNotesMetadata(o.notes, o);
     const isTable = meta.type === 'table' || o.order_type === 'table' || meta.tableNumber || o.table_number;
     return !isTable;
@@ -7445,6 +7482,7 @@ function getOutstandingBills(typeFilter = 'all') {
   return orders.filter(o => {
     if (o.status === 'cancelled' || o.ticket_status === 'CANCELLED') return false;
     if (o.payment_status === 'paid' || o.ticket_status === 'CLOSED') return false;
+    if (o.ticket_status === 'HOLD' || o.status === 'hold') return false;
     const isBilled = o.ticket_status === 'BILLED' || o.status === 'billed' || (o.notes && (o.notes.includes('[FINAL_BILL]') || o.notes.includes('[BILLED_UNPAID]')));
     if (!isBilled) return false;
 
@@ -7468,9 +7506,20 @@ function getOutstandingTableBills() {
 function getClosedBills(typeFilter = 'all') {
   return orders.filter(o => {
     if (o.status === 'cancelled' || o.ticket_status === 'CANCELLED') return false;
-    const isPaidOrClosed = o.payment_status === 'paid' || o.ticket_status === 'CLOSED' || o.status === 'delivered';
-    if (!isPaidOrClosed) return false;
-    if (o.payment_status === 'unpaid' && o.ticket_status === 'BILLED') return false;
+    // Strictly exclude unconfirmed held orders
+    if (o.ticket_status === 'HOLD' || o.status === 'hold') return false;
+
+    // Both paid/closed orders and confirmed/billed unpaid orders belong in Close Orders
+    const isEligible = (
+      o.payment_status === 'paid' ||
+      o.ticket_status === 'CLOSED' ||
+      o.status === 'delivered' ||
+      o.status === 'completed' ||
+      o.status === 'closed' ||
+      o.ticket_status === 'BILLED' ||
+      (o.status === 'confirmed' && o.ticket_status !== 'HOLD')
+    );
+    if (!isEligible) return false;
 
     if (typeFilter && typeFilter !== 'all') {
       const meta = parseNotesMetadata(o.notes, o);
@@ -7511,6 +7560,13 @@ async function confirmHeldOrder(orderId) {
   // Non-Table Order (Takeaway or Delivery)
   const rawItems = getItemsForOrder(order.id);
   const items = consolidateOrderItems(rawItems);
+
+  // STRICT VALIDATION: Never confirm an order before its complete item list is safely persisted
+  if (!items || items.length === 0) {
+    showAdminToast(`Cannot confirm Order #${order.order_number}: No food items found in this order. Please edit order to add dishes before confirming.`, 'error');
+    return;
+  }
+
   const s = getBillSettings();
   const isDelivery = order.order_type === 'delivery' || meta.type === 'delivery';
   const deliveryFee = isDelivery ? (meta.deliveryFee ?? s.deliveryCharge ?? 0) : 0;
@@ -7600,6 +7656,7 @@ async function confirmHeldOrder(orderId) {
 
   renderTablesPanel();
   renderHoldOrdersPanel();
+  renderClosedOrdersPanel();
   renderOverview();
   renderOrdersTable();
 }
@@ -7621,6 +7678,10 @@ async function confirmHeldTableOrder(tableNum) {
     const siblingOrderIds = siblingOrders.map(o => o.id);
 
     const consolidatedItems = session.consolidatedItems || consolidateOrderItems(session.items);
+    if (!consolidatedItems || consolidatedItems.length === 0) {
+      showAdminToast(`Cannot confirm Table ${tableNum} Bill: No food items found for this table.`, 'error');
+      return;
+    }
     const s = getBillSettings();
     const billing = calculateOrderBilling({
       items: consolidatedItems,
@@ -7764,6 +7825,7 @@ async function confirmHeldTableOrder(tableNum) {
 
     renderTablesPanel();
     renderHoldOrdersPanel();
+    renderClosedOrdersPanel();
     renderOverview();
     renderOrdersTable();
   } catch (ex) {
@@ -8381,14 +8443,15 @@ function renderTablesCloseSection(search = '') {
     const dateStr = formatDateTime(b.settled_at || b.updated_at || b.created_at);
     const pm = (b.payment_method || b.payment_mode || 'cash').toLowerCase();
     const isOnline = pm === 'upi' || pm === 'online';
+    const isPaid = b.payment_status === 'paid';
 
     // 1. Modern Compact Closed Card
     cardsHtml += `
-      <div class="pos-table-card closed-card" data-order-id="${b.id}" style="border-top:3px solid #10b981;background:#ffffff;border:1.5px solid #a7f3d0;border-radius:14px;padding:0.9rem;display:flex;flex-direction:column;justify-content:space-between;gap:0.6rem;box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+      <div class="pos-table-card closed-card" data-order-id="${b.id}" style="border-top:3px solid ${isPaid ? '#10b981' : '#f59e0b'};background:#ffffff;border:1.5px solid ${isPaid ? '#a7f3d0' : '#fde68a'};border-radius:14px;padding:0.9rem;display:flex;flex-direction:column;justify-content:space-between;gap:0.6rem;box-shadow:0 1px 3px rgba(0,0,0,0.03);">
         <div class="table-card-head" style="display:flex;justify-content:space-between;align-items:center;">
           ${typeChip}
-          <span class="table-status-pill" style="font-size:0.75rem;font-weight:800;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:2px 8px;border-radius:999px;">
-            ✅ Paid
+          <span class="table-status-pill" style="font-size:0.75rem;font-weight:800;background:${isPaid ? '#ecfdf5' : '#fef3c7'};color:${isPaid ? '#047857' : '#92400e'};border:1px solid ${isPaid ? '#a7f3d0' : '#fde68a'};padding:2px 8px;border-radius:999px;">
+            ${isPaid ? '✅ Paid' : '⏳ Billed (Unpaid)'}
           </span>
         </div>
         <div class="table-card-zone" style="display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;color:#64748b;">
@@ -8409,8 +8472,8 @@ function renderTablesCloseSection(search = '') {
             🍽️ ${escapeHtml(itemsSummary)}
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;padding:5px 8px;border-radius:6px;border:1px solid #e2e8f0;font-size:0.75rem;">
-            <span style="color:#64748b;font-weight:600;">Paid Via:</span>
-            <strong style="color:${isOnline ? '#2563eb' : '#166534'};">${isOnline ? '📱 Online / UPI' : '💵 Cash'}</strong>
+            <span style="color:#64748b;font-weight:600;">Payment:</span>
+            <strong style="color:${isPaid ? (isOnline ? '#2563eb' : '#166534') : '#d97706'};">${isPaid ? (isOnline ? '📱 Online / UPI' : '💵 Cash') : '⏳ Pending'}</strong>
           </div>
         </div>
         <div class="table-card-actions" style="display:flex;gap:0.35rem;align-items:center;margin-top:0.25rem;">
@@ -8446,13 +8509,13 @@ function renderTablesCloseSection(search = '') {
           </strong>
         </td>
         <td style="padding:0.85rem 1rem;text-align:center;">
-          <span class="adm-pill" style="background:${isOnline ? '#eef2ff' : '#ecfdf5'};color:${isOnline ? '#4f46e5' : '#059669'};border:1px solid ${isOnline ? '#c7d2fe' : '#a7f3d0'};font-weight:700;">
-            ${isOnline ? '📱 Online (UPI)' : '💵 Cash'}
+          <span class="adm-pill" style="background:${isPaid ? (isOnline ? '#eef2ff' : '#ecfdf5') : '#fff7ed'};color:${isPaid ? (isOnline ? '#4f46e5' : '#059669') : '#c2410c'};border:1px solid ${isPaid ? (isOnline ? '#c7d2fe' : '#a7f3d0') : '#fed7aa'};font-weight:700;">
+            ${isPaid ? (isOnline ? '📱 Online (UPI)' : '💵 Cash') : '⏳ Pending'}
           </span>
         </td>
         <td style="padding:0.85rem 1rem;text-align:center;">
-          <span class="adm-pill" style="background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;font-weight:800;">
-            ✓ Paid
+          <span class="adm-pill" style="background:${isPaid ? '#f0fdf4' : '#fef3c7'};color:${isPaid ? '#166534' : '#92400e'};border:1px solid ${isPaid ? '#bbf7d0' : '#fde68a'};font-weight:800;">
+            ${isPaid ? '✓ Paid' : '⏳ Billed (Unpaid)'}
           </span>
         </td>
         <td style="padding:0.85rem 1rem;text-align:right;">
@@ -12188,41 +12251,50 @@ async function renderClosedOrdersPanel() {
   await ensureHistoricalClosedOrders();
 
   // 2. Consolidate Closed Orders to ensure merged orders display only the compiled single record
-  const allClosed = orders.filter(o =>
-    o.status === 'delivered' ||
-    o.status === 'completed' ||
-    o.status === 'closed' ||
-    o.status === 'cancelled' ||
-    o.payment_status === 'paid' ||
-    o.payment_status === 'refunded' ||
-    o.ticket_status === 'CLOSED'
-  );
+  const allClosed = orders.filter(o => {
+    // Strictly exclude unconfirmed held orders
+    if (o.ticket_status === 'HOLD' || o.status === 'hold') return false;
+
+    return (
+      o.status === 'delivered' ||
+      o.status === 'completed' ||
+      o.status === 'closed' ||
+      o.status === 'cancelled' ||
+      o.payment_status === 'paid' ||
+      o.payment_status === 'refunded' ||
+      o.ticket_status === 'CLOSED' ||
+      o.ticket_status === 'BILLED' ||
+      (o.status === 'confirmed' && o.ticket_status !== 'HOLD')
+    );
+  });
   const consolidatedClosed = getConsolidatedClosedBills(allClosed);
-  const deliveredOrders = consolidatedClosed.filter(
-    o => (o.status === 'delivered' || o.status === 'completed' || o.status === 'closed' || o.payment_status === 'paid') && !isOrderVoided(o)
+  const activeOrders = consolidatedClosed.filter(
+    o => o.status !== 'cancelled' && !isOrderVoided(o)
   );
   const cancelledOrders = consolidatedClosed.filter(o => o.status === 'cancelled' || isOrderVoided(o));
 
-  const totalClosedRev = deliveredOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
-  const totalClosedCount = deliveredOrders.length;
+  const paidOrders = activeOrders.filter(o => o.payment_status === 'paid');
+  const unpaidOrders = activeOrders.filter(o => o.payment_status !== 'paid');
 
-  const now = new Date();
-  const todayStr = getLocalDateString(now);
-  const yDate = new Date(now);
-  yDate.setDate(yDate.getDate() - 1);
-  const yestStr = getLocalDateString(yDate);
+  const totalClosedOrderValue = activeOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
+  const totalPaymentCollected = paidOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
+  const totalOutstandingAmount = unpaidOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
 
-  const todayOrders = deliveredOrders.filter(o => getLocalDateString(o.created_at) === todayStr);
-  const todayClosedRev = todayOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
-  const todayClosedCount = todayOrders.length;
+  const totalClosedCount = activeOrders.length;
+  const paidCount = paidOrders.length;
+  const unpaidCount = unpaidOrders.length;
 
   const cancelledLoss = cancelledOrders.reduce((s, o) => s + getEffectiveOrderTotal(o), 0);
-  const aov = totalClosedCount > 0 ? (totalClosedRev / totalClosedCount) : 0;
+  const aov = totalClosedCount > 0 ? (totalClosedOrderValue / totalClosedCount) : 0;
 
-  if ($('closed-kpi-total-rev')) $('closed-kpi-total-rev').textContent = `₹${totalClosedRev.toFixed(2)}`;
-  if ($('closed-kpi-total-count')) $('closed-kpi-total-count').textContent = `${totalClosedCount} Settled Bills`;
-  if ($('closed-kpi-today-rev')) $('closed-kpi-today-rev').textContent = `₹${todayClosedRev.toFixed(2)}`;
-  if ($('closed-kpi-today-count')) $('closed-kpi-today-count').textContent = `${todayClosedCount} Bills Today`;
+  if ($('closed-kpi-total-rev')) $('closed-kpi-total-rev').textContent = `₹${totalClosedOrderValue.toFixed(2)}`;
+  if ($('closed-kpi-total-count')) $('closed-kpi-total-count').textContent = `${totalClosedCount} Orders (${paidCount} Paid, ${unpaidCount} Unpaid)`;
+  if ($('closed-kpi-today-rev')) $('closed-kpi-today-rev').textContent = `₹${totalPaymentCollected.toFixed(2)}`;
+  if ($('closed-kpi-today-count')) $('closed-kpi-today-count').textContent = `${paidCount} Paid Bills`;
+  if ($('closed-kpi-delivered-ratio')) $('closed-kpi-delivered-ratio').textContent = `₹${totalOutstandingAmount.toFixed(2)}`;
+  if ($('closed-kpi-cancel-loss')) $('closed-kpi-cancel-loss').textContent = `${unpaidCount} Unpaid Bills`;
+  if ($('closed-kpi-aov')) $('closed-kpi-aov').textContent = `₹${aov.toFixed(2)}`;
+  if ($('closed-kpi-aov-sub')) $('closed-kpi-aov-sub').textContent = `Per closed order`;
   if ($('closed-kpi-delivered-ratio')) $('closed-kpi-delivered-ratio').textContent = `${deliveredOrders.length} / ${cancelledOrders.length}`;
   if ($('closed-kpi-cancel-loss')) $('closed-kpi-cancel-loss').textContent = `Cancelled: ₹${cancelledLoss.toFixed(2)}`;
   if ($('closed-kpi-aov')) $('closed-kpi-aov').textContent = `₹${aov.toFixed(2)}`;
@@ -12268,8 +12340,14 @@ async function renderClosedOrdersPanel() {
   // Status Filter
   const statusFilter = $('closed-orders-status-filter')?.value || 'all';
   if (statusFilter !== 'all') {
-    if (statusFilter === 'delivered') {
+    if (statusFilter === 'paid') {
+      list = list.filter(o => o.payment_status === 'paid' && o.status !== 'cancelled' && !isOrderVoided(o));
+    } else if (statusFilter === 'unpaid') {
+      list = list.filter(o => o.payment_status !== 'paid' && o.status !== 'cancelled' && !isOrderVoided(o));
+    } else if (statusFilter === 'delivered') {
       list = list.filter(o => o.status === 'delivered' || o.payment_status === 'paid');
+    } else if (statusFilter === 'cancelled') {
+      list = list.filter(o => o.status === 'cancelled' || isOrderVoided(o));
     } else {
       list = list.filter(o => o.status === statusFilter);
     }
@@ -12299,6 +12377,8 @@ async function renderClosedOrdersPanel() {
   let sumCgst = 0;
   let sumSgst = 0;
   let sumTotalGst = 0;
+  let sumCollected = 0;
+  let sumOutstanding = 0;
 
   activeDelivered.forEach(o => {
     const td = computeOrderTaxDetails(o);
@@ -12307,10 +12387,17 @@ async function renderClosedOrdersPanel() {
     sumCgst += td.cgstAmt;
     sumSgst += td.sgstAmt;
     sumTotalGst += td.totalGst;
+    if (o.payment_status === 'paid') {
+      sumCollected += td.grandTotal;
+    } else {
+      sumOutstanding += td.grandTotal;
+    }
   });
 
   if ($('closed-orders-count')) $('closed-orders-count').textContent = `${list.length} ${list.length === 1 ? 'bill' : 'bills'}`;
   if ($('closed-orders-amount')) $('closed-orders-amount').textContent = `₹${sumGrand.toFixed(2)}`;
+  if ($('closed-orders-collected-amt')) $('closed-orders-collected-amt').textContent = `₹${sumCollected.toFixed(2)}`;
+  if ($('closed-orders-outstanding-amt')) $('closed-orders-outstanding-amt').textContent = `₹${sumOutstanding.toFixed(2)}`;
   if ($('closed-orders-tax-amt')) $('closed-orders-tax-amt').textContent = `₹${sumTotalGst.toFixed(2)} (CGST ₹${sumCgst.toFixed(2)} + SGST ₹${sumSgst.toFixed(2)})`;
 
   if (!list.length) {
@@ -12352,13 +12439,15 @@ async function renderClosedOrdersPanel() {
       ? '<span class="closed-status-badge cancelled"><span class="badge-dot red"></span>Voided</span>'
       : (isCancelled
           ? '<span class="closed-status-badge cancelled"><span class="badge-dot red"></span>Cancelled</span>'
-          : '<span class="closed-status-badge settled"><span class="badge-dot green"></span>Settled</span>');
+          : (isPaid
+              ? '<span class="closed-status-badge settled"><span class="badge-dot green"></span>Settled</span>'
+              : '<span class="closed-status-badge pending" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;"><span class="badge-dot orange"></span>Billed (Unpaid)</span>'));
 
     const payPill = isVoided
       ? '<span class="closed-pay-mode unpaid">Voided / Refunded</span>'
       : (isPaid
           ? `<span class="closed-pay-mode">Paid · ${escapeHtml(parsed.paymentMode || o.payment_mode || 'Cash/UPI')}</span>`
-          : '<span class="closed-pay-mode unpaid">Unpaid</span>');
+          : '<span class="closed-pay-mode unpaid" style="background:#fee2e2;color:#991b1b;font-weight:600;">⏳ Unpaid</span>');
 
     const d = new Date(o.created_at);
     const dateStr = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) + ', ' + d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
@@ -12996,6 +13085,26 @@ async function voidClosedOrder(orderId, providedReason = null, providedIdempoten
   let cleanReason = String(providedReason ?? ($('closed-edit-reason-input')?.value || '')).trim();
   if (cleanReason.length < 3) {
     cleanReason = cleanReason ? `Order voided: ${cleanReason}` : 'Order voided by authorized staff';
+  }
+
+  // Safe voiding for offline/pending orders without leaving orphaned order_items
+  if (String(orderId).startsWith('offline-')) {
+    order.status = 'cancelled';
+    order.ticket_status = 'CANCELLED';
+    order.payment_status = 'refunded';
+    order.notes = `${order.notes || ''} [VOIDED] [VOID_REASON: ${cleanReason}]`.trim();
+    if (typeof offlineSync !== 'undefined' && offlineSync.removeJobByOrderId) {
+      offlineSync.removeJobByOrderId(orderId);
+    }
+    orderItems = orderItems.filter(i => String(i.order_id) !== String(orderId));
+    persistOrdersCache();
+    showAdminToast(`Offline Invoice #${orderNum} voided safely 🚫`, 'success');
+    renderClosedOrdersPanel();
+    renderOrdersTable();
+    renderBillingQuickCards();
+    renderBillingTotalBills();
+    renderOverview();
+    return { ok: true, data: { status: 'cancelled' } };
   }
 
   try {
@@ -14316,6 +14425,8 @@ function initOfflineSyncPOS() {
       showAdminToast(`Bill confirmed on cloud for Order #${serverOrder?.order_number || orderId}`, 'info');
       renderOrdersTable();
       renderTablesPanel();
+      renderClosedOrdersPanel();
+      renderHoldOrdersPanel();
       renderBillingTotalBills();
     } else if (event.type === 'pos_order_updated') {
       const { orderId, serverOrder } = event;
@@ -19525,7 +19636,9 @@ async function buildOrderFromPos(action) {
           const updateIdempotencyKey = `pos_update_${posEditingOrderId}_${Date.now()}`;
           offlineSync.enqueuePosOrderUpdate({
             orderId: posEditingOrderId,
+            updateData,
             orderData: updateData,
+            items: itemRows,
             itemRows,
             idempotencyKey: updateIdempotencyKey
           });
@@ -19684,8 +19797,10 @@ async function buildOrderFromPos(action) {
 
   if (cloudInsertFailed) {
     try {
+      newOrder._isOfflineQueued = true;
       offlineSync.enqueuePosOrderCreate({
         orderData: newOrder,
+        items: itemRows,
         itemRows,
         idempotencyKey: newOrder.idempotency_key || `pos_create_${newOrder.id}`
       });

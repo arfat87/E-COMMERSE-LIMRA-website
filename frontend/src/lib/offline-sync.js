@@ -403,9 +403,10 @@ class OfflineSyncEngine {
   /**
    * Enqueue POS Order Creation Mutation
    */
-  enqueuePosOrderCreate({ orderData, itemRows, idempotencyKey }) {
+  enqueuePosOrderCreate({ orderData, items, itemRows, idempotencyKey }) {
     const opId = this.generateOpId('pos_ord');
-    const key = idempotencyKey || orderData.idempotency_key || orderData.id || this.generateIdempotencyKey('ord_crt');
+    const key = idempotencyKey || orderData?.idempotency_key || orderData?.id || this.generateIdempotencyKey('ord_crt');
+    const finalItems = Array.isArray(items) ? items : (Array.isArray(itemRows) ? itemRows : []);
 
     const job = {
       id: opId,
@@ -414,7 +415,7 @@ class OfflineSyncEngine {
       status: 'pending',
       payload: {
         order: { ...orderData, idempotency_key: key },
-        items: Array.isArray(itemRows) ? itemRows : []
+        items: finalItems
       },
       error: null,
       errorType: null,
@@ -431,9 +432,11 @@ class OfflineSyncEngine {
   /**
    * Enqueue POS Order Update Mutation
    */
-  enqueuePosOrderUpdate({ orderId, updateData, items, idempotencyKey }) {
+  enqueuePosOrderUpdate({ orderId, updateData, orderData, items, itemRows, idempotencyKey }) {
     const opId = this.generateOpId('pos_upd');
     const key = idempotencyKey || this.generateIdempotencyKey('ord_upd');
+    const finalUpdate = updateData || orderData || {};
+    const finalItems = Array.isArray(items) ? items : (Array.isArray(itemRows) ? itemRows : []);
 
     const job = {
       id: opId,
@@ -442,8 +445,8 @@ class OfflineSyncEngine {
       status: 'pending',
       payload: {
         orderId,
-        updateData: { ...updateData, idempotency_key: key },
-        items: Array.isArray(items) ? items : []
+        updateData: { ...finalUpdate, idempotency_key: key },
+        items: finalItems
       },
       error: null,
       errorType: null,
@@ -455,6 +458,22 @@ class OfflineSyncEngine {
     };
 
     return this._appendJob(QUEUE_KEYS.ADMIN_MUTATIONS, job);
+  }
+
+  /**
+   * Remove any queued mutations for a specific order (used on offline cancellation/void)
+   */
+  removeJobByOrderId(orderId) {
+    if (!orderId) return;
+    const strId = String(orderId);
+    const queue = this.loadQueue(QUEUE_KEYS.ADMIN_MUTATIONS);
+    const filtered = queue.filter(job => {
+      const p = job.payload || {};
+      const jobOrdId = String(p.orderId || p.order?.id || p.id || '');
+      return jobOrdId !== strId;
+    });
+    this.saveQueue(QUEUE_KEYS.ADMIN_MUTATIONS, filtered);
+    this.updateSyncIndicator();
   }
 
   /**
@@ -804,6 +823,7 @@ class OfflineSyncEngine {
             delete orderPayload._isOfflineQueued;
             delete orderPayload._settlementPendingSync;
             delete orderPayload._pendingPaymentMethod;
+            const originalLocalId = orderPayload.id;
             if (String(orderPayload.id || '').startsWith('offline-')) {
               delete orderPayload.id;
             }
@@ -833,17 +853,37 @@ class OfflineSyncEngine {
               };
               insRes = await db.from('orders').insert([baseline]).select().single();
             }
+
+            // RECOVERY: If header was already created in DB (e.g. earlier attempt or duplicate key)
+            if (insRes.error && (insRes.error.code === '23505' || (insRes.error.message || '').includes('duplicate key') || (insRes.error.message || '').includes('orders_pkey'))) {
+              console.log('[OfflineSync] Order header already exists in DB; fetching existing record for:', originalLocalId || job.idempotencyKey);
+              if (originalLocalId && !String(originalLocalId).startsWith('offline-')) {
+                const fetchRes = await db.from('orders').select().eq('id', originalLocalId).single();
+                if (fetchRes.data) insRes = fetchRes;
+              } else if (job.idempotencyKey) {
+                const fetchRes = await db.from('orders').select().eq('idempotency_key', job.idempotencyKey).single();
+                if (fetchRes.data) insRes = fetchRes;
+              }
+            }
+
             if (insRes.error) {
               throw insRes.error;
             }
             result = insRes.data;
 
             if (Array.isArray(job.payload.items) && job.payload.items.length > 0) {
-              const itemsToInsert = job.payload.items.map(i => ({
-                ...i,
-                order_id: result.id
-              }));
-              await db.from('order_items').insert(itemsToInsert);
+              // Check if items already exist for this order in cloud DB to prevent duplicate order_items
+              const { data: existingItems } = await db.from('order_items').select('id').eq('order_id', result.id);
+              if (!existingItems || existingItems.length === 0) {
+                const itemsToInsert = job.payload.items.map(i => {
+                  const copy = { ...i, order_id: result.id };
+                  if (String(copy.id || '').startsWith('temp-') || String(copy.id || '').startsWith('offline-')) {
+                    delete copy.id;
+                  }
+                  return copy;
+                });
+                await db.from('order_items').insert(itemsToInsert);
+              }
             }
             resOk = true;
           } else {
@@ -936,6 +976,21 @@ class OfflineSyncEngine {
             const cRes = await db.from('orders').update(job.payload.updatePayload).eq('id', job.payload.orderId).select().single();
             if (cRes.error) throw cRes.error;
             result = cRes.data;
+
+            // Ensure items are persisted in cloud DB if missing
+            if (Array.isArray(job.payload.items) && job.payload.items.length > 0) {
+              const { data: existingItems } = await db.from('order_items').select('id').eq('order_id', job.payload.orderId);
+              if (!existingItems || existingItems.length === 0) {
+                const itemsToInsert = job.payload.items.map(i => {
+                  const copy = { ...i, order_id: job.payload.orderId };
+                  if (String(copy.id || '').startsWith('temp-') || String(copy.id || '').startsWith('offline-')) {
+                    delete copy.id;
+                  }
+                  return copy;
+                });
+                await db.from('order_items').insert(itemsToInsert);
+              }
+            }
             resOk = true;
           } else {
             const res = await fetch('/api/orders', {

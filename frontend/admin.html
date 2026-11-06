@@ -1220,33 +1220,33 @@
             <div class="closed-kpi-card">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                 <div>
-                  <p class="closed-kpi-title">Total Closed Revenue</p>
+                  <p class="closed-kpi-title">Total Closed Order Value</p>
                   <p class="closed-kpi-val" id="closed-kpi-total-rev">₹0.00</p>
-                  <p class="closed-kpi-sub" id="closed-kpi-total-count">0 Settled Bills</p>
+                  <p class="closed-kpi-sub" id="closed-kpi-total-count">0 Orders</p>
                 </div>
-                <div class="closed-kpi-icon">₹</div>
+                <div class="closed-kpi-icon">📋</div>
               </div>
             </div>
 
             <div class="closed-kpi-card">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                 <div>
-                  <p class="closed-kpi-title">Today's Revenue</p>
-                  <p class="closed-kpi-val" id="closed-kpi-today-rev">₹0.00</p>
-                  <p class="closed-kpi-sub" id="closed-kpi-today-count">0 Bills Today</p>
+                  <p class="closed-kpi-title">Total Payment Collected</p>
+                  <p class="closed-kpi-val" id="closed-kpi-today-rev" style="color:#16a34a;">₹0.00</p>
+                  <p class="closed-kpi-sub" id="closed-kpi-today-count">0 Paid Bills</p>
                 </div>
-                <div class="closed-kpi-icon">📅</div>
+                <div class="closed-kpi-icon">💰</div>
               </div>
             </div>
 
             <div class="closed-kpi-card">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                 <div>
-                  <p class="closed-kpi-title">Delivered vs Cancelled</p>
-                  <p class="closed-kpi-val" id="closed-kpi-delivered-ratio">0 / 0</p>
-                  <p class="closed-kpi-sub" id="closed-kpi-cancel-loss">Cancelled: ₹0.00</p>
+                  <p class="closed-kpi-title">Outstanding (Unpaid)</p>
+                  <p class="closed-kpi-val" id="closed-kpi-delivered-ratio" style="color:#ea580c;">₹0.00</p>
+                  <p class="closed-kpi-sub" id="closed-kpi-cancel-loss">0 Unpaid Bills</p>
                 </div>
-                <div class="closed-kpi-icon">⚖️</div>
+                <div class="closed-kpi-icon">⏳</div>
               </div>
             </div>
 
@@ -1255,7 +1255,7 @@
                 <div>
                   <p class="closed-kpi-title">Average Order Value (AOV)</p>
                   <p class="closed-kpi-val" id="closed-kpi-aov">₹0.00</p>
-                  <p class="closed-kpi-sub">Per settled bill</p>
+                  <p class="closed-kpi-sub" id="closed-kpi-aov-sub">Per closed order</p>
                 </div>
                 <div class="closed-kpi-icon">📊</div>
               </div>
@@ -1297,9 +1297,11 @@
                 <option value="delivery">🚗 Delivery</option>
               </select>
               <select id="closed-orders-status-filter" class="adm-select" style="min-width:140px;border-radius:8px;border-color:#e2e8f0;font-size:.82rem;">
-                <option value="all">All Closed</option>
-                <option value="delivered">✓ Delivered / Paid</option>
-                <option value="cancelled">✕ Cancelled</option>
+                <option value="all">All Orders</option>
+                <option value="paid">✓ Paid Orders</option>
+                <option value="unpaid">⏳ Unpaid Bills</option>
+                <option value="delivered">✓ Settled / Delivered</option>
+                <option value="cancelled">✕ Cancelled / Voided</option>
               </select>
             </div>
           </div>
@@ -1308,7 +1310,9 @@
           <div id="closed-orders-summary-bar" class="closed-summary-ribbon">
             <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;">
               <span><span style="color:#64748b;">Showing:</span> <strong id="closed-orders-count" style="color:#0f172a;font-weight:700;">0 bills</strong></span>
-              <span><span style="color:#64748b;">Total Revenue:</span> <strong id="closed-orders-amount" style="color:#0f172a;font-weight:700;">₹0.00</strong></span>
+              <span><span style="color:#64748b;">Total Value:</span> <strong id="closed-orders-amount" style="color:#0f172a;font-weight:700;">₹0.00</strong></span>
+              <span><span style="color:#64748b;">Collected:</span> <strong id="closed-orders-collected-amt" style="color:#16a34a;font-weight:700;">₹0.00</strong></span>
+              <span><span style="color:#64748b;">Outstanding:</span> <strong id="closed-orders-outstanding-amt" style="color:#ea580c;font-weight:700;">₹0.00</strong></span>
               <span><span style="color:#64748b;">Tax (CGST+SGST):</span> <strong id="closed-orders-tax-amt" style="color:#334155;font-weight:600;">₹0.00</strong></span>
             </div>
             <span style="font-size:.78rem;color:#64748b;">💡 Tip: Click <strong>✏️ Edit</strong> to adjust dishes or reprint receipts</span>
