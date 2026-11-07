@@ -356,6 +356,8 @@ if (typeof window !== 'undefined') {
   window.cashierCreatedOrderIds = cashierCreatedOrderIds;
   window.showAdminToast = showAdminToast;
   window.showBusinessNotification = showBusinessNotification;
+  window.getTablesSubtab = getTablesSubtab;
+  window.setTablesSubtab = setTablesSubtab;
 }
 
 const $ = id => document.getElementById(id);
@@ -7648,11 +7650,11 @@ async function confirmHeldOrder(orderId) {
   const typeName = isDelivery ? 'Delivery' : 'Takeaway';
   showAdminToast(`${typeName} Bill #${order.order_number} generated (${formatBillAmount(grandTotal)})! Moved to Bill section. 🧾`, 'success');
 
-  // Switch to Bill view inside Tables panel
-  tablesSubtab = 'bill';
-  document.querySelectorAll('#tables-filter-pills button').forEach(p => {
-    p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'bill');
-  });
+  // Do NOT auto-redirect: Cashier stays on current view (Hold) without being forcibly jumped to Bill
+  // tablesSubtab = 'bill';
+  // document.querySelectorAll('#tables-filter-pills button').forEach(p => {
+  //   p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'bill');
+  // });
 
   renderTablesPanel();
   renderHoldOrdersPanel();
@@ -7817,11 +7819,11 @@ async function confirmHeldTableOrder(tableNum) {
 
     showAdminToast(`Table ${tableNum} Bill #${(localPrimary || primaryOrder).order_number} generated (₹${grandTotal.toFixed(2)})! Table ${tableNum} is now Available. Bill moved to Tables → Bill. 🧾`, 'success');
 
-    // Automatically switch to Tables -> Bill subsection
-    tablesSubtab = 'bill';
-    document.querySelectorAll('#tables-filter-pills button').forEach(p => {
-      p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'bill');
-    });
+    // Do NOT auto-redirect: Cashier stays on current view (Hold) without being forcibly jumped to Bill
+    // tablesSubtab = 'bill';
+    // document.querySelectorAll('#tables-filter-pills button').forEach(p => {
+    //   p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'bill');
+    // });
 
     renderTablesPanel();
     renderHoldOrdersPanel();
@@ -8014,11 +8016,11 @@ async function settleBill(billId, paymentMethod = 'cash', txnRef = '', idempoten
     // Clean up temporary selection state
     tableBillSelectedMethods.delete(bill.id);
 
-    // Switch to Close subtab so cashier immediately sees the settled order in Close section
-    tablesSubtab = 'close';
-    document.querySelectorAll('#tables-filter-pills button').forEach(p => {
-      p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'close');
-    });
+    // Do NOT auto-redirect: Cashier stays on current view (Bill) without being forcibly jumped to Close
+    // tablesSubtab = 'close';
+    // document.querySelectorAll('#tables-filter-pills button').forEach(p => {
+    //   p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === 'close');
+    // });
 
     // Re-render views
     renderTablesPanel();
@@ -8727,6 +8729,17 @@ function renderTablesHoldSection(search = '') {
   });
 }
 
+export function getTablesSubtab() {
+  return tablesSubtab;
+}
+
+export function setTablesSubtab(tab) {
+  if (['all', 'free', 'occupied', 'hold', 'bill', 'close'].includes(tab)) {
+    tablesSubtab = tab;
+    if (typeof window !== 'undefined') window.tablesSubtab = tab;
+  }
+}
+
 export function getTotalTablesCount() {
   const fromSettings = parseInt(printerSettings?.total_tables ?? localStorage.getItem('qz-total-tables'), 10);
   return (!isNaN(fromSettings) && fromSettings > 0) ? fromSettings : 19;
@@ -8826,6 +8839,14 @@ export function renderTablesPanel() {
   if (bClose) {
     bClose.textContent = closedBills.length;
     bClose.style.display = closedBills.length > 0 ? 'inline-block' : 'none';
+  }
+
+  // Synchronize filter pills active state with current tablesSubtab (Navigation State Preservation Policy)
+  document.querySelectorAll('#tables-filter-pills button').forEach(p => {
+    p.classList.toggle('active', (p.dataset.subtab || p.dataset.filter) === tablesSubtab);
+  });
+  if (typeof window !== 'undefined') {
+    window.tablesSubtab = tablesSubtab;
   }
 
   // Toggle Subsection Containers
@@ -12052,15 +12073,6 @@ async function ensureHistoricalClosedOrders(force = false) {
   if (!rangeKey) return;
 
   if (!force && closedLoadedRanges.has(rangeKey)) return;
-
-  // If today or yesterday, check if existing orders in memory already span before startIso
-  if (!force && orders.length > 0 && startIso && (closedDateFilter === 'today' || closedDateFilter === 'yesterday')) {
-    const oldest = new Date(orders[orders.length - 1].created_at || Date.now());
-    if (oldest <= new Date(startIso)) {
-      closedLoadedRanges.add(rangeKey);
-      return;
-    }
-  }
 
   isFetchingClosedOrders = true;
   const countEl = $('closed-orders-count');

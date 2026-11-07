@@ -2,7 +2,7 @@
 
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)]()
 [![Platform](https://img.shields.io/badge/Platforms-Web%20%7C%20Electron%20Desktop%20%7C%20Android%20APK-indigo.svg)]()
-[![Tests](https://img.shields.io/badge/Tests-39%20Suites%20Passing-success.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-40%20Suites%20Passing-success.svg)]()
 [![Database](https://img.shields.io/badge/Database-Supabase%20PostgreSQL-3ECF8E.svg)]()
 [![Hardware](<https://img.shields.io/badge/Hardware-TVS%20RP%203200%20Plus%20(80mm%2F58mm)-orange.svg>)]()
 [![Security](<https://img.shields.io/badge/Security-Strict%20Auth%20%2B%20RLS%20(22%20Tables)-blue.svg>)]()
@@ -27,7 +27,7 @@
 5. **Offline-First Synchronization Engine:** IndexedDB + localStorage mutation queue with pre-flight cloud-state verification, server UUID resolution, automatic duplicate key (`23505`) reconciliation, and zero data-loss quarantine protection.
 6. **Embedded Warehouse & Stock Accounting:** Godown management across 7 material categories, purchase rate variance tracking, FIFO consumption ledger, and financial statements.
 7. **Hardened Security & Integrity:** Strict administrator verification, universal empty filter guards, 22-table Row-Level Security (RLS), and comprehensive multi-tier audit logging.
-8. **39 Automated Test Suites:** Comprehensive unit, behavioral, and regression test suite covering all business logic, financial math, printing, and data synchronization.
+8. **40 Automated Test Suites:** Comprehensive unit, behavioral, and regression test suite covering all business logic, financial math, printing, navigation state preservation, and data synchronization.
 
 ---
 
@@ -185,8 +185,9 @@ E-COMMERSE LIMRA website/
 │
 ├── backend/                           # Node.js Express / HTTP Local API Server
 │   ├── api/                           # Mirror API controllers for local runtime
-│   ├── tests/                         # Master automated test suite (39 suites)
+│   ├── tests/                         # Master automated test suite (40 suites)
 │   │   ├── run-all.mjs                # Master test runner orchestrator
+│   │   ├── workflow-navigation-state.test.mjs     # Phase 6 Navigation State suite
 │   │   ├── close-orders-repair-phase3.test.mjs    # Phase 3 Close Orders suite
 │   │   ├── offline-sync-recovery-phase4.test.mjs  # Phase 4 Offline Sync suite
 │   │   ├── hold-bill-close-lifecycle.test.mjs     # Phase 0/1 Lifecycle suite
@@ -243,7 +244,7 @@ E-COMMERSE LIMRA website/
 
 | Task | Command | Description |
 | :--- | :--- | :--- |
-| **Run All 39 Test Suites** | `npm test` | Executes all 39 test suites covering FIFO, RBAC, payments, billing, printing, and sync. |
+| **Run All 40 Test Suites** | `npm test` | Executes all 40 test suites covering FIFO, RBAC, payments, billing, printing, sync, and navigation state. |
 | **Build Production App** | `npm run build` | Compiles frontend bundles with Vite and syncs assets into root `dist/`. |
 | **Start Full Dev Stack** | `npm run dev` | Runs both Frontend (`:5173`) and Backend (`:3000`) concurrently. |
 | **Frontend Only** | `npm run dev:frontend` | Starts Vite dev server directly on `http://localhost:5173`. |
@@ -267,6 +268,7 @@ All technical audits, repair reports, and pre-deployment checklists are preserve
 | [`doc/PHASE_3_CLOSE_ORDERS_HISTORICAL_REPAIR.md`](./doc/PHASE_3_CLOSE_ORDERS_HISTORICAL_REPAIR.md) | Fix for `deliveredOrders` ReferenceError and restoration of Close Orders history. |
 | [`doc/PHASE_4_OFFLINE_SYNC_FAILED_QUEUE_RECOVERY.md`](./doc/PHASE_4_OFFLINE_SYNC_FAILED_QUEUE_RECOVERY.md) | Cloud-state verification, server UUID resolution, and safe quarantine recovery. |
 | [`doc/PHASE_5_INTEGRATION_AND_RELEASE_READINESS.md`](./doc/PHASE_5_INTEGRATION_AND_RELEASE_READINESS.md) | Final integration matrix, regression tests, and release candidate sign-off. |
+| [`doc/PHASE_6_AUTO_REDIRECT_REMOVAL_REPORT.md`](./doc/PHASE_6_AUTO_REDIRECT_REMOVAL_REPORT.md) | Targeted removal of unwanted automatic redirects and workflow navigation state preservation. |
 | [`doc/LIMRA_HOLD_BILL_CLOSE_LIFECYCLE_REPAIR_REPORT.md`](./doc/LIMRA_HOLD_BILL_CLOSE_LIFECYCLE_REPAIR_REPORT.md) | Dual visibility repair report for confirmed unpaid bills across sections. |
 | [`doc/LIMRA_FINAL_PRE_DEPLOYMENT_CHECKLIST.md`](./doc/LIMRA_FINAL_PRE_DEPLOYMENT_CHECKLIST.md) | Pre-deployment verification checklist across infrastructure, auth, and database. |
 | [`doc/LIMRA_PRINTING_AND_NAVIGATION_PERFORMANCE_REPORT.md`](./doc/LIMRA_PRINTING_AND_NAVIGATION_PERFORMANCE_REPORT.md) | Print latency reduction and fast in-page DOM navigation optimizations. |
